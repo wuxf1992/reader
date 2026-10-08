@@ -39,6 +39,7 @@ try {
         await page.setViewportSize({ width, height: width === 1280 ? 800 : 844 });
         for (const [id, , paper, surface, accent, scheme, opposite] of themes) {
           await page.getByRole('button', { name: '界面', exact: true }).click();
+          await page.locator('.panel').evaluate(async panel => { await Promise.all(panel.getAnimations().map(animation => animation.finished.catch(() => undefined))); });
           assert.ok(await page.locator('.panel-body .section-title').evaluateAll(headings => headings.every(heading => getComputedStyle(heading).position === 'static')), 'settings headings scroll with their content');
           const movement = await page.locator('.panel-body').evaluate(async body => {
             const title = body.querySelector('.section-title');

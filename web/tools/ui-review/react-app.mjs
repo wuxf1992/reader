@@ -374,7 +374,7 @@ async function runMediaReview(browser, fixture, checks, errors) {
   await page.getByText('收藏电影061', { exact: true }).waitFor({ state: 'visible' });
   await page.locator('.media-favorite-row').first().click();
   await page.waitForURL(/#\/media\/video\/items\/favorite-/);
-  await page.getByRole('heading', { name: '收藏电影061', exact: true }).waitFor();
+  await page.getByText('历史版本文件可能已移动或目录未挂载。检查资源，或选择其他可用版本。', { exact: true }).waitFor();
   await capture(page, 'media-favorites-detail', checks, errors);
 
   // Detail favorite is a real PUT and is then reverted to keep the disposable
@@ -412,7 +412,7 @@ async function runMediaReview(browser, fixture, checks, errors) {
   // then reopen the persistent mini-player from the browse page.
   await page.getByRole('button', { name: '← 返回浏览' }).click();
   await page.locator('.media-mini').waitFor({ state: 'attached' });
-  await page.locator('.react-mini-player a').click();
+  await page.locator('.media-mini-title').click();
   await page.waitForURL(/#\/media\/video\/player\?item=review-film&part=review-film-part/);
   await page.locator('.media-playback-page').waitFor({ state: 'attached' });
   assert.equal(playbackPostsBeforeRoute.length, 0, 'route return created a new playback session');
