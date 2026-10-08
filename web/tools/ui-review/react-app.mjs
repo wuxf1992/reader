@@ -237,6 +237,7 @@ async function loginAs(page, origin, username) {
   await page.route('https://wuxf.top/**', route => route.abort());
   await page.goto(`${origin}/#/media/video`, { waitUntil: 'domcontentloaded' });
   const user = page.locator('input[autocomplete="username"]');
+  await user.waitFor({ state: 'visible' });
   if (await user.isVisible().catch(() => false)) {
     await page.getByText('更换服务地址', { exact: true }).click();
     await page.locator('input[type="url"]').fill(origin);
