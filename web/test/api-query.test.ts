@@ -59,4 +59,37 @@ describe('ReaderApi navigation query cache', () => {
     await api.listBooks();
     expect(transport.countMatching(request => request.url.startsWith('/api/v1/books'))).toBe(2);
   });
+
+  it('shows a newly acquired novel in previously visited shelf sorts without waiting for cache expiry', async () => {
+    const transport = new FakeTransport();
+    let acquired = false;
+    transport.respondWith(request => {
+      if (request.method === 'POST' && request.url.endsWith('/acquire')) {
+        acquired = true;
+        return { status: 200, headers: {}, json: { kind: 'ready', publicationId: 'new-book' } };
+      }
+      if (request.url.startsWith('/api/v1/library/continue')) {
+        return { status: 200, headers: {}, json: { items: [] } };
+      }
+      const items = acquired ? [{ id: 'new-book', title: '药师门徒修仙笔记' }, { id: 'old-book' }] : [{ id: 'old-book' }];
+      return { status: 200, headers: {}, json: { items, total: items.length } };
+    });
+    const api = await apiWith(transport);
+    const queries = [
+      { sort: 'added' as const, order: 'desc' as const, page: 1, pageSize: 60 },
+      { sort: 'added' as const, order: 'desc' as const, page: 2, pageSize: 60 },
+      { sort: 'title' as const, page: 1 },
+      { sort: 'author' as const, page: 1 },
+    ];
+    for (const query of queries) await api.listBooks(query);
+    await api.continueReading(100);
+    await api.acquireSource('novel-web', 'selected-novel');
+    for (const query of queries) {
+      expect((await api.listBooks(query)).items.map(book => book.id)).toContain('new-book');
+    }
+    await api.continueReading(100);
+    expect(transport.countMatching(request => request.url.startsWith('/api/v1/books?'))).toBe(8);
+    expect(transport.countMatching(request => request.url.startsWith('/api/v1/library/continue'))).toBe(2);
+  });
+
 });

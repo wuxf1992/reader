@@ -290,7 +290,7 @@ const FLOW_STYLESHEET = `
  * So one declaration makes the step equal the page and draws the gutter at the same
  * time, and the reader's own page-margin control moves both together.
  */
-:host([data-paginated='true']) .book-flow {
+:host([data-paginated='true'][data-page-layout='columns']) .book-flow {
   height: 100%;
   max-inline-size: none;
   padding-block: 0;
@@ -300,7 +300,7 @@ const FLOW_STYLESHEET = `
   column-fill: auto;
   overflow: hidden;
 }
-:host([data-paginated='true']) .book-flow > * {
+:host([data-paginated='true'][data-page-layout='columns']) .book-flow > * {
   break-inside: auto;
 }
 /*
@@ -344,12 +344,13 @@ const FLOW_STYLESHEET = `
  * the host already carries for the column layout — a second attribute saying the same
  * thing would be a second thing to keep in agreement.
  */
-:host([data-animating][data-paginated='true']) {
+:host([data-animating][data-paginated='true'][data-page-layout='columns']) {
   /* Not the scroller in paged mode, so it may clip. clip rather than hidden
      because the host must not become a scroll container of its own. */
   overflow: clip;
 }
-:host([data-animating]:not([data-paginated='true'])) .book-flow {
+:host([data-animating]:not([data-paginated='true'])) .book-flow,
+:host([data-animating][data-page-layout='screens']) .book-flow {
   /* Not the scroller in scroll mode, so *it* may clip. */
   overflow: clip;
 }
@@ -362,8 +363,9 @@ const FLOW_STYLESHEET = `
 :host([data-animating='slide-next-y']) .book-flow { animation-name: slide-next-y; }
 :host([data-animating='slide-previous-y']) .book-flow { animation-name: slide-previous-y; }
 :host([data-animating^='fade']) .book-flow {
-  animation-duration: 160ms;
-  animation-timing-function: ease-out;
+  animation-duration: 260ms;
+  animation-timing-function: ease-in-out;
+  animation-fill-mode: both;
 }
 :host([data-animating='fade-next-x']) .book-flow,
 :host([data-animating='fade-next-y']) .book-flow { animation-name: fade-next; }
@@ -408,17 +410,13 @@ const FLOW_STYLESHEET = `
   from { transform: translateY(calc(-1 * var(--reader-turn-distance))); }
   to { transform: none; }
 }
-/*
- * The fade stays subtle on purpose: it is the *no-motion* alternative, and a deep
- * fade on a settings choice called "淡入" is a second, louder animation. The pair
- * is asymmetric with the slide for that reason, not by oversight.
- */
+/* The outgoing snapshot fades away as the new page becomes fully visible. */
 @keyframes fade-next {
-  from { opacity: 0.35; }
+  from { opacity: 0; }
   to { opacity: 1; }
 }
 @keyframes fade-previous {
-  from { opacity: 0.35; }
+  from { opacity: 0; }
   to { opacity: 1; }
 }
 .reader-speech-highlight {

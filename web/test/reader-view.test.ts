@@ -694,3 +694,90 @@ describe('ReaderView chapter links', () => {
     view.dispose();
   });
 });
+
+
+describe('plain-text paged navigation without CSS columns', () => {
+  async function pagedText() {
+    const container = document.createElement('div');
+    document.body.append(container);
+    const doc = reflowableDoc(2);
+    doc.sections.forEach(section => { section.plainText = true; section.html = '正文\n下一段'; });
+    const view = make(container, doc);
+    const host = view.elementHost;
+    // A four-screen chapter even if the browser reports no horizontal overflow.
+    Object.defineProperties(host, {
+      clientHeight: { configurable: true, value: 600 },
+      scrollHeight: { configurable: true, value: 2400 },
+    });
+    view.applySettings({ mode: 'paged', pageAnimation: 'none' });
+    await view.open(0);
+    return { view, host, container };
+  }
+
+  it('reads every screen before crossing the chapter boundary and returns to the last page', async () => {
+    const { view, container } = await pagedText();
+    try {
+      expect(view.position().chapterPages).toBe(4);
+      for (let page = 2; page <= 4; page++) {
+        await view.next();
+        expect(view.position().sectionIndex).toBe(0);
+        expect(view.position().pageInChapter).toBe(page);
+      }
+      await view.next();
+      expect(view.position().sectionIndex).toBe(1);
+      expect(view.position().pageInChapter).toBe(1);
+      await view.previous();
+      expect(view.position().sectionIndex).toBe(0);
+      expect(view.position().pageInChapter).toBe(4);
+      for (let page = 3; page >= 1; page--) {
+        await view.previous();
+        expect(view.position().sectionIndex).toBe(0);
+        expect(view.position().pageInChapter).toBe(page);
+      }
+    } finally { view.dispose(); container.remove(); }
+  });
+
+  it('restores a saved locator and seeks using the same page boundaries', async () => {
+    const { view, host, container } = await pagedText();
+    try {
+      await view.seekPageInChapter(2);
+      expect(host.scrollTop).toBe(1200);
+      const locator = view.position().locator;
+      await view.open(1);
+      await view.openLocator(locator);
+      expect(view.position().pageInChapter).toBe(3);
+      await view.next();
+      expect(view.position().pageInChapter).toBe(4);
+      expect(view.position().sectionIndex).toBe(0);
+    } finally { view.dispose(); container.remove(); }
+  });
+
+  it('keeps reading progress when switching between scroll and paged modes', async () => {
+    const { view, host, container } = await pagedText();
+    try {
+      await view.seekPageInChapter(2);
+      view.applySettings({ mode: 'scroll' });
+      expect(view.position().within).toBeCloseTo(2 / 3);
+      view.applySettings({ mode: 'paged' });
+      expect(view.position().pageInChapter).toBe(3);
+      expect(host.flow.scrollWidth).toBe(0);
+      await view.next();
+      expect(view.position().pageInChapter).toBe(4);
+    } finally { view.dispose(); container.remove(); }
+  });
+});
+
+it('does not let an older chapter fetch overwrite a newer explicit jump', async () => {
+  const container=document.createElement('div');document.body.append(container);
+  const doc=reflowableDoc(3);let finish!:()=>void;
+  Object.assign(doc,{staged:{loadSection:async(index:number)=>{
+    if(index===1)await new Promise<void>(resolve=>{finish=resolve;});
+  }}});
+  const view=make(container,doc);
+  try {
+    await view.open(0);const slow=view.open(1);
+    await vi.waitFor(()=>expect(finish).toBeDefined());
+    await view.open(2);finish();await slow;
+    expect(view.position().sectionId).toBe('ch2.xhtml');
+  } finally {view.dispose();container.remove();}
+});

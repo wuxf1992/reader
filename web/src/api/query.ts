@@ -65,6 +65,13 @@ export function affectedNavigationQuery(mutation: string, query: string): boolea
     const id = mutation.match(/^\/api\/v1\/books\/([^/]+)/)?.[1];
     return query.startsWith('/api/v1/books') && (!id || query.includes('/books/' + id));
   }
-  if (/^\/api\/v1\/sources(?:\/|$)/.test(mutation) || /^\/api\/v1\/plugins/.test(mutation)) return query.startsWith('/api/v1/sources') || query.startsWith('/api/v1/plugins') || query.startsWith('/api/v1/subscriptions');
+  if (/^\/api\/v1\/sources(?:\/|$)/.test(mutation) || /^\/api\/v1\/plugins/.test(mutation)) {
+    // Acquiring a source book changes shelf membership. Invalidate every cached
+    // sort/page, including the added-order query used by recent-reading mode.
+    const acquired = /^\/api\/v1\/sources\/[^/]+\/acquire$/.test(mutation);
+    return query.startsWith('/api/v1/sources') || query.startsWith('/api/v1/plugins') || query.startsWith('/api/v1/subscriptions')
+      || (acquired && (/^\/api\/v1\/books(?:\/|\?|$)/.test(query)
+        || /^\/api\/v1\/library\/(browse|facets|continue)(?:\/|\?|$)/.test(query)));
+  }
   return false;
 }
