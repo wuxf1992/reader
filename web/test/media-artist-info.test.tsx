@@ -1,9 +1,10 @@
+import { render } from '../src/shared/ui/render-root.ts';
 // @vitest-environment jsdom
 import {afterEach,expect,it} from 'vitest';
-import {act} from 'preact/test-utils';
-import {render} from '../src/ui/vendor/preact.ts';
-import {ArtistInfo} from '../src/media/artist-info.tsx';
-import type {Item} from '../src/media/api.ts';
+import {act} from 'react';
+
+import {ArtistInfo} from '../src/features/media/components/artist-info.tsx';
+import type {Item} from '../src/features/media/api/media-api.ts';
 const root=document.createElement('div');document.body.append(root);
 const item:Item={id:'artist',libraryId:'lib',kind:'artist',parentId:null,title:'Artist',overrides:{},metadata:{artistType:'Group',artistArea:'United Kingdom',artistDisambiguation:'<script>name collision</script>'}};
 afterEach(()=>act(()=>render(null,root)));

@@ -1,3 +1,4 @@
+import { render } from '../src/shared/ui/render-root.ts';
 // @vitest-environment jsdom
 /**
  * The reader's chrome, as a function of its state.
@@ -11,10 +12,14 @@
  *    of them — stop — was pushed off the right edge and the reader could not stop
  *    the voice at all (没法停止).
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act } from 'preact/test-utils';
-import { createElement as h, render } from '../src/ui/vendor/preact.ts';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, createElement as h } from 'react';
 import { ReaderChrome, type ChromeState, type ChromeHandlers } from '../src/ui/reader-chrome.tsx';
+
+afterEach(async () => {
+  await act(async () => { for (const element of [...document.body.children]) render(null, element); });
+  document.body.replaceChildren();
+});
 
 function chromeState(overrides: Partial<ChromeState> = {}): ChromeState {
   return {

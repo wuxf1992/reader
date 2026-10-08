@@ -25,7 +25,7 @@ import type { AppSettings } from '../store/settings.ts';
 import { DEFAULT_APP_SETTINGS, READOUT_FIELDS, READOUT_OPTIONS, type ReadoutMode } from '../store/settings.ts';
 import { ReaderIndicators } from './reader-indicators.tsx';
 import type { SpeechEngineKind } from '../render/speech.ts';
-import { type ComponentChildren, type JSX, useLayoutEffect, useRef, useState } from './vendor/preact.ts';
+import { type ReactNode, type JSX, useLayoutEffect, useRef, useState } from 'react';
 import { Button, IconButton, SectionTitle } from './toolkit.tsx';
 import { Icon, type IconName } from './icon.tsx';
 
@@ -195,7 +195,7 @@ export interface ReaderChromeProps {
    */
   stage: HTMLElement;
   handlers: ChromeHandlers;
-  tools?: ComponentChildren;
+  tools?: ReactNode;
 }
 
 export function ReaderChrome({ state, stage, handlers, tools }: ReaderChromeProps): JSX.Element {
@@ -294,7 +294,7 @@ export function ReaderChrome({ state, stage, handlers, tools }: ReaderChromeProp
                       disabled={!reachable || state.navigating || state.refreshing || state.refreshingChapter || state.switching}
                       aria-busy={state.pendingChapterRef === entry.id}
                       title={reachable ? undefined : '这一章不在当前窗口中'}
-                      style={entry.depth > 0 ? `padding-inline-start:${0.6 + entry.depth * 0.9}rem` : undefined}
+                      style={entry.depth > 0 ? { paddingInlineStart: `${0.6 + entry.depth * 0.9}rem` } : undefined}
                       onClick={() => handlers.onTocEntry(entry.id)}
                     >
                       <span className="toc-index">{index + 1}</span>
@@ -327,7 +327,7 @@ export function ReaderChrome({ state, stage, handlers, tools }: ReaderChromeProp
             </button>)}</div>
             {!!state.alternatives.errors?.length && <CatalogFeedback page={state.alternatives} merged compact searching={!!state.alternativesSearching} />}
             {state.alternativeChapters && <Modal title="选择阅读章节" busy={!!state.switching} onClose={() => handlers.onCancelAlternative?.()}><div className="alternative-preview source-modal-content"><h4>{state.alternativeTitle}</h4><label>切换后阅读的章节<select value={state.alternativeChapter ?? ''} disabled={state.switching === true} onChange={event => handlers.onAlternativeChapter?.(event.currentTarget.value)}>
-              <option value="">请选择章节</option>{state.alternativeChapters.map(chapter => <option value={chapter.id}>{chapter.title}</option>)}
+              <option key="empty" value="">请选择章节</option>{state.alternativeChapters.map(chapter => <option key={chapter.id} value={chapter.id}>{chapter.title}</option>)}
             </select></label>
               {state.alternativeLatest && <p>最新章节：{state.alternativeLatest}</p>}
               <Button disabled={state.switching || state.alternativeQualityBusy || !state.alternativeChapter} onClick={() => handlers.onCheckAlternative?.()}>{state.alternativeQualityBusy ? '正在检测正文…' : '检测所选章节 / 重试'}</Button>
@@ -352,7 +352,7 @@ export function ReaderChrome({ state, stage, handlers, tools }: ReaderChromeProp
  * Puts the stage in the tree without owning it.
  *
  * `dangerouslySetInnerHTML` is the wrong tool here — it would replace the node
- * Preact renders rather than keep this one. A ref callback that appends the
+ * React renders rather than keep this one. A ref callback that appends the
  * element the screen kept across renders is the honest version: the tree decides
  * *where* the stage sits (between the status line and the footer, which is where
  * its stacking context comes from) and the screen owns its contents.
@@ -401,9 +401,9 @@ function Panel({
   title: string;
   placement?: 'start' | 'end';
   subtitle?: string;
-  actions?: ComponentChildren;
+  actions?: ReactNode;
   onClose(): void;
-  children: ComponentChildren;
+  children: ReactNode;
 }): JSX.Element {
   const panel = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -776,7 +776,7 @@ function SpeechBar({ state, handlers }: { state: SpeechBarState; handlers: Chrom
         <IconButton
           label="停止朗读"
           icon="stop"
-          class="tts-stop"
+          className="tts-stop"
           onClick={handlers.onStopSpeech}
         />
       </div>

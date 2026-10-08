@@ -71,7 +71,7 @@ npm run build --prefix web
 
 Web tests use both Vitest and Node's test runner. UI reviews use real Chromium; prepare it as described above. Historical test counts are not a substitute for current results.
 
-For UI changes, run `npm run ui:review --prefix web`; source workflows have `npm run ui:sources --prefix web`. See [UI review (中文)](ui-review/README.md) for tooling and requirements. Reviews generate screenshots and reports; screenshots are ignored by Git by default.
+For UI changes, run `npm run ui:review --prefix web`; source workflows have `npm run ui:sources --prefix web`. The review scripts live under `web/tools/ui-review/` and write screenshots and reports to the Git-ignored `artifacts/ui-review/` directory. Do not commit one-off screenshots under `docs/`.
 
 ## Build and run
 
@@ -113,14 +113,14 @@ Use `gradlew.bat` from a native Windows terminal. The output is `android/app/bui
 | `server/src/indexer` | File formats, scanning, identity, and metadata |
 | `server/src/services`, `http` | Business services, API, authentication, and resources |
 | `server/src/media` | Media catalog, scans, metadata, and playback |
-| `web/src/media` | Media pages, routes, themes, and players |
+| `web/src/features/media` | Media pages, components, services, themes, and players |
 | `server/src/sources` | Local library and OPDS integration |
 | `web/src/formats` | EPUB, TXT, comics, and other format handling |
-| `web/src/ui`, `styles` | Preact UI, reading stage, and styles |
+| `web/src/ui`, `styles` | Shared interactions, imperative reading stage, and reader styles |
 | `web/src/core`, `store` | Platform capabilities, synchronization, and offline storage |
 | `android/app/src/main/java/cool/cnb/reader` | Android Activity, WebView, native image and speech bridges |
 
-Preact manages UI state; the reading stage handles content layout and measurement. Shadow DOM isolates book styles, and icons use Lucide SVG. Both the server and Android consume the Web build. See [architecture (中文)](architecture.md) and [UI guidelines (中文)](ui.md) for details.
+The application UI uses React 19 and React Router. React Query owns server data and Zustand owns shared client state; the imperative reading stage handles book layout and measurement. Mantine provides base interaction components, Lucide React provides icons, and Shadow DOM isolates book styles. Both the server and Android consume the Web build. See [architecture (中文)](architecture.md) and [UI guidelines (中文)](ui.md) for details.
 
 ## Contributing workflow
 

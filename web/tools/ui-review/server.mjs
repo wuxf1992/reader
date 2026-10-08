@@ -709,6 +709,12 @@ export function createReviewServer({ port = 5199 } = {}) {
      * against a missing endpoint is a screenshot of an error line — which is a real
      * defect in a review harness (it certifies a screen nobody has seen).
      */
+    if (path === '/api/v1/library/facets') {
+      return json(reply, { authors: [AUTHOR], series: [], tags: [], formats: ['txt', 'epub'] });
+    }
+    if (/^\/api\/v1\/books\/[^/]+\/reading-overrides$/.test(path)) {
+      return json(reply, { version: 0, corrections: [], headingPrefix: '' });
+    }
     if (path === '/api/v1/library/browse') {
       const dir = url.searchParams.get('path') ?? '';
       const page = Number.parseInt(url.searchParams.get('page') ?? '1', 10) || 1;
@@ -973,7 +979,11 @@ export function createReviewServer({ port = 5199 } = {}) {
   return {
     server,
     seen,
-    listen: () => new Promise((resolve) => server.listen(port, '127.0.0.1', () => resolve(`http://127.0.0.1:${port}`))),
+    listen: () => new Promise((resolve) => server.listen(port, '127.0.0.1', () => {
+      const address = server.address();
+      const actualPort = address && typeof address === 'object' ? address.port : port;
+      resolve(`http://127.0.0.1:${actualPort}`);
+    })),
     close: () => new Promise((resolve) => server.close(resolve)),
   };
 }

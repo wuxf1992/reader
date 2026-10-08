@@ -20,7 +20,11 @@ try {
     try {
       const page = await browser.newPage({ viewport: { width: 390, height: 844 }, serviceWorkers: 'block' });
       const errors = [];
-      page.on('pageerror', error => errors.push(error.message));
+      let reloading = false, cancelledSyncOnReload = 0;
+      page.on('pageerror', error => {
+        if (reloading && error.message.includes('/api/v1/sync due to access control checks.')) { cancelledSyncOnReload++; return; }
+        errors.push(error.message);
+      });
       await page.route('https://wuxf.top/**', route => route.abort());
       await page.goto(origin);
       await page.getByText('更换服务地址', { exact: true }).click();
@@ -36,17 +40,19 @@ try {
         for (const [id, , paper, surface, accent, scheme, opposite] of themes) {
           await page.getByRole('button', { name: '界面', exact: true }).click();
           assert.ok(await page.locator('.panel-body .section-title').evaluateAll(headings => headings.every(heading => getComputedStyle(heading).position === 'static')), 'settings headings scroll with their content');
-          const movement = await page.locator('.panel-body').evaluate(body => {
+          const movement = await page.locator('.panel-body').evaluate(async body => {
             const title = body.querySelector('.section-title');
             body.scrollTop = 0;
+            await new Promise(requestAnimationFrame);
             const top = title.getBoundingClientRect().top;
             body.scrollTop = 100;
+            await new Promise(requestAnimationFrame);
             const delta = top - title.getBoundingClientRect().top;
             const scroll = body.scrollTop;
             body.scrollTop = 0;
             return { delta, scroll };
           });
-          assert.ok(Math.abs(movement.delta - movement.scroll) < 1, 'heading must move by the scroll distance');
+          assert.ok(Math.abs(movement.delta - movement.scroll) < 1, `heading must move by the scroll distance: ${engineName} ${width} ${id} ${JSON.stringify(movement)}`);
           const family = id.startsWith('wechat-') ? '微信阅读' : '厚墨';
           const group = page.getByRole('group', { name: family, exact: true });
           assert.equal(await group.locator('button').count(), 2);
@@ -80,8 +86,11 @@ try {
             });
             await page.screenshot({ path: `${output}/${engineName}-${id}.png` });
           }
+          await page.evaluate(async () => { await window.__readerFlush?.(); });
+          reloading = true;
           await page.reload();
           await page.locator('.book-host').waitFor();
+          reloading = false;
           assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), id);
           const rail = page.locator('.reader-rail .rail-button');
           assert.deepEqual(await rail.evaluate(button => { const css = getComputedStyle(button); return { border: css.borderTopWidth, background: css.backgroundColor, shadow: css.boxShadow, width: button.getBoundingClientRect().width }; }), { border: '0px', background: 'rgba(0, 0, 0, 0)', shadow: 'none', width: 48 });
@@ -98,7 +107,7 @@ try {
       const resizeWarnings = errors.filter(error => error === 'ResizeObserver loop completed with undelivered notifications.');
       assert.ok(resizeWarnings.length <= 1);
       assert.deepEqual(errors.filter(error => !resizeWarnings.includes(error)), []);
-      console.log(engineName, { resizeWarnings: resizeWarnings.length });
+      console.log(engineName, { resizeWarnings: resizeWarnings.length, cancelledSyncOnReload });
     } finally { await browser.close(); }
   }
   await writeFile(`${output}/results.json`, JSON.stringify(reports, null, 2) + '\n');

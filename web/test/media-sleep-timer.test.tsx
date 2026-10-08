@@ -1,9 +1,10 @@
+import { render } from '../src/shared/ui/render-root.ts';
 // @vitest-environment jsdom
 import {afterEach,expect,it,vi} from 'vitest';
-import {act} from 'preact/test-utils';
-import {render} from '../src/ui/vendor/preact.ts';
-import {SleepTimerOptions} from '../src/media/sleep-timer.tsx';
-import type {MediaPlayer} from '../src/media/player.ts';
+import {act} from 'react';
+
+import {SleepTimerOptions} from '../src/features/media/components/sleep-timer.tsx';
+import type {MediaPlayer} from '../src/features/media/services/player.ts';
 const root=document.createElement('div');document.body.append(root);
 afterEach(()=>act(()=>render(null,root)));
 it('sets and clears the active player timer through touch-sized presets',()=>{

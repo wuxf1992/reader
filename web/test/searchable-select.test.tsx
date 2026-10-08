@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest';
-import { act } from 'preact/test-utils';
-import { render } from '../src/ui/vendor/preact.ts';
+import { act } from 'react';
+import { render } from '../src/shared/ui/render-root.ts';
 import { SearchableSelect } from '../src/ui/searchable-select.tsx';
 
 const root = document.createElement('div'); document.body.append(root);

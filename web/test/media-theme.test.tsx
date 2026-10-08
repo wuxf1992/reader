@@ -1,9 +1,10 @@
+import { render } from '../src/shared/ui/render-root.ts';
 // @vitest-environment jsdom
 import {afterEach,expect,it,vi} from 'vitest';
-import {act} from 'preact/test-utils';
-import {render} from '../src/ui/vendor/preact.ts';
-import {MediaThemeController,readMediaTheme,saveMediaTheme} from '../src/media/theme.ts';
-import {MediaThemeSettings} from '../src/media/theme-settings.tsx';
+import {act} from 'react';
+
+import {MediaThemeController,readMediaTheme,saveMediaTheme} from '../src/features/media/services/theme.ts';
+import {MediaThemeSettings} from '../src/features/media/components/theme-settings.tsx';
 const root=document.createElement('div');document.body.append(root);
 afterEach(()=>{act(()=>render(null,root));localStorage.clear();vi.restoreAllMocks();vi.unstubAllGlobals();document.body.removeAttribute('data-media-theme');document.body.removeAttribute('style');});
 it('keeps theme choices separate by server/account and handles old or invalid storage',()=>{

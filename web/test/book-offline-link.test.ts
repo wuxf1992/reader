@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { App } from '../src/app.ts';
+import { resolveReaderBook } from '../src/features/reader/resolve-book.ts';
 import { OfflineStore } from '../src/store/offline.ts';
 import type { Book } from '../src/api/types.ts';
 
@@ -12,7 +12,7 @@ function storage() {
     remove: async (key: string) => { rows.delete(key); } };
 }
 async function resolve(offline: OfflineStore, getBook: () => Promise<{ book: Book }>) {
-  return Reflect.apply(App.prototype['resolveBook'], { offline, api: { getBook }, handleSignedOut: vi.fn() }, [book.id]);
+  try { return await resolveReaderBook({ getBook: async () => ({ ...await getBook(), progress: null }) }, offline, book.id); } catch { return null; }
 }
 describe('book links survive offline reopening', () => {
   it('persists a directly opened book and resolves it after a fresh offline load', async () => {

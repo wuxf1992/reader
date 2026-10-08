@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest';
-import { render } from 'preact';
-import { act } from 'preact/test-utils';
+import { render } from '../src/shared/ui/render-root.ts';
+import { act } from 'react';
 import { Modal } from '../src/ui/modal.tsx';
 
 const root = document.createElement('div');

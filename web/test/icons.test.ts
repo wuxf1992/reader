@@ -1,3 +1,5 @@
+import { createElement } from 'react';
+import { render } from '../src/shared/ui/render-root.ts';
 // @vitest-environment jsdom
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -7,7 +9,7 @@ import { GLYPHS } from '../tools/icons/paths.mjs';
 import { pathToSubpaths } from '../tools/icons/path.mjs';
 import { Icon } from '../src/ui/icon.tsx';
 import { IconButton } from '../src/ui/toolkit.tsx';
-import { render } from '../src/ui/vendor/preact.ts';
+
 
 /**
  * The icon set's contract with the font.
@@ -387,8 +389,6 @@ describe('the stylesheet', () => {
     // builds its own markup is where that gets forgotten.
     const sources = [
       'toolkit.tsx',
-      'shelf-screen.tsx',
-      'library-screen.tsx',
       'reader-chrome.tsx',
       'shelf-settings.tsx',
       'dialog.tsx',
@@ -408,7 +408,7 @@ describe('the stylesheet', () => {
 describe('icon buttons', () => {
   it('carries the label as the accessible name and hides the glyph', () => {
     const host = document.createElement('div');
-    render(IconButton({ label: '目录', icon: 'menu' }), host);
+    render(createElement(IconButton, { label: '目录', icon: 'menu' }), host);
     const button = host.querySelector('button')!;
     // The name must be on the *button*: a glyph inside an aria-labelled button is
     // read by some screen readers as well, which is why the glyph is aria-hidden.
@@ -420,7 +420,7 @@ describe('icon buttons', () => {
 
   it('draws every icon button from the icon set rather than from text', () => {
     const host = document.createElement('div');
-    render(IconButton({ label: '关闭', icon: 'close' }), host);
+    render(createElement(IconButton, { label: '关闭', icon: 'close' }), host);
     // A regression here is the whole point of the change: the old button took
     // arbitrary children, and Unicode punctuation is what it was given.
     expect(host.querySelector('.icon')).not.toBeNull();

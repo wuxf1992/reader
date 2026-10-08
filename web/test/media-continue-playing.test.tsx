@@ -1,9 +1,10 @@
+import { render } from '../src/shared/ui/render-root.ts';
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest';
-import { act } from 'preact/test-utils';
-import { render } from '../src/ui/vendor/preact.ts';
-import { ContinuePlaying } from '../src/media/continue-playing.tsx';
-import type { MediaApi } from '../src/media/api.ts';
+import { act } from 'react';
+
+import { ContinuePlaying } from '../src/features/media/components/continue-playing.tsx';
+import type { MediaApi } from '../src/features/media/api/media-api.ts';
 const root=document.createElement('div');document.body.append(root);
 afterEach(()=>act(()=>render(null,root)));
 const row={libraryId:'books',itemId:'book',partId:'chapter2',title:'长篇作品',partTitle:'第二章',start:30,end:90,position:45,completed:0,available:1};

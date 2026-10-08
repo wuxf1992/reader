@@ -1,8 +1,9 @@
+import { render } from '../src/shared/ui/render-root.ts';
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest';
-import { act } from 'preact/test-utils';
-import { render } from '../src/ui/vendor/preact.ts';
-import { ScanJobs } from '../src/media/scan-jobs.tsx';
+import { act } from 'react';
+
+import { ScanJobs } from '../src/features/media/components/scan-jobs.tsx';
 const root=document.createElement('div');document.body.append(root);
 afterEach(()=>act(()=>render(null,root)));
 it('shows live phase timing and retains expanded diagnostics when polling updates a job',()=>{

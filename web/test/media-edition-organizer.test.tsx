@@ -1,9 +1,10 @@
+import { render } from '../src/shared/ui/render-root.ts';
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest';
-import { act } from 'preact/test-utils';
-import { render } from '../src/ui/vendor/preact.ts';
-import { EditionOrganizer } from '../src/media/edition-organizer.tsx';
-import type { Detail, Edition, MediaApi } from '../src/media/api.ts';
+import { act } from 'react';
+
+import { EditionOrganizer } from '../src/features/media/components/edition-organizer.tsx';
+import type { Detail, Edition, MediaApi } from '../src/features/media/api/media-api.ts';
 const root=document.createElement('div');document.body.append(root);
 const source:Edition={id:'source',revision:'source-revision',label:'原版',parts:[0,1,2].map(i=>({id:String(i),assetId:i<2?'file-a':'file-b',title:'章节'+i,start:i,end:i+1,available:true}))};
 const target:Edition={id:'target',revision:'target-revision',label:'保留版',parts:[]};

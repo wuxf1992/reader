@@ -1,12 +1,13 @@
+import { render } from '../src/shared/ui/render-root.ts';
 // @vitest-environment jsdom
 import {afterEach,expect,it,vi} from 'vitest';
-import {act} from 'preact/test-utils';
-import {render} from '../src/ui/vendor/preact.ts';
-import {VideoControls} from '../src/media/video-controls.tsx';
-import {PlaybackProblem} from '../src/media/playback-problem.tsx';
+import {act} from 'react';
+
+import {VideoControls} from '../src/features/media/components/video-controls.tsx';
+import {PlaybackProblem} from '../src/features/media/components/playback-problem.tsx';
 import {ApiError} from '../src/api/errors.ts';
-import type {MediaApi,Detail} from '../src/media/api.ts';
-import type {MediaPlayer} from '../src/media/player.ts';
+import type {MediaApi,Detail} from '../src/features/media/api/media-api.ts';
+import type {MediaPlayer} from '../src/features/media/services/player.ts';
 const root=document.createElement('div');document.body.append(root);
 afterEach(()=>act(()=>render(null,root)));
 const player=()=>({currentItemId:'film',currentPlaylist:[],mountVideoTimeline:()=>()=>{},play:vi.fn()} as unknown as MediaPlayer);

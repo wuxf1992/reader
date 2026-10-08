@@ -1,9 +1,10 @@
+import { render } from '../src/shared/ui/render-root.ts';
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest';
-import { act } from 'preact/test-utils';
-import { render } from '../src/ui/vendor/preact.ts';
-import { MetadataEditor } from '../src/media/metadata-editor.tsx';
-import type { Detail, MediaApi } from '../src/media/api.ts';
+import { act } from 'react';
+
+import { MetadataEditor } from '../src/features/media/components/metadata-editor.tsx';
+import type { Detail, MediaApi } from '../src/features/media/api/media-api.ts';
 const root=document.createElement('div');document.body.append(root);
 afterEach(()=>act(()=>render(null,root)));
 const item:Detail={id:'book',libraryId:'lib',kind:'audiobook',title:'原题',parentId:null,metadata:{title:'本地标题',year:2024,author:'原作者'},overrides:{title:'原题'},editions:[],children:[]};

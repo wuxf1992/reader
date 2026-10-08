@@ -1,9 +1,10 @@
+import { render } from '../src/shared/ui/render-root.ts';
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest';
-import { act } from 'preact/test-utils';
-import { render } from '../src/ui/vendor/preact.ts';
-import { MediaLibraryEditor } from '../src/media/library-editor.tsx';
-import type { Library, MediaApi } from '../src/media/api.ts';
+import { act } from 'react';
+
+import { MediaLibraryEditor } from '../src/features/media/components/library-editor.tsx';
+import type { Library, MediaApi } from '../src/features/media/api/media-api.ts';
 
 const root = document.createElement('div'); document.body.append(root);
 const library: Library = { id: 'lib', name: '音乐', kind: 'music', access: 'restricted' };

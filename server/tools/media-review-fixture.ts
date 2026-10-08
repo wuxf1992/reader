@@ -1,6 +1,6 @@
 /** Disposable HTTP fixture: real routes/database; only the remote metadata provider is synthetic. */
 import Fastify from 'fastify';
-import { mkdtemp, mkdir, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { Db } from '../src/db/index.ts';
@@ -17,12 +17,15 @@ import {MediaScanner} from '../src/media/scanner.ts';
 
 const root=await mkdtemp(join(tmpdir(),'media-review-'));
 await mkdir(join(root,'books'));
+const playableFixture=await readFile(resolve('server/tools/fixtures/media-review.mp4'));
+await writeFile(join(root,'review-film.mp4'), playableFixture);
 process.env.BOOKS_DIR=join(root,'books');process.env.DATA_DIR=join(root,'data');
 process.env.WEB_DIR=resolve('web/dist');process.env.READER_TOKEN_SECRET='review-fixture-only';
 const config=loadConfig(),db=new Db(':memory:'),app=Fastify({logger:false});
 const users=new UserService(db,config);
 await users.create({username:'reviewer',password:'review-test-pass'});
-if(process.env.MEDIA_REVIEW_MEMBER==='1')await users.create({username:'review-member',password:'review-test-pass',displayName:'林间',role:'member'});
+let reviewMemberId='';
+if(process.env.MEDIA_REVIEW_MEMBER==='1')reviewMemberId=(await users.create({username:'review-member',password:'review-test-pass',displayName:'林间',role:'member'})).id;
 const ctx={config,db,users} as AppContext;
 registerErrorHandler(app);registerAuthRoutes(app,ctx);
 registerMediaRoutes(app,ctx,{metadataProviders:process.env.MEDIA_REVIEW_LIVE_TMDB==='1'?[new TmdbProvider(new MetadataHttp())]:process.env.MEDIA_REVIEW_LIVE_MUSICBRAINZ==='1'?[new MusicBrainzProvider(new MetadataHttp())]:[{
@@ -33,7 +36,16 @@ registerMediaRoutes(app,ctx,{metadataProviders:process.env.MEDIA_REVIEW_LIVE_TMD
 registerWebRoutes(app,ctx);
 db.run("INSERT INTO media_libraries(id,name,kind,root,access,created_at,updated_at) VALUES('review-lib','候选审阅测试库','video',?,'all',0,0)",root);
 db.run("INSERT INTO media_items(id,library_id,kind,local_key,title,metadata_json) VALUES('review-film','review-lib','movie','film','本地电影','{}')");
+// A playable disposable part keeps the browser review on the real playback path
+// (detail -> POST /playback -> player) instead of requiring a production asset.
+db.run("INSERT INTO media_assets(id,library_id,ref,size,modified_at,available,probe_status) VALUES('review-film-asset','review-lib','review-film.mp4',?,0,1,'ready')",playableFixture.length);
+db.run("INSERT INTO media_editions(id,item_id,local_key,label) VALUES('review-film-edition','review-film','review-film','测试版本')");
+db.run("INSERT INTO media_parts(id,edition_id,asset_id,local_key,title,ordinal,start_seconds,end_seconds) VALUES('review-film-part','review-film-edition','review-film-asset','file','正片',0,0,2)");
 db.run("INSERT INTO media_metadata_overrides(item_id,field,value_json,updated_at) VALUES('review-film','title',?,0)",JSON.stringify('人工保留标题'));
+// Keep one playable video in the recent-history feed so the browse page can
+// exercise the production "continue playing" card.  The larger favorite set
+// below intentionally uses unavailable assets for history/pagination coverage.
+db.run("INSERT INTO media_progress(user_id,part_id,position,completed,revision,session_id,updated_at) VALUES((SELECT id FROM users WHERE username='reviewer'),'review-film-part',1,0,1,'fixture',1735787044000)");
 db.run("INSERT INTO media_items(id,library_id,kind,local_key,title,metadata_json) VALUES('long-film','review-lib','movie','long-film',?,'{}')",'LongUnbrokenMovieTitle'.repeat(8));
 db.run("INSERT INTO media_editions(id,item_id,local_key,label) VALUES('long-edition','long-film','long',?)",'LongUnbrokenEditionName'.repeat(8));
 db.run(`WITH RECURSIVE seq(n) AS(SELECT 1 UNION ALL SELECT n+1 FROM seq WHERE n<65)
@@ -43,12 +55,26 @@ db.run("UPDATE media_items SET ordinal=-1 WHERE id='review-film'");
 db.run("INSERT INTO media_assets(id,library_id,ref,size,modified_at,available,probe_status) SELECT id,library_id,id,1,0,0,'ready' FROM media_items WHERE id LIKE 'favorite-%'");
 db.run("INSERT INTO media_editions(id,item_id,local_key,label) SELECT id,id,id,'历史版本' FROM media_items WHERE id LIKE 'favorite-%'");
 db.run("INSERT INTO media_parts(id,edition_id,asset_id,local_key,title,ordinal) SELECT id,id,id,id,'历史章节',0 FROM media_items WHERE id LIKE 'favorite-%'");
-db.run("INSERT INTO media_progress(user_id,part_id,position,revision,session_id,updated_at) SELECT u.id,i.id,5,1,'fixture',0 FROM users u CROSS JOIN media_items i WHERE u.username='reviewer' AND i.id LIKE 'favorite-%'");
+// Keep history deterministic while exercising date grouping and position labels.
+// 2025-01-02 03:04:05 UTC renders as 2025年1月2日 in the review browser.
+db.run("INSERT INTO media_progress(user_id,part_id,position,revision,session_id,updated_at) SELECT u.id,i.id,5,1,'fixture',1735787045000 FROM users u CROSS JOIN media_items i WHERE u.username='reviewer' AND i.id LIKE 'favorite-%'");
 db.run("INSERT INTO media_libraries(id,name,kind,root,access,created_at,updated_at) VALUES('track-lib','曲目长列表测试库','music',?,'all',0,0)",root);
 db.run("INSERT INTO media_libraries(id,name,kind,root,access,created_at,updated_at) VALUES('track-empty-lib','空音乐测试库','music',?,'all',0,0)",root);
 db.run(`WITH RECURSIVE seq(n) AS(SELECT 1 UNION ALL SELECT n+1 FROM seq WHERE n<65)
   INSERT INTO media_items(id,library_id,kind,local_key,title,ordinal,metadata_json) SELECT printf('track-%03d',n),'track-lib','track',printf('track-%03d',n),printf('曲目%03d',n),n,'{"artist":"测试艺人"}' FROM seq`);
 db.run("UPDATE media_items SET title=?,metadata_json=? WHERE id='track-003'",'UnbrokenTrackTitle'.repeat(10),JSON.stringify({artist:'UnbrokenArtistName'.repeat(10),album:'独立专辑'}));
+// Give a few music tracks real catalog parts so the queue review covers a
+// mixed video + music queue through the production API.
+db.run("INSERT INTO media_assets(id,library_id,ref,size,modified_at,available,probe_status) SELECT id||'-asset','track-lib',id||'.mp3',1,0,1,'ready' FROM media_items WHERE id IN ('track-001','track-002','track-003')");
+db.run("INSERT INTO media_editions(id,item_id,local_key,label) SELECT id||'-edition',id,id,'测试音频版本' FROM media_items WHERE id IN ('track-001','track-002','track-003')");
+db.run("INSERT INTO media_parts(id,edition_id,asset_id,local_key,title,ordinal,start_seconds,end_seconds) SELECT id||'-part',id||'-edition',id||'-asset','file','第1首',0,0,180 FROM media_items WHERE id IN ('track-001','track-002','track-003')");
+db.run(`INSERT INTO media_progress(user_id,part_id,position,completed,revision,session_id,updated_at) VALUES
+  ((SELECT id FROM users WHERE username='reviewer'),'track-001-part',42,0,1,'fixture',1735873445000),
+  ((SELECT id FROM users WHERE username='reviewer'),'track-002-part',180,1,1,'fixture',1735959845000)`);
+db.run(`INSERT INTO media_queue(id,user_id,part_id,ordinal,created_at) VALUES
+  ('queue-video',(SELECT id FROM users WHERE username='reviewer'),'review-film-part',0,1735787045000),
+  ('queue-music-001',(SELECT id FROM users WHERE username='reviewer'),'track-001-part',1,1735787045000),
+  ('queue-music-002',(SELECT id FROM users WHERE username='reviewer'),'track-002-part',2,1735787045000)`);
 if(process.env.MEDIA_REVIEW_LIVE_MUSICBRAINZ==='1'){
   db.run("INSERT INTO media_items(id,library_id,kind,local_key,title,metadata_json) VALUES('live-album','track-lib','album','live-album','Abbey Road',?)",JSON.stringify({artist:'The Beatles'}));
   db.run("INSERT INTO media_items(id,library_id,kind,local_key,title,metadata_json) VALUES('live-track','track-lib','track','live-track','Yesterday',?)",JSON.stringify({artist:'The Beatles'}));
@@ -67,7 +93,7 @@ if(process.env.MEDIA_REVIEW_SAMPLE_PACK){
   }finally{await scanner.close();}
 }
 const baseUrl=await app.listen({host:'127.0.0.1',port:0});
-process.stdout.write(JSON.stringify({baseUrl,sampleItems})+'\n');
+process.stdout.write(JSON.stringify({baseUrl,reviewRoot:root,reviewMemberId,users:users.list(),sampleItems})+'\n');
 let closing=false;
 async function close(){if(closing)return;closing=true;await app.close();db.close();await rm(root,{recursive:true,force:true});process.exit(0);}
 process.stdin.resume();process.stdin.once('data',()=>void close());process.stdin.once('end',()=>void close());

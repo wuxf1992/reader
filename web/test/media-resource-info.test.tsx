@@ -1,9 +1,10 @@
+import { render } from '../src/shared/ui/render-root.ts';
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest';
-import { act } from 'preact/test-utils';
-import { render } from '../src/ui/vendor/preact.ts';
-import { ResourceInfo } from '../src/media/resource-info.tsx';
-import type { MediaApi } from '../src/media/api.ts';
+import { act } from 'react';
+
+import { ResourceInfo } from '../src/features/media/components/resource-info.tsx';
+import type { MediaApi } from '../src/features/media/api/media-api.ts';
 const root=document.createElement('div');document.body.append(root);
 afterEach(()=>act(()=>render(null,root)));
 it('loads only when expanded and ignores a response after closing',async()=>{

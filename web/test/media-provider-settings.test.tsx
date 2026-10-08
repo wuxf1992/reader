@@ -1,9 +1,10 @@
+import { render } from '../src/shared/ui/render-root.ts';
 // @vitest-environment jsdom
 import {afterEach,expect,it,vi} from 'vitest';
-import {act} from 'preact/test-utils';
-import {render} from '../src/ui/vendor/preact.ts';
-import {MediaProviderSettings} from '../src/media/provider-settings.tsx';
-import type {MediaApi} from '../src/media/api.ts';
+import {act} from 'react';
+
+import {MediaProviderSettings} from '../src/features/media/components/provider-settings.tsx';
+import type {MediaApi} from '../src/features/media/api/media-api.ts';
 const root=document.createElement('div');document.body.append(root);
 afterEach(()=>act(()=>render(null,root)));
 it('retries source status and shows only capabilities reported by the server',async()=>{

@@ -1,9 +1,10 @@
+import { render } from '../src/shared/ui/render-root.ts';
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest';
-import { act } from 'preact/test-utils';
-import { render } from '../src/ui/vendor/preact.ts';
-import { MediaLibraryList, type LibraryListPosition } from '../src/media/library-list.tsx';
-import type { Library, MediaApi } from '../src/media/api.ts';
+import { act } from 'react';
+
+import { MediaLibraryList, type LibraryListPosition } from '../src/features/media/components/library-list.tsx';
+import type { Library, MediaApi } from '../src/features/media/api/media-api.ts';
 
 const root=document.createElement('div');document.body.append(root);
 afterEach(()=>act(()=>render(null,root)));

@@ -1,8 +1,9 @@
+import { render } from '../src/shared/ui/render-root.ts';
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest';
-import { act } from 'preact/test-utils';
-import { render } from '../src/ui/vendor/preact.ts';
-import { SavedQueue, type SavedQueueEntry } from '../src/media/saved-queue.tsx';
+import { act } from 'react';
+
+import { SavedQueue, type SavedQueueEntry } from '../src/features/media/components/saved-queue.tsx';
 const root=document.createElement('div');document.body.append(root);
 afterEach(()=>act(()=>render(null,root)));
 const button=(name:string)=>root.querySelector<HTMLButtonElement>(`button[aria-label="${name}"]`)!;

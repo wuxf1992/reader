@@ -297,7 +297,7 @@ describe('BookShadowHost', () => {
     // bars inset it, and the reader's page margin is a property of the column. A
     // column wider than its page makes the stride arithmetic walk positions that are
     // not page boundaries, and the last column of every chapter becomes unreachable.
-    const pagedRule = /:host\(\[data-paginated='true'\]\) .book-flow \{[^}]*\}/.exec(sheet)?.[0] ?? '';
+    const pagedRule = /:host\(\[data-paginated='true'\]\[data-page-layout='columns'\]\) .book-flow \{[^}]*\}/.exec(sheet)?.[0] ?? '';
     expect(pagedRule).toContain('column-width: 100%');
     expect(pagedRule).not.toContain('100vw');
   });
@@ -310,7 +310,7 @@ describe('BookShadowHost', () => {
     // either: the text is *there*, it is simply in the wrong place.
     const host = createBookHost();
     const sheet = host.shadow.querySelector('style')?.textContent ?? '';
-    const paged = /:host\(\[data-paginated='true'\]\) .book-flow \{[^}]*\}/.exec(sheet)?.[0] ?? '';
+    const paged = /:host\(\[data-paginated='true'\]\[data-page-layout='columns'\]\) .book-flow \{[^}]*\}/.exec(sheet)?.[0] ?? '';
     expect(paged).toContain('padding-block: 0');
     expect(paged).not.toMatch(/padding:\s*0/);
   });
@@ -322,7 +322,7 @@ describe('BookShadowHost', () => {
     // and a page turn had nowhere to go.
     const host = createBookHost();
     const sheet = host.shadow.querySelector('style')?.textContent ?? '';
-    expect(sheet).toContain(":host([data-paginated='true']) .book-flow");
+    expect(sheet).toContain(":host([data-paginated='true'][data-page-layout='columns']) .book-flow");
     // The page-turn selector carries the *axis* as well as the style and direction:
     // a paged turn is horizontal and a scroll-mode turn is vertical, and the axis
     // has to come from the selector because the two modes share one host.
@@ -345,8 +345,8 @@ describe('BookShadowHost', () => {
     // selector for both would be the bug, whichever one it named.
     const host = createBookHost();
     const sheet = host.shadow.querySelector('style')?.textContent ?? '';
-    const paged = /:host\(\[data-animating\]\[data-paginated='true'\]\) \{[^}]*\}/.exec(sheet)?.[0] ?? '';
-    const scroll = /:host\(\[data-animating\]:not\(\[data-paginated='true'\]\)\) \.book-flow \{[^}]*\}/.exec(sheet)?.[0] ?? '';
+    const paged = /:host\(\[data-animating\]\[data-paginated='true'\]\[data-page-layout='columns'\]\) \{[^}]*\}/.exec(sheet)?.[0] ?? '';
+    const scroll = /:host\(\[data-animating\]:not\(\[data-paginated='true'\]\)\) \.book-flow,[^{]*\{[^}]*\}/.exec(sheet)?.[0] ?? '';
     expect(paged).toContain('overflow: clip');
     expect(scroll).toContain('overflow: clip');
     // And the old form — the clip unconditionally on the flow, which is the scroller in

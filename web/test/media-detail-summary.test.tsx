@@ -1,10 +1,11 @@
+import { render } from '../src/shared/ui/render-root.ts';
 // @vitest-environment jsdom
 import {afterEach,expect,it,vi} from 'vitest';
-import {act} from 'preact/test-utils';
-import {render} from '../src/ui/vendor/preact.ts';
-import {MediaDetailHeading} from '../src/media/detail-heading.tsx';
-import {EditionDetails} from '../src/media/edition-details.tsx';
-import type {Edition,Item,MediaApi} from '../src/media/api.ts';
+import {act} from 'react';
+
+import {MediaDetailHeading} from '../src/features/media/components/detail-heading.tsx';
+import {EditionDetails} from '../src/features/media/components/edition-details.tsx';
+import type {Edition,Item,MediaApi} from '../src/features/media/api/media-api.ts';
 
 const root=document.createElement('div');document.body.append(root);
 afterEach(()=>act(()=>render(null,root)));
@@ -17,6 +18,11 @@ it('shows known library, overridden credits and the selected edition duration wi
   expect(root.textContent).toContain('2 章');expect(root.textContent).toContain('1 小时 48 分');
   act(()=>render(<MediaDetailHeading item={item} edition={{...edition,parts:[{...edition.parts[0]!,end:null}]}}/>,root));
   expect(root.textContent).toContain('1 章');expect(root.textContent).not.toContain('小时');expect(root.textContent).not.toContain('0 秒');
+});
+
+it('does not render a zero duration for an empty edition',()=>{
+  act(()=>render(<MediaDetailHeading item={{...item,kind:'movie',title:'无资源电影'}} edition={{...edition,label:'空版本',parts:[]}}/>,root));
+  expect(root.textContent).not.toContain('0 秒');
 });
 
 it('offers explicit alternate-version and refresh actions for a wholly missing edition',()=>{

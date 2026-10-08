@@ -1,4 +1,4 @@
-import { useLayoutEffect, useState } from './vendor/preact.ts';
+import { useLayoutEffect, useState } from 'react';
 
 export function useDelayedBusy(busy: boolean): boolean {
   const [visible, setVisible] = useState(false);

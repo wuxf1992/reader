@@ -316,62 +316,42 @@ Readium 用 Readium CSS 主动接管排版、覆盖出版方样式，这与本�
 - 渲染层是 **WebView + 自研 CSS 干预策略**，保留作者样式、只做最小覆盖
 - 参考 readium-css 的变量组织方式，但**不引入它的默认接管行为**
 
-### UI 框架选型：Preact，而且只用在「没有布局要量测」的那一半
+### UI 框架：完整 React 应用
 
-界面原来是纯命令式 DOM：每个屏幕在构造函数里建好全部节点、把它们存成实例字段，
-再由若干 `render*()` 方法在状态变化时挑选该改哪个。它有两个具体的坏味道：
+前端由 React 19 负责应用页面和页面生命周期，入口是
+`web/src/main.tsx` 的 `createRoot()`。启动阶段先由
+`web/src/app/runtime.ts` 组装平台、API、同步、离线、播放器和设置资源，再由
+`AppProviders` 把它们注入 React 树：
 
-1. **同一份状态有多个副本。** 分段控件的选中态既在 `settings` 里也在
-   `aria-pressed` 上，两者靠点击处理器手工同步；`LoginScreen` 的通知、错误、
-   注册开关、按钮文案是四个节点被五个地方改。改一处漏一处不会报错。
-2. **重建与状态的矛盾。** 朗读引擎行必须在 HTTP 能力探测回来时重新生成，
-   而整块面板重建会丢掉读者在面板里的滚动位置，于是长出一套
-   「只替换 `[data-speech=group]`」的定点重建。
+- `react-router-dom` 的 `createHashRouter` 负责 Hash 路由、嵌套路由、参数、Outlet 和错误边界；
+- `@tanstack/react-query` 的 `QueryClientProvider` 负责服务端状态、缓存、加载、重试和失效；
+- Zustand stores 负责认证、设置、同步和播放器等跨页面客户端状态；
+- Mantine 提供基础组件、主题和通知，Lucide React 提供统一图标；
+- `RuntimeContext` 暴露 API、同步、播放、设置和平台能力，页面不自行组装这些依赖。
 
-选型的硬约束有三个，都来自「一份产物两个宿主」：
+业务按 `features/<domain>` 拆分，每个领域按实际需要拥有 `pages`、`components`、
+`queries`、`mutations`、`services` 和 `styles`。影音实现位于
+`web/src/features/media`；登录、书架、书库、书源、设置和阅读页面也通过各自
+feature 接入同一棵路由树。旧的 `web/src/media`、旧 Screen 页面、旧手写生产路由
+和 `mountUI` 已从生产入口移除。`web/src/app.ts` 与
+`app/legacy-compat.ts` 只保留 Android 诊断和旧测试需要的兼容形状，不负责页面调度。
 
-- **单文件 bundle、`base: './'`**：WebView 从 `https://appassets...` 加载，
-  不能按需拉分片，所以框架必须能被 tree-shake 进一个文件。
-- **体积**：这是要打进 APK、也要由 NAS 上的 Node 托管的资源。
-- **不认识的东西不能碰布局**：阅读舞台的分页依赖 `getBoundingClientRect()`，
-  虚拟 DOM 不能在它和布局之间。
-
-对比过的四个：
-
-| 方案 | gzip 净成本 | 结论 |
-| --- | --- | --- |
-| Preact + `preact/hooks` | 最小 | **选用**（无 `preact/compat`、无 `react-dom`，仅这两个模块） |
-| React + react-dom | ~45KB | 一个阅读器不该为 `react-dom` 付这个价钱 |
-| Vue 3 runtime | ~34KB | 需要 SFC 预编译或运行时模板编译，产物形状与单文件 bundle 相冲 |
-| 纯 Web Components / lit | ~5KB / ~7KB | 手写 `render()` 等于自建一个更窄的框架；lit 又把模板塞进字符串，失去类型检查 |
-
-**边界写在 `ReaderScreen` 里，而不是靠自觉**：舞台（`stage`）由类持有、
-交给 `ReaderView`，并通过一个 ref 回调挂进组件树；组件只决定它**放在哪**
-（状态行与页脚之间，stacking context 来自这里），内容一概不碰。于是：
-
-- 排版、分页、shadow root、手势、量测：**零框架**。
-- 顶栏、页脚进度、目录、设置面板、朗读条、状态行、书架、登录、书库：
-  `ChromeState` 的函数。
-
-副作用也是可见的：`settingsPanel` 那套「只重建朗读行」的定点更新没有了，
-探测答案回来时只是改状态，Preact 的 diff 让读者的滚动位置天然保住。
-
-组件只用了 `preact` 与 `preact/hooks`（`useState` / `useRef` / `useEffect`），
-没有引入 `@preact/signals` 之类的额外状态层——屏幕自己就是状态的持有者，
-`update()` 把整份状态交给树。少一个依赖，就少一处「值在哪」的歧义。
+React 组件只声明布局和状态，副作用放在 effect、query 或 service 中。这样登录、
+书架、书库、书源、设置和影音页面共享同一套生命周期语义，加载、错误、空状态和
+返回行为都能由路由与查询状态复现和测试。
 
 ### 路由：URL 就是屏幕
 
 界面的第二个结构性问题不是「怎么画」，而是「在哪」。最初的 shell 用
 `showShelf()` / `openBook()` / `showManager()` 加一个 `pendingBook` 字段来换屏，
 URL 从头到尾不变。手机上这一点几乎看不见——直到读者按返回键：Android 的返回手势
-交给 Activity，Activity 看到 WebView 没有历史，于是**直接从书架上退出应用**。
+交给 Activity，Activity 看到 WebView 没有历史，于是直接从书架上退出应用。
 浏览器上则更糟，地址栏是自托管书库唯一的分发方式，而它既不能分享也不能收藏：
 一本书链接不出去，刷新永远回到书架。
 
-所以路由是**值**，不是调用：`ui/router.ts` 把 fragment 解析成
-`{ name: 'shelf' } | { name: 'library', path } | { name: 'book', bookId }`，
-shell 渲染 router 报上来的那个 route，导航就是改 URL、让变化回流。
+所以路由是**值**，不是调用：`web/src/app/router/routes.tsx` 声明
+`RouteObject`，`createHashRouter()` 将 fragment 映射到嵌套 React 页面，导航就是
+改 URL、让变化回流。
 
 **为什么用 fragment 而不是 `history.pushState` 的路径。** 同一份产物要被两个宿主加载，
 而两个宿主都服务不了任意路径：Android 从 `https://appassets.androidplatform.net/`
@@ -380,79 +360,53 @@ shell 渲染 router 报上来的那个 route，导航就是改 URL、让变化�
 在两个生产宿主里 404。fragment 是 URL 里唯一保证属于客户端的一段，所以它是唯一
 三处都成立的方案——代价是一个 `#`。
 
-**返回走应用自己的轨迹，不是 `history.back()`。** 应用里的「返回」意思是「上一个屏幕」，
-而浏览器历史里可能有登录表单、`vite dev` 的页面、甚至别的站点。`Router` 自己维护一条
-屏幕轨迹，`back()` 从它上面弹；轨迹为空时（新标签页里粘贴的链接）就**替换**成父级路由，
-而不是压入——否则那个粘贴的链接会永远压在书架上，返回键会一次次把读者送回书里。
+**返回由 React Router 管理。** 页面使用 `Link`、`useNavigate` 和路由层的父级关系，
+不再由每个 Screen 自己维护一份 history。嵌套页面通过显式返回按钮回到父路由，浏览器
+的 Back/Forward 和刷新都能重建同一页面状态。
 
-**进入文件夹是 `replace`，不是 `push`。** 书库是一个带面包屑的屏幕，走进子目录是同一个
-屏幕改自己的参数，所以它覆写当前条目而不是新增。压栈的话，读者走过四个文件夹再按返回，
-会一个一个退出来——而面包屑存在的意义正是为了不用这样做。
+当前路由树的稳定入口包括：
 
-**书架和书库是两个路由，不是同一屏幕的两个标签。** `#/shelf` 与 `#/library/<路径>`。
-两者差的是数据源（`books` 表 vs 挂载目录），而这恰好是「标签」这种做工会同时坏掉的三件事：
-标签切换进同一段历史，于是 Back 变成「退回上一个标签」而不是离开屏幕；`#/library/科幻`
-是要能发给别人的链接，标签不产出链接；一个屏幕塞两个标题就得再占一行标签栏。
-两个路由共用一个 **切换控件**（书架右上是「书库」，书库左上是「书架」），而不是共用一个
-屏幕——控件是一步，轨迹是两条。
+| 路由 | 页面 |
+| --- | --- |
+| `#/shelf` | 书架 |
+| `#/library`、`#/library/books`、`#/library/files` | 书库浏览、书籍列表、文件管理 |
+| `#/sources` 及 `#/sources/...` | 书源中心、浏览、凭据、扩展和插件管理 |
+| `#/settings` | 兼容旧深链接，重定向到书架 |
+| `#/book/:bookId` | 阅读器 |
+| `#/media/:channel` | 影音频道目录 |
+| `#/media/:channel/items/:itemId` | 影音详情及管理子页 |
+| `#/media/:channel/player?item=&part=` | 播放器 |
+| `#/media/:channel/settings/...` | 影音设置及媒体库管理 |
 
-**页在 URL 里。** `#/shelf/3`、`#/library/科幻/2`。两个列表都分页，页是**位置**：
-没有它，「我读到第三屏了」只存在于一个滚动偏移里，重绘就没了，而 Back 无处可回。
-书架的 `page` 是自己的一段（`#/shelf/<页>`），书库的页是路径之后的**后缀**
-（`#/library/<路径>/<页>`）——把最后一段数字读成页只在一个前提下成立：只有
-`routeHash` 会写这种 URL。一个真的叫 `2` 的文件夹是 `#/library/2`（前面没有段），
-所以它仍然是文件夹。
+`/sources/search`、旧的 `/sources/:sourceId/:pageId` 扩展页形状和
+`/media`、`/media/music`、`/media/audiobook` 默认入口仍由路由表兼容；
+新页面应使用当前命名空间和嵌套路由。未知路径回到 `/media/video`。影音内部按频道、
+收藏、历史、队列、搜索、详情和管理功能拆成嵌套路由，分页、筛选和播放器参数放在
+路由参数或 query 中。
 
-**书库自己也是两半个，而它们是两条路由，不是标签。** `#/library/<路径>` 是
-**浏览页**（读者那一半：商城式布局、搜索框、封面网格），`#/library/files/<路径>` 是
-**文件管理页**（管理员那一半：文件行，且每一行控件都写磁盘）。URL 是
-`#/library[/files][/<路径>][/<页>][?q=<搜索>]`。
+Hash 路由适配 WebView 和静态服务器：宿主只需要返回同一个 `index.html`，客户端从
+`#` 后解析页面，不依赖服务端为每个深层路径配置回退规则。登录是认证边界而不是业务
+页面；未认证时由 `AuthBoundary` 显示登录表单，认证完成后 React Router 渲染目标地址。
 
-这一版**改了上一版**：上一版把两半做成一个屏幕的两个页签，理由是「标签进历史会让 Back
-走标签」。那条理由在下一层就不成立了——两半**不是同一份数据的两种读法**：一个问
-`books` 表（书名、封面），一个问挂载目录（文件名、大小、扫描标记），端点不同、
-一页条数不同、受众不同。共用一个头部会逼着两边都让步，而最大的代价是可达性：
-`#/library/科幻` 这条**能给别人的链接**离「能删书的那一页」只差一次页签点击。
-所以两半是两个路由，`files` 段只在紧跟路由之后那一格被读走——一个真叫 `files` 的
-文件夹是 `#/library/files/files`，仍然是文件夹。搜索是 `?q=`：自由文本、可以没有、
-并且落在路径之外，所以文件夹里叫什么都无所谓。
+### 阅读器与长生命周期资源
 
-其余的路由理由（页在 URL 里、哈希说不出来的从轨迹里带、屏幕不自己改页、登录不是路由）
-原封不动。`fromShelf` 那一条现在也决定了**哪一半**的 `back()` 是回书架还是退出应用。
+阅读器是唯一的特殊生命周期边界：`ReaderPage` 在 effect 中取得书籍后创建
+`ReaderScreen`，把它的 `screen.element` 放入 route host，并通过
+`runtime.registerReader()` 注册进度刷新回调。页面离开时先注销回调，再调用
+`screen.dispose()` 并清空 host。ReaderScreen 内部的章节加载、分页量测、手势、
+朗读和 Shadow DOM 仍是命令式 DOM；其 chrome 使用 React，`StageHost` 只负责把
+ReaderScreen 持有的舞台节点放到 chrome 树中的正确位置。React 不介入书籍正文的布局量测。
 
-**哈希说不出来的两件事，从轨迹里带。** `#/shelf` 对所有文件夹是同一条 URL，
-`#/library` 也说不清读者是怎么到这儿的。所以 `Router` 在解析当前哈希时会把上一次
-路由里的两件事带过来：书架的 `libraryPath` / `libraryPage`（切回来时回到原来那个
-文件夹和那一页），以及书库的 `fromShelf`（离开书库时是回书架还是退出应用）。
-这两件事都必须**由路由带**而不是由屏幕记：屏幕是 `replace` 遍历文件夹的，
-它记的是「进来的那个文件夹」，而读者已经走到别处了。
+播放器是应用级资源。AppProviders 把 `runtime.player.element` 挂到
+`document.body`，启动 `PlaybackService` 对 `MediaPlayer` 的监听。路由切换只卸载
+控制页面，不销毁播放会话；播放器发出 `open-controls` 时由 `AuthenticatedShell`
+导航到带 `item` 和 `part` 查询参数的播放器路由。Provider 卸载时停止监听并移除
+播放器节点，应用隐藏或离开时统一调用 runtime flush，重新联网时续期会话。
 
-**屏幕不自己改页。** 翻页是导航：分页器上报意图 → shell 写 URL → URL 回落到
-`showPage(page)`。这一趟往返就是页能活过 Back、Forward、刷新的全部原因。
-
-**登录不是路由。** 「登录页」是一个瞬时状态，给它一个 URL 等于给门一个门牌。真正需要
-活下来的东西是读者**本来要去的地方**，所以它存在 `App.pending` 里：带着 `#/book/<id>`
-进来而尚未登录时，这个 route 会等在登录页后面，登录完成后直接落到那本书上，
-而不是落到一个他从未见过的书架。
-
-各屏仍然是有 `element` 和 `dispose()` 的类——路由不认识框架，屏幕也不认识 hash。
-两者之间唯一的交汇点是 `RouteLocation`，屏幕通过它的 `back()` 请求离开。
-
-### `mountUI`：类与组件之间唯一的接缝
-
-屏幕仍然是类，仍然有 `element` 和 `dispose()`——路由不需要知道框架，
-`ReaderScreen` 这种以命令式为主的屏幕也不必假装自己不是。
-`mountUI(container, tree, initial)` 返回 `{ element, update, unmount }`，
-`update` 传入「整棵树应该是什么状态的函数」的那个值。测试保持原样：
-断言仍然打在真实 DOM 上（`test/manager.test.ts` 一行没改逻辑，只改了 import 后缀）。
-
-**unmount 之后的 update 会被丢弃，这一点是有意的。** 每个屏幕都是异步加载的，
-每个屏幕也都可能在加载完成前被离开——读者点开一本书又马上按返回，深链在书架还在取数据
-时就把它换掉了。`dispose()` 取消不掉一个已经在飞的 promise，所以那个延续会跑在一个
-已经不在屏幕上的屏幕上并调用 `patch()`。没有这道闸，它会往一个刚刚被 Preact 清空的容器
-里重新画**整棵树**：书架那条迟到的响应会把自己一整屏封面画进文件列表里，而之后的
-`render(null)` 也清不掉它们，因为在 Preact 看来它们从来不是自己的孩子。
-所以一个标志位就顶得上每个屏幕各写一个取消令牌，而且没法在哪一个屏幕里漏掉。
+影音主题只在 `MediaLayout` 挂载期间生效。它创建 `MediaThemeController`，作用域来自
+`runtime.mediaApi.preferenceScope()`，并只向 `body` 写入带 `--media-theme-` 前缀的
+变量；系统主题、同页主题事件和存储变化会更新该作用域。离开影音路由时清理变量和监听器，
+因此不会污染书架、设置或阅读器主题。
 
 ### 只有一份渲染层
 

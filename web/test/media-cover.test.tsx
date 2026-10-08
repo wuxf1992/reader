@@ -1,9 +1,10 @@
+import { render } from '../src/shared/ui/render-root.ts';
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { act } from 'preact/test-utils';
-import { render } from '../src/ui/vendor/preact.ts';
-import { MediaCover } from '../src/media/cover.tsx';
-import type { Item, MediaApi } from '../src/media/api.ts';
+import { act } from 'react';
+
+import { MediaCover } from '../src/features/media/components/cover.tsx';
+import type { Item, MediaApi } from '../src/features/media/api/media-api.ts';
 import { ApiError } from '../src/api/errors.ts';
 
 const host=document.createElement('div');document.body.append(host);

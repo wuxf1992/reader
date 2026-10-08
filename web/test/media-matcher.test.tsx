@@ -1,9 +1,10 @@
+import { render } from '../src/shared/ui/render-root.ts';
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { act } from 'preact/test-utils';
-import { render } from '../src/ui/vendor/preact.ts';
-import { MetadataMatcher } from '../src/media/metadata-matcher.tsx';
-import type { Detail, MediaApi } from '../src/media/api.ts';
+import { act } from 'react';
+
+import { MetadataMatcher } from '../src/features/media/components/metadata-matcher.tsx';
+import type { Detail, MediaApi } from '../src/features/media/api/media-api.ts';
 
 const root = document.createElement('div');
 document.body.append(root);
