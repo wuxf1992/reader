@@ -29,6 +29,7 @@
  * ------------------------------------------------------------------ */
 
 :root {
+  color-scheme: light;
   --reader-ink: #1a1a1a;
   --reader-paper: #fbfaf7;
   --reader-surface: #ffffff;
@@ -207,8 +208,23 @@
   );
 }
 
+html:is([data-theme='dark'], [data-theme='wechat-night'], [data-theme='houmo-night']) { color-scheme: dark; }
+:where(*) {
+  scrollbar-color: var(--reader-muted, #6b6b6b) transparent;
+  scrollbar-width: thin;
+}
+@supports not (scrollbar-color: auto) {
+  :where(*)::-webkit-scrollbar { width: 8px; height: 8px; }
+  :where(*)::-webkit-scrollbar-track { background: transparent; }
+  :where(*)::-webkit-scrollbar-thumb { background: var(--reader-muted, #6b6b6b); border-radius: 8px; }
+}
+@media (forced-colors: active) {
+  :where(*) { scrollbar-color: auto !important; }
+}
+
 [data-theme='sepia'] {
   --reader-ink: #3b3327;
+  --reader-muted: #7b6b55;
   --reader-paper: #f5ecd9;
   --reader-surface: #f9f3e4;
   --reader-line: #e0d3ba;
@@ -221,6 +237,43 @@
   --reader-muted: #9a958c;
   --reader-line: #33363b;
   --reader-accent: #b39272;
+}
+
+/* Palettes from https://legado.aoaostar.com/#id_4; text and borders adapt for contrast. */
+[data-theme='wechat-day'] {
+  --reader-ink: #1a1a1a;
+  --reader-paper: #f4f5f7;
+  --reader-surface: #ffffff;
+  --reader-muted: #646b75;
+  --reader-line: #dce0e5;
+  --reader-accent: #3897f1;
+  --reader-on-accent: #111111;
+}
+[data-theme='wechat-night'] {
+  --reader-ink: #d8d4cc;
+  --reader-paper: #000000;
+  --reader-surface: #1a1a1a;
+  --reader-muted: #9a9fa8;
+  --reader-line: #33363b;
+  --reader-accent: #3897f1;
+  --reader-on-accent: #111111;
+}
+[data-theme='houmo-day'] {
+  --reader-ink: #404048;
+  --reader-paper: #f9f2e8;
+  --reader-surface: #f9f2e8;
+  --reader-muted: #746d64;
+  --reader-line: #ded5c9;
+  --reader-accent: #404048;
+}
+[data-theme='houmo-night'] {
+  --reader-ink: #e0e3eb;
+  --reader-paper: #333949;
+  --reader-surface: #333949;
+  --reader-muted: #afb6c5;
+  --reader-line: #555e73;
+  --reader-accent: #00bbca;
+  --reader-on-accent: #111111;
 }
 
 *,
@@ -355,6 +408,13 @@ body {
  * not be a scroll container: a nested scroll area on top of a horizontal pager
  * produces the classic "the page drifts sideways" bug on Android.
  */
+/* Plain-text pages share scroll layout but only the pager moves their offset. */
+.book-host[data-layout='reflowable'][data-paginated='true'][data-page-layout='screens'] {
+  overflow: hidden;
+  touch-action: pinch-zoom;
+  -webkit-overflow-scrolling: auto;
+}
+
 .book-host[data-layout='fixed'] {
   overflow: hidden;
   display: grid;
@@ -389,7 +449,8 @@ body {
  * `mix-blend-mode: multiply` on a pseudo-element so it costs no extra DOM and
  * cannot be reached by the book.
  */
-.book-host[data-layout='reflowable']::after {
+.book-host[data-layout='reflowable']::after,
+.reader-page-fade[data-layout='reflowable']::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -696,7 +757,7 @@ book-content {
 .button.primary {
   background: var(--reader-accent);
   border-color: var(--reader-accent);
-  color: #fff;
+  color: var(--reader-on-accent, #fff);
 }
 
 .button:disabled {
@@ -755,6 +816,7 @@ book-content {
  */
 .button:focus-visible,
 .icon-button:focus-visible,
+.rail-button:focus-visible,
 .chip:focus-visible,
 .switch:focus-visible,
 .segmented button:focus-visible,
@@ -829,7 +891,24 @@ book-content {
     background-color var(--motion-duration) var(--motion-ease),
     border-color var(--motion-duration) var(--motion-ease),
     color var(--motion-duration) var(--motion-ease),
+    transform var(--motion-duration) var(--motion-ease),
     opacity var(--motion-duration) var(--motion-ease);
+}
+
+:where(.button, .icon-button, .top-button, .pager-step, .pager-page, .toc-list button):active:not(:disabled) {
+  transform: scale(.97);
+}
+.button, .icon-button { position: relative; }
+.busy-indicator { display: inline-flex; align-items: center; gap: .5rem; color: var(--reader-muted); font-size: .875rem; }
+.busy-spinner { display: inline-block; flex: 0 0 auto; width: 1rem; height: 1rem; border: 2px solid currentColor; border-inline-end-color: transparent; border-radius: 50%; animation: spin 700ms linear infinite; }
+.button-busy { color: transparent !important; cursor: progress; }
+.button-busy > :not(.busy-spinner) { visibility: hidden; }
+.button-busy > .busy-spinner { position: absolute; inset: 0; margin: auto; color: var(--reader-ink); }
+.button.primary.button-busy > .busy-spinner { color: var(--reader-paper); }
+.toc-list .busy-indicator { margin-inline-start: auto; white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) {
+  .busy-spinner { animation: none; }
+  :where(.button, .icon-button, .top-button, .pager-step, .pager-page, .toc-list button):active { transform: none; }
 }
 
 /*
@@ -1338,7 +1417,7 @@ book-content {
 .pager-page[aria-current='page'] {
   background: var(--reader-accent);
   border-color: var(--reader-accent);
-  color: #fff;
+  color: var(--reader-on-accent, #fff);
   font-weight: 600;
 }
 
@@ -2070,6 +2149,8 @@ book-content {
   white-space: nowrap;
 }
 
+.toc-cached { flex: 0 0 auto; color: var(--reader-muted); font-size: var(--text-meta); font-weight: 400; white-space: nowrap; }
+
 /* ---- footer / progress ----
  *
  * The footer has two rows and they are doing different jobs, so they are laid out
@@ -2403,27 +2484,16 @@ book-content {
   width: 2.75rem;
   height: 2.75rem;
   padding: 0;
-  border: 1px solid color-mix(in srgb, var(--reader-line) 70%, transparent);
-  border-radius: 50%;
-  /*
-   * Translucent, because the rail sits over text on a phone. A solid disc is a hole
-   * in the page; a blurred one is a control the reader can see the paragraph
-   * through, which is what makes it possible to leave it there.
-   */
-  background: color-mix(in srgb, var(--reader-surface) 78%, transparent);
-  backdrop-filter: blur(6px);
+  border: 0;
+  background: transparent;
   color: var(--reader-ink);
   font-size: 1.05rem;
   cursor: pointer;
   touch-action: manipulation;
-  box-shadow: 0 2px 8px color-mix(in srgb, #000 12%, transparent);
-  transition: transform var(--motion-duration) var(--motion-ease), background var(--motion-duration) var(--motion-ease);
+  transition: transform var(--motion-duration) var(--motion-ease);
 }
 
-.rail-button:active {
-  transform: scale(0.92);
-  background: color-mix(in srgb, var(--reader-surface) 96%, transparent);
-}
+.rail-button:active { transform: scale(0.92); }
 
 /* On a wide screen the rail moves into the gutter the measure leaves, so it is
    beside the text rather than on top of it. `--reader-measure` is the same token
@@ -2808,9 +2878,11 @@ book-content {
   cursor: pointer;
 }
 
+.segmented:is([aria-label='主题'], [aria-label='微信阅读'], [aria-label='厚墨']) button { min-height: 44px; }
+
 .segmented button[aria-pressed='true'] {
   background: var(--reader-accent);
-  color: #fff;
+  color: var(--reader-on-accent, #fff);
 }
 
 /* ------------------------------------------------------------------ *
@@ -3046,7 +3118,7 @@ book-content {
   border-radius: 999px;
   padding: 0.15rem 0.4rem;
   background: color-mix(in srgb, var(--reader-accent) 92%, transparent);
-  color: #fff;
+  color: var(--reader-on-accent, #fff);
   font-size: 0.6rem;
   font-family: inherit;
   line-height: 1.5;
@@ -3185,7 +3257,7 @@ book-content {
   margin: auto;
   width: 0.28rem;
   height: 0.52rem;
-  border: solid #fff;
+  border: solid var(--reader-on-accent, #fff);
   border-width: 0 1.5px 1.5px 0;
   transform: translateY(-0.05rem) rotate(45deg);
   opacity: 0;
@@ -3691,11 +3763,12 @@ svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; verti
   background: transparent;
   box-shadow: none;
 }
-.reader-screen .rail-button { width: 48px; height: 48px; border-radius: 50%; background: var(--reader-surface); box-shadow: 0 3px 12px #00000020; }
+.reader-screen .rail-button { width: 48px; height: 48px; }
 .reader-screen .rail-button .icon { font-size: 1.5rem; }
 .reader-screen .panel { border-radius: 20px 20px 0 0; max-height: 62%; background: var(--reader-surface); box-shadow: 0 -6px 30px #00000018; }
 .reader-screen .panel-header { padding: 0.5rem 1.25rem 0.75rem; }
 .reader-screen .panel-body { padding-inline: 1.25rem; }
+.reader-screen .panel .section-title { position: static; background: transparent; }
 .reader-screen .panel .field { padding-block: 0.8rem; }
 .reader-screen .panel .tts-bar { position: static; border-radius: 12px; width: auto; transform: none; margin-bottom: 1rem; }
 .reader-screen .panel-header > .icon-button { margin-inline-start: auto; }
@@ -3790,7 +3863,10 @@ svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; verti
 .sources-search .searchable-select-trigger { text-align:left; }
 .sources-search .searchable-select > .searchable-select-trigger { min-height: 46px; border-radius: .7rem; background: var(--reader-surface); }
 .sources-search .searchable-select-menu { width: min(22rem, calc(100vw - 3rem)); border-radius: .8rem; }
-.sources-screen .searchable-select-menu { background: var(--reader-paper, #fff); opacity: 1; }
+.sources-screen .searchable-select-menu { position: fixed; inset: auto; box-sizing: border-box; display: flex; flex-direction: column; min-height: 0; background: var(--reader-paper, #fff); opacity: 1; }
+.sources-screen .searchable-select-search { flex: none; }
+.sources-screen .searchable-select-search input { font-size: 16px; }
+.sources-screen .searchable-select-options { min-height: 0; overscroll-behavior: contain; }
 .sources-search .searchable-select-search { margin: 0; }
 .sources-search .searchable-select-options { max-height: 15rem; }
 .sources-search .searchable-select-options button { min-height: 42px; }
@@ -3995,6 +4071,13 @@ svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; verti
 .source-switch .catalog-feedback { margin-top: 1rem; }
 
 /* Reading tools share the reader modal, including narrow phone layouts. */
+@media (max-width: 63.99rem) {
+  .reading-tools-modal { position: fixed; inset: auto 0 0; margin: 0; width: 100%; max-width: none; box-sizing: border-box; max-height: 78dvh; border-radius: 1rem 1rem 0 0; padding-bottom: env(safe-area-inset-bottom, 0px); }
+  .reading-tools-modal[open] { animation: sheet-in var(--motion-duration) var(--motion-ease) both; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .reading-tools-modal[open] { animation: none; }
+}
 .reading-tools { display: flex; flex-direction: column; overflow: hidden; overflow-wrap: anywhere; }
 .reading-tool-tabs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); flex: none; padding: .35rem .75rem 0; border-bottom: 1px solid var(--reader-line); }
 .reading-tool-tab { min-height: 48px; padding: .5rem .2rem; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--reader-ink); cursor: pointer; }
@@ -4072,3 +4155,34 @@ svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; verti
 .source-capabilities dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
 .source-capabilities dl > div { padding: 8px; border: 1px solid currentColor; border-radius: 6px; }
 .source-capabilities dd { margin: 4px 0 0; }
+
+/* A frozen outgoing page; its shadow contents retain the original typography. */
+.reader-page-fade {
+  position: absolute;
+  overflow: hidden;
+  pointer-events: none;
+  background: var(--reader-paper);
+  z-index: calc(var(--reader-layer-page, 1) + 1);
+}
+.reader-page-fade[data-fading] {
+  animation: reader-page-fade-out 260ms ease-in-out both;
+}
+@keyframes reader-page-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .reader-page-fade { display: none; }
+}
+
+.reading-tools-modal .source-modal-header { padding: .75rem 1.25rem; }
+.reading-tools-modal .source-modal-header h2 { font-size: 1rem; }
+.reading-tools-modal .source-modal-header .icon-button { width: 40px; height: 40px; border-radius: .6rem; }
+.reading-cache-auto { margin: 0 0 1rem; padding: .75rem 0; border: 0; border-block: 1px solid var(--reader-line); }
+.reading-cache-auto legend { padding: 0; font-size: 1rem; font-weight: 600; }
+.reading-cache-auto label { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-block: .65rem; }
+.reading-cache-auto input[type=checkbox] { width: 1.15rem; height: 1.15rem; accent-color: var(--reader-accent); }
+.reading-cache-auto p { margin-block: .5rem 0; font-size: .8rem; color: var(--reader-muted); }
+
+.reading-cache-auto label > span { white-space: nowrap; }
+.reading-cache-auto select { flex: 0 0 auto; width: auto; min-width: 6rem; }

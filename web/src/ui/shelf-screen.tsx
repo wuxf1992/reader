@@ -1,5 +1,6 @@
 import { ApiError } from '../api/errors.ts';
 import { FloatingNotice } from './floating-notice.tsx';
+import { BusyIndicator } from './busy.tsx';
 import type { ListQuery, ReaderApi } from '../api/client.ts';
 import type { Book } from '../api/types.ts';
 import type { OfflineStore } from '../store/offline.ts';
@@ -976,7 +977,7 @@ export class ShelfScreen {
             </div>
           ) : null}
 
-          {state.loading && state.items.length > 0 ? <div className="spinner" /> : null}
+          <BusyIndicator busy={state.loading && state.items.length > 0} />
           {/* The pager sits *inside* the section, under the covers it turns: a
               control that pages a list belongs under that list, and at the top it
               would be a second toolbar competing with the sort row. It is hidden

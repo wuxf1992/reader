@@ -1,12 +1,18 @@
 // @vitest-environment jsdom
 import { noticeText } from './helpers/notices.ts';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, expect, it, vi } from 'vitest';
 import { PluginPageScreen } from '../src/ui/plugin-page-screen.tsx';
 import { SourcesScreen } from '../src/ui/sources-screen.tsx';
 import { ReaderApi } from '../src/api/client.ts';
 import { FakeTransport, makePlatform, bodyText } from './helpers/env.ts';
 import { parseRoute, routeHash, sameRoute, parentOf } from '../src/ui/router.ts';
 const screens: Array<{ dispose(): void }> = [];
+beforeAll(() => {
+  window.matchMedia = vi.fn().mockReturnValue({ matches: false, addEventListener() {}, removeEventListener() {} });
+  window.scrollTo = vi.fn();
+  HTMLDialogElement.prototype.showModal = function () { this.open = true; };
+  HTMLDialogElement.prototype.close = function () { this.open = false; };
+});
 afterEach(() => { screens.splice(0).forEach(screen => screen.dispose()); document.body.replaceChildren(); });
 function fixture() {
   const transport = new FakeTransport();
@@ -129,7 +135,7 @@ it('keeps tab drafts and refresh selection, follows action navigation and uses s
   expect(transport.requests.every(request => request.url.endsWith('/sources/custom%2Fone/pages/settings'))).toBe(true);
 });
 
-it('preserves unrelated tab drafts after actions and requires inline confirmation before deletion', async () => {
+it('preserves unrelated tab drafts after actions and requires confirmation before deletion', async () => {
   const { api, transport } = fixture();
   const payload = { title: '实例', forms: [], tabs: [
     { id: 'rules', title: '规则', forms: [{ id: 'delete', title: '', submit: '删除', confirm: '删除当前规则？', fields: [] }] },
@@ -139,12 +145,12 @@ it('preserves unrelated tab drafts after actions and requires inline confirmatio
   const screen = new PluginPageScreen({ api, sourceId: 'one', pageId: 'settings', onBack() {}, onSignedOut() {} }); screens.push(screen); document.body.append(screen.element);
   await screen.show();
   const tab = (name: string) => [...screen.element.querySelectorAll<HTMLButtonElement>('[role=tab]')].find(button => button.textContent === name)!;
-  const button = (name: string) => [...screen.element.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === name)!;
+  const button = (name: string) => [...document.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === name)!;
   tab('草稿').click(); const area = screen.element.querySelector('textarea')!; area.value = 'unsaved'; area.dispatchEvent(new Event('input', { bubbles: true }));
   tab('规则').click(); button('删除').click();
-  expect(screen.element.querySelector('[role=group]')?.textContent).toContain('删除当前规则？');
+  expect(document.querySelector('dialog.confirmation-host[open]')?.textContent).toContain('删除当前规则？');
   expect(transport.requests.filter(request => request.method === 'POST')).toHaveLength(0);
-  button('取消').click(); expect(screen.element.querySelector('[role=group]')).toBeNull();
+  button('取消').click(); await vi.waitFor(() => expect(document.querySelector('dialog.confirmation-host')).toBeNull());
   button('删除').click(); button('确认删除').click();
   await vi.waitFor(() => expect(noticeText()).toBe('删除成功'));
   expect(document.activeElement?.getAttribute('role')).toBe('tabpanel');

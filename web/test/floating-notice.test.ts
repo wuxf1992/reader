@@ -36,7 +36,9 @@ it('allows dismissal and shows the next operation without retaining an old timer
 });
 
 it('updates progress in place, limits the stack and treats remote markup as text', () => {
+  vi.useFakeTimers();
   const id = notify('上传 1%', { kind: 'loading' });
+  vi.advanceTimersByTime(100);
   const card = visibleNotices()[0];
   for (let progress = 2; progress < 100; progress++) notify(`上传 ${progress}%`, { kind: 'loading' }, id);
   expect(visibleNotices()).toEqual([card]);
@@ -49,6 +51,32 @@ it('updates progress in place, limits the stack and treats remote markup as text
   for (let count = 0; count < 10; count++) notify('消息 ' + count);
   expect(visibleNotices()).toHaveLength(3);
   expect(document.querySelectorAll('.notyf')).toHaveLength(1);
+});
+
+it('delays busy feedback by 100ms without resetting the delay on progress updates', () => {
+  vi.useFakeTimers();
+  const id = notify('正在加载 1%', { kind: 'loading' });
+  vi.advanceTimersByTime(99);
+  expect(visibleNotices()).toHaveLength(0);
+  notify('正在加载 2%', { kind: 'loading' }, id);
+  vi.advanceTimersByTime(1);
+  expect(noticeText()).toBe('正在加载 2%');
+  dismissNotice(id);
+  expect(visibleNotices()).toHaveLength(0);
+});
+
+it('cancels delayed busy feedback on completion, cancellation and screen disposal', () => {
+  vi.useFakeTimers();
+  const completed = notify('正在加载', { kind: 'loading' });
+  vi.advanceTimersByTime(50);
+  notify('已完成', {}, completed);
+  const cancelled = notify('正在加载', { kind: 'loading' });
+  dismissNotice(cancelled);
+  show('正在加载页面', true);
+  render(null, root);
+  vi.advanceTimersByTime(100);
+  expect(noticeText()).toBe('已完成');
+  expect(document.querySelector('[data-kind=loading]')).toBeNull();
 });
 
 it('keeps app notifications across screen disposal and moves the host into native dialogs', () => {

@@ -3,6 +3,7 @@ import { Modal } from './modal.tsx';
 import type { SourcePage } from '../api/sources.ts';
 import { CatalogFeedback } from './catalog-feedback.tsx';
 import { FloatingNotice } from './floating-notice.tsx';
+import { BusyIndicator } from './busy.tsx';
 /**
  * The reader's chrome: everything around the page.
  *
@@ -41,6 +42,7 @@ export interface ChromeTocEntry {
   label: string;
   depth: number;
   spine?: number;
+  cached?: boolean;
 }
 
 export interface SpeechBarState {
@@ -81,6 +83,7 @@ export interface ChromeState {
   chapterCount: number;
   /** True while a window is being fetched, so the chapter buttons can say so. */
   navigating: boolean;
+  pendingChapterRef?: string | undefined;
   canRefresh?: boolean;
   canSwitch?: boolean;
   switching?: boolean;
@@ -197,12 +200,28 @@ export interface ReaderChromeProps {
 
 export function ReaderChrome({ state, stage, handlers, tools }: ReaderChromeProps): JSX.Element {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const tocList = useRef<HTMLUListElement>(null);
+  useLayoutEffect(() => {
+    if (!state.tocOpen) return;
+    const current = tocList.current?.querySelector<HTMLElement>('[aria-current="true"]');
+    const body = tocList.current?.closest<HTMLElement>('.panel-body');
+    if (!current || !body) return;
+    // scrollIntoView also scrolls the app while the sheet is entering below the viewport.
+    body.scrollTop += current.getBoundingClientRect().top - body.getBoundingClientRect().top
+      - (body.clientHeight - current.clientHeight) / 2;
+  }, [state.tocOpen, state.currentSectionId]);
   let hiddenDepth: number | null = null;
   const fixed = state.layout === 'fixed';
   const totalPages = Math.max(1, state.chapterPages);
   const currentPage = Math.min(totalPages, Math.max(1, state.pageInChapter));
   const pageLabel = '本章第 ' + currentPage + '/' + totalPages + ' 页';
   const tab = state.settingsTab ?? 'behavior';
+  const nightTheme = state.theme === 'dark' || state.theme.endsWith('-night');
+  const oppositeTheme: Record<AppSettings['theme'], AppSettings['theme']> = {
+    light: 'dark', sepia: 'dark', green: 'dark', dark: 'light',
+    'wechat-day': 'wechat-night', 'wechat-night': 'wechat-day',
+    'houmo-day': 'houmo-night', 'houmo-night': 'houmo-day',
+  };
   return (
     <>
       {tools}
@@ -210,8 +229,8 @@ export function ReaderChrome({ state, stage, handlers, tools }: ReaderChromeProp
         <IconButton label="返回" icon="arrow-left" onClick={handlers.onBack} />
         <button type="button" className="reader-heading reader-book-heading" aria-label="书籍信息" onClick={handlers.onBookInfo}><strong>{state.title}</strong><span>{state.chapterLabel}</span></button>
         <div className="reader-top-actions">
-          {state.canSwitch && <IconButton label="切换书源" icon="sort" disabled={state.switching || state.refreshing || state.refreshingChapter || state.navigating} onClick={() => handlers.onAlternatives?.()} />}
-          {state.canRefresh && <IconButton label="刷新当前章节" icon="refresh" disabled={state.switching || state.refreshing || state.refreshingChapter || state.navigating} onClick={() => handlers.onRefreshChapter?.()} />}
+          {state.canSwitch && <IconButton label="切换书源" icon="sort" busy={state.switching ?? false} disabled={state.switching || state.refreshing || state.refreshingChapter || state.navigating} onClick={() => handlers.onAlternatives?.()} />}
+          {state.canRefresh && <IconButton label="刷新当前章节" icon="refresh" busy={state.refreshingChapter ?? false} disabled={state.switching || state.refreshing || state.refreshingChapter || state.navigating} onClick={() => handlers.onRefreshChapter?.()} />}
           <IconButton label="AI 总结" icon="file-text" disabled={state.aiSummaryBusy || state.navigating} onClick={() => handlers.onAiSummary?.()} />
         </div>
         {(state.sourceName || state.chapterUrl) && <div className="reader-source-info"><span>{state.sourceName || '当前书源'}</span>{state.chapterUrl && <a href={state.chapterUrl} target="_blank" rel="noopener noreferrer" title={state.chapterUrl}>{state.chapterUrl}</a>}</div>}
@@ -222,9 +241,9 @@ export function ReaderChrome({ state, stage, handlers, tools }: ReaderChromeProp
       <StageHost stage={stage} />
       <ReaderIndicators state={state} />
       <div className="reader-rail" role="toolbar" aria-label="阅读快捷操作">
-        <RailButton icon={state.theme === 'dark' ? 'sun' : 'moon'}
-          label={state.theme === 'dark' ? '日间' : '夜间'}
-          onClick={() => handlers.onSetting({ theme: state.theme === 'dark' ? 'light' : 'dark' })} />
+        <RailButton icon={nightTheme ? 'sun' : 'moon'}
+          label={nightTheme ? '日间' : '夜间'}
+          onClick={() => handlers.onSetting({ theme: oppositeTheme[state.theme] })} />
       </div>
       <div className="footer" hidden={!state.chromeVisible}>
         <div className="progress-row">
@@ -249,11 +268,11 @@ export function ReaderChrome({ state, stage, handlers, tools }: ReaderChromeProp
         </div>
       </div>
       {state.tocOpen ? (
-        <Panel title="目录" placement="start" subtitle={`${state.toc.length} 章`} onClose={handlers.toggleToc} actions={state.canRefresh ? <IconButton icon="refresh" label="刷新目录" disabled={state.refreshing || state.refreshingChapter || state.navigating} onClick={() => handlers.onRefresh?.()} /> : null}>
+        <Panel title="目录" placement="start" subtitle={`${state.toc.length} 章`} onClose={handlers.toggleToc} actions={state.canRefresh ? <IconButton icon="refresh" label="刷新目录" busy={state.refreshing ?? false} disabled={state.refreshing || state.refreshingChapter || state.navigating} onClick={() => handlers.onRefresh?.()} /> : null}>
           {state.toc.length === 0 ? (
             <div className="empty-state">这本书没有目录</div>
           ) : (
-            <ul className="toc-list">
+            <ul className="toc-list" ref={tocList}>
               {state.toc.map((entry, index) => {
                 // A entry the loaded window cannot reach is *marked*, not hidden and
                 // not silently inert. It is a real chapter of the book, so removing
@@ -272,13 +291,16 @@ export function ReaderChrome({ state, stage, handlers, tools }: ReaderChromeProp
                       type="button"
                       aria-current={entry.id.split('#')[0] === state.currentSectionId}
                       data-unreachable={reachable ? undefined : 'true'}
-                      disabled={!reachable}
+                      disabled={!reachable || state.navigating || state.refreshing || state.refreshingChapter || state.switching}
+                      aria-busy={state.pendingChapterRef === entry.id}
                       title={reachable ? undefined : '这一章不在当前窗口中'}
                       style={entry.depth > 0 ? `padding-inline-start:${0.6 + entry.depth * 0.9}rem` : undefined}
                       onClick={() => handlers.onTocEntry(entry.id)}
                     >
                       <span className="toc-index">{index + 1}</span>
                       <span className="toc-label">{entry.label}</span>
+                      {entry.cached && <span className="toc-cached">已缓存</span>}
+                      {state.pendingChapterRef === entry.id && <BusyIndicator busy label="加载中…" />}
                     </button>
                   </li>
                 );
@@ -486,6 +508,24 @@ function SettingsBody({ state, handlers }: { state: ChromeState; handlers: Chrom
         value={state.theme}
         onChange={(value) => handlers.onSetting({ theme: value as AppSettings['theme'] })}
       />
+      <SegmentedRow
+        label="微信阅读"
+        options={[
+          { value: 'wechat-day', label: '日间' },
+          { value: 'wechat-night', label: '夜间' },
+        ]}
+        value={state.theme}
+        onChange={(value) => handlers.onSetting({ theme: value as AppSettings['theme'] })}
+      />
+      <SegmentedRow
+        label="厚墨"
+        options={[
+          { value: 'houmo-day', label: '日间' },
+          { value: 'houmo-night', label: '夜间' },
+        ]}
+        value={state.theme}
+        onChange={(value) => handlers.onSetting({ theme: value as AppSettings['theme'] })}
+      />
       <SliderRow
         label="亮度"
         value={state.brightness}
@@ -566,7 +606,7 @@ function SettingsBody({ state, handlers }: { state: ChromeState; handlers: Chrom
         label="翻页动画"
         options={[
           { value: 'slide', label: '滑动' },
-          { value: 'fade', label: '淡入' },
+          { value: 'fade', label: '淡入淡出' },
           { value: 'none', label: '无' },
         ]}
         value={state.pageAnimation}
@@ -870,13 +910,7 @@ function TopButton({ icon, label, onClick }: { icon: IconName; label: string; on
   );
 }
 
-/**
- * One control on the immersion rail.
- *
- * Round, thumb-sized, and matched to the rail's own width: the rail is a column of
- * circles because a reader aiming at a 2.75rem disc in the margin hits it, while a
- * reader aiming at a 2.75rem square in a list of five does not.
- */
+/** An icon-only quick action with a full-size touch target. */
 function RailButton({
   icon,
   label,

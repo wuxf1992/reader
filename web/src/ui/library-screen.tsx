@@ -1,5 +1,6 @@
 import { ApiError } from '../api/errors.ts';
 import { FloatingNotice } from './floating-notice.tsx';
+import { BusyIndicator } from './busy.tsx';
 import type { ReaderApi } from '../api/client.ts';
 import type { Book, BrowseEntry, BrowseListing } from '../api/types.ts';
 import type { OfflineStore } from '../store/offline.ts';
@@ -458,7 +459,7 @@ export class LibraryBrowseScreen {
             ) : null}
           </div>
 
-          {state.bootstrapping && state.books.length === 0 ? <div className="spinner" /> : null}
+          <BusyIndicator busy={state.bootstrapping && state.books.length === 0} />
           {this.grid()}
           {this.pageCount() > 1 ? (
             <Pager
@@ -1003,7 +1004,7 @@ export class LibraryFilesScreen {
             if (event.target === event.currentTarget) this.select([]);
           }}
         >
-          {this.state.loading && listing === null ? <div className="spinner" /> : null}
+          <BusyIndicator busy={this.state.loading && listing === null} />
           <div className="manager-list">
             {listing && listing.total === 0 ? (
               <div className="empty-state collection-empty">

@@ -1,0 +1,105 @@
+{
+  "relevantTestsPassed": 66,
+  "nodeTestsPassed": 29,
+  "browser": [
+    {
+      "engine": "chromium",
+      "layout": "phone",
+      "outsideTapCloses": true,
+      "defaultsToThree": true,
+      "continuesAfterDismissal": true,
+      "directoryUpdatesWhileOpen": true,
+      "settingsRestored": true,
+      "uncachedUnmarked": true,
+      "viewportFits": true,
+      "resizeWarnings": 0,
+      "navigationAbortWarnings": 0
+    },
+    {
+      "engine": "chromium",
+      "layout": "desktop",
+      "outsideTapCloses": true,
+      "defaultsToThree": true,
+      "continuesAfterDismissal": true,
+      "directoryUpdatesWhileOpen": true,
+      "settingsRestored": true,
+      "uncachedUnmarked": true,
+      "viewportFits": true,
+      "resizeWarnings": 0,
+      "navigationAbortWarnings": 0
+    },
+    {
+      "engine": "webkit",
+      "layout": "phone",
+      "outsideTapCloses": true,
+      "defaultsToThree": true,
+      "continuesAfterDismissal": true,
+      "directoryUpdatesWhileOpen": true,
+      "settingsRestored": true,
+      "uncachedUnmarked": true,
+      "viewportFits": true,
+      "resizeWarnings": 0,
+      "navigationAbortWarnings": 0
+    },
+    {
+      "engine": "webkit",
+      "layout": "desktop",
+      "outsideTapCloses": true,
+      "defaultsToThree": true,
+      "continuesAfterDismissal": true,
+      "directoryUpdatesWhileOpen": true,
+      "settingsRestored": true,
+      "uncachedUnmarked": true,
+      "viewportFits": true,
+      "resizeWarnings": 0,
+      "navigationAbortWarnings": 1
+    }
+  ],
+  "toc": [
+    {
+      "engine": "chromium",
+      "layout": "phone",
+      "noOuterScroll": true,
+      "repeatedOpen": true,
+      "currentChapterCentred": true,
+      "cachedChaptersMarked": true,
+      "uncachedChaptersUnmarked": true,
+      "upwardEntry": true,
+      "blockedStartupProbeWarnings": 0
+    },
+    {
+      "engine": "chromium",
+      "layout": "desktop",
+      "noOuterScroll": true,
+      "repeatedOpen": true,
+      "currentChapterCentred": true,
+      "cachedChaptersMarked": true,
+      "uncachedChaptersUnmarked": true,
+      "upwardEntry": false,
+      "blockedStartupProbeWarnings": 0
+    },
+    {
+      "engine": "webkit",
+      "layout": "phone",
+      "noOuterScroll": true,
+      "repeatedOpen": true,
+      "currentChapterCentred": true,
+      "cachedChaptersMarked": true,
+      "uncachedChaptersUnmarked": true,
+      "upwardEntry": true,
+      "blockedStartupProbeWarnings": 1
+    },
+    {
+      "engine": "webkit",
+      "layout": "desktop",
+      "noOuterScroll": true,
+      "repeatedOpen": true,
+      "currentChapterCentred": true,
+      "cachedChaptersMarked": true,
+      "uncachedChaptersUnmarked": true,
+      "upwardEntry": false,
+      "blockedStartupProbeWarnings": 1
+    }
+  ],
+  "physicalPhoneVerified": false
+}

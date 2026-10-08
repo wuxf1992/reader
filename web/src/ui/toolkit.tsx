@@ -15,6 +15,7 @@
 
 import { Icon, type IconName } from './icon.tsx';
 import { type ComponentChildren, type JSX } from './vendor/preact.ts';
+import { useDelayedBusy } from './busy.tsx';
 
 export { Icon, type IconName } from './icon.tsx';
 
@@ -38,6 +39,7 @@ export interface IconButtonProps {
   icon: IconName;
   onClick?: (event: MouseEvent) => void;
   disabled?: boolean;
+  busy?: boolean;
   /** Kept in the DOM so the header's layout does not depend on the mount. */
   hidden?: boolean;
   class?: string;
@@ -53,17 +55,20 @@ export interface IconButtonProps {
  * The glyph is passed as a *name*, so it is always `.icon` — which is what makes the
  * control's own alignment guaranteed rather than inherited from a caller's layout.
  */
-export function IconButton({ label, icon, onClick, disabled, hidden, class: className }: IconButtonProps): JSX.Element {
+export function IconButton({ label, icon, onClick, disabled, busy = false, hidden, class: className }: IconButtonProps): JSX.Element {
+  const visible = useDelayedBusy(busy);
   return (
     <button
       type="button"
-      className={className ? `icon-button ${className}` : 'icon-button'}
+      className={`icon-button ${className ?? ''}${visible ? ' button-busy' : ''}`}
       aria-label={label}
-      disabled={disabled ?? false}
+      aria-busy={busy}
+      disabled={disabled || busy}
       hidden={hidden ?? false}
       onClick={onClick}
     >
       <Icon name={icon} />
+      {visible && <span className="busy-spinner" aria-hidden="true" />}
     </button>
   );
 }
@@ -103,19 +108,23 @@ export interface PrimaryButtonProps {
   children: ComponentChildren;
   onClick?: (event: MouseEvent) => void;
   disabled?: boolean;
+  busy?: boolean;
   type?: 'button' | 'submit';
   className?: string;
 }
 
-export function Button({ children, onClick, disabled, type, className }: PrimaryButtonProps): JSX.Element {
+export function Button({ children, onClick, disabled, busy = false, type, className }: PrimaryButtonProps): JSX.Element {
+  const visible = useDelayedBusy(busy);
   return (
     <button
       type={type ?? 'button'}
-      className={className ? `button ${className}` : 'button'}
-      disabled={disabled ?? false}
+      className={`button ${className ?? ''}${visible ? ' button-busy' : ''}`}
+      aria-busy={busy}
+      disabled={disabled || busy}
       onClick={onClick}
     >
       {children}
+      {visible && <span className="busy-spinner" aria-hidden="true" />}
     </button>
   );
 }

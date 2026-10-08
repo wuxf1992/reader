@@ -343,6 +343,7 @@ function illustratedManifest() {
 
 function manifest() {
   return {
+    book,
     id: BOOK_ID,
     format: 'epub',
     total: CHAPTERS.length,

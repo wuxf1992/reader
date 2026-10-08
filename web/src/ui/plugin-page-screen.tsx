@@ -4,6 +4,7 @@ import type { ExtensionContent, ExtensionForm, ExtensionPage } from '../api/sour
 import { mountUI } from './mount.ts';
 import { Button, IconButton } from './toolkit.tsx';
 import { FloatingNotice } from './floating-notice.tsx';
+import { BusyIndicator } from './busy.tsx';
 
 /** Safe declarative UI: plugins supply data and actions, never app-origin HTML. */
 export class PluginPageScreen {
@@ -12,6 +13,7 @@ export class PluginPageScreen {
   private page?: ExtensionPage;
   private disposed = false;
   private busy = false;
+  private busyForm: ExtensionForm | undefined;
   private error = '';
   private activeTab = '';
   private noticeTab = '';
@@ -30,7 +32,7 @@ export class PluginPageScreen {
     const previousTab = this.activeTab;
     const formIds = () => (this.page?.tabs?.find(tab => tab.id === this.activeTab) ?? this.page)?.forms.map(form => form.id).join(',');
     const previousForms = formIds();
-    this.busy = true; this.error = ''; this.draw();
+    this.busy = true; this.busyForm = submitted; this.error = ''; this.draw();
     try {
       const page = await (this.options.sourceId !== undefined
         ? this.options.api.sourcePage(this.options.sourceId, this.options.pageId, action, values)
@@ -55,7 +57,7 @@ export class PluginPageScreen {
       else this.error = error instanceof Error ? error.message : '操作失败';
       return false;
     } finally {
-      this.busy = false; this.draw(); this.revealActiveTab();
+      this.busy = false; this.busyForm = undefined; this.draw(); this.revealActiveTab();
       if (previousTab !== this.activeTab || previousForms !== formIds()) { const body = this.element.querySelector('.sources-body'); if (body) body.scrollTop = 0; }
       if (action) (this.element.querySelector<HTMLElement>('[role=tabpanel]') ?? this.element.querySelector<HTMLElement>('.sources-body'))?.focus({ preventScroll: true });
     }
@@ -81,7 +83,7 @@ export class PluginPageScreen {
           </select> : <input aria-label={field.label} placeholder={field.placeholder} min={field.min} max={field.max} required={field.required} disabled={this.busy} autoComplete={field.type === 'password' ? 'off' : undefined} type={field.type === 'number' ? 'number' : field.type === 'password' ? 'password' : 'text'} value={String(data[field.key] ?? '')}
             onInput={event => { data[field.key] = field.type === 'number' ? Number(event.currentTarget.value) : event.currentTarget.value; }} />}
       </label>)}
-      <Button type="submit" disabled={this.busy}>{form.submit}</Button>
+      <Button type="submit" disabled={this.busy} busy={this.busy && this.busyForm === form}>{form.submit}</Button>
       {this.confirmation === form && <FloatingConfirm title="确认操作" text={form.confirm||''} confirmText={'确认'+form.submit} cancelText="取消" onCancel={()=>{this.confirmation=undefined;this.draw();}} onConfirm={()=>{this.confirmation=undefined;void this.run(form.id,data,form);}}/>}
     </form>;
   }
@@ -134,7 +136,7 @@ export class PluginPageScreen {
     const isError = !this.busy && (!!this.error || this.page?.noticeKind === 'error');
     return <>
       <header className="sources-header"><IconButton label="返回" icon="arrow-left" onClick={this.options.onBack} /><h1>{this.page?.title ?? '书源配置'}</h1>
-        <Button disabled={this.busy} onClick={() => void this.run()}>刷新</Button></header>
+        <Button disabled={this.busy} busy={this.busy && !this.busyForm} onClick={() => void this.run()}>刷新</Button></header>
       <div className="extension-toolbar">
         {tabs && <div className="extension-tabs" role="tablist" aria-label="配置分类">{tabs.map((tab, index) => <button type="button"
           disabled={this.busy} id={'extension-tab-' + tab.id} role="tab" aria-selected={this.activeTab === tab.id} aria-controls={'extension-panel-' + tab.id}
@@ -151,6 +153,7 @@ export class PluginPageScreen {
       </div>
       {status && <FloatingNotice message={status} busy={this.busy} error={isError} />}
       <main className="sources-body" aria-busy={this.busy} tabIndex={-1}>
+        {!this.page && <BusyIndicator busy={this.busy} label="正在加载书源配置…" />}
         {this.page?.description && <p className="extension-description">{this.page.description}</p>}
         {this.page && this.content(this.page)}
         {selected && <div key={selected.id} tabIndex={-1} role="tabpanel" id={'extension-panel-' + selected.id} aria-labelledby={'extension-tab-' + selected.id}>

@@ -1,3 +1,4 @@
+import { applyTheme } from './ui/settings.ts';
 import { PluginPageScreen } from './ui/plugin-page-screen.tsx';
 import { renderChannelLinks } from './media/channel-navigation.tsx';
 import { MediaApi } from './media/api.ts';
@@ -190,7 +191,7 @@ export class App {
     }
     if (session) await this.loadAccountCache(true);
 
-    document.documentElement.dataset['theme'] = this.settings.theme;
+    applyTheme(document.documentElement, this.settings.theme);
 
     if (session) {
       // Verify before entering the app: a token that the server has since
@@ -670,7 +671,11 @@ export class App {
     const cached = this.offline.books().find((candidate) => candidate.id === bookId);
     if (cached) return cached;
     try {
-      return (await this.api.getBook(bookId)).book;
+      const book = (await this.api.getBook(bookId)).book;
+      // Direct book links can bypass the shelf that normally fills this mirror.
+      // Keep the book discoverable after a reload without a server connection.
+      await this.offline.replaceBooks([book]).catch(() => undefined);
+      return book;
     } catch (err) {
       if (err instanceof ApiError && err.isAuthFailure) this.handleSignedOut();
       return null;

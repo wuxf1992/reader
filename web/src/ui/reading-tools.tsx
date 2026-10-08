@@ -9,6 +9,7 @@ import { PublicationCache } from '../store/publications.ts';
 import { OfflineDownload, type DownloadState } from '../core/offline-download.ts';
 import { decodeAnchor, encodeAnchor, findText, type SearchHit, type TextAnchor } from './text-anchor.ts';
 import { ApiError } from '../api/errors.ts';
+import type { AppSettings } from '../store/settings.ts';
 import { newId } from '../core/id.ts';
 import { FloatingConfirm } from './floating-confirm.tsx';
 import { FloatingNotice } from './floating-notice.tsx';
@@ -24,6 +25,10 @@ export interface ReadingToolsProps {
   undoOverrides(): Promise<void>;
   previewHeadings(prefix: string): Promise<string[]>;
   onNotes(): void; onClose(): void;
+  autoCache: boolean; autoCacheChapters: number; prefetchMessage: string;
+  onCacheSetting(patch: Partial<AppSettings>): void;
+  onDownloadRunning(running: boolean): void;
+  onClearCache(bookId: string): void;
   previewSpeech(): Promise<string>; stopPreview(): void;
 }
 
@@ -52,7 +57,7 @@ export function ReadingTools(props: ReadingToolsProps) {
   const [removeId, setRemoveId] = useState('');
   const [returnTo] = useState(props.returnLocator);
   const searchRun = useRef<AbortController | null>(null), alive = useRef(true);
-  const task = useMemo(() => new OfflineDownload(props.api, props.cache, props.manifest, state => { if (alive.current) setDownload(state); }), []);
+  const task = useMemo(() => new OfflineDownload(props.api, props.cache, props.manifest, state => { props.onDownloadRunning(state.status === 'running'); if (alive.current) setDownload(state); }), []);
   const bookId = props.manifest.book.id;
   const rangedDownload = ['chapters', 'txt'].includes(props.manifest.book.format) && !props.overrides.headingPrefix;
   const visibleNotes = notes.filter(note => noteFilter === 'all' || (noteFilter === 'bookmark' ? note.type === 'bookmark' : note.type !== 'bookmark'));
@@ -65,6 +70,7 @@ export function ReadingTools(props: ReadingToolsProps) {
     setUsage(entries.reduce((sum, e) => sum + e.bytes, 0)); setBooks([...grouped].map(([id, bytes]) => ({ id, bytes })));
     setQuota((await props.cache.quota()) / 1024 / 1024);
   }
+  useEffect(() => { void storage().catch(() => undefined); }, [props.prefetchMessage]);
   async function action(work: () => Promise<unknown>) {
     setMessage('');setMessageError(false);
     try { await work(); } catch (error) { if (alive.current) {setMessageError(true);setMessage(error instanceof Error ? error.message : '操作失败');} }
@@ -119,7 +125,7 @@ export function ReadingTools(props: ReadingToolsProps) {
     if (!bookmark) { setComment(''); setEditing(null); setComposing(false); }
     setNoteFilter(bookmark ? 'bookmark' : 'all'); props.onNotes(); setMessage(bookmark ? '已添加当前位置书签' : '笔记已保存');
   }
-  return <Modal title="阅读工具" busy={saving} onClose={props.onClose}>
+  return <Modal title="阅读工具" className="reading-tools-modal" dismissOnBackdrop busy={saving} onClose={props.onClose}>
     <div className="reading-tools">
       <nav className="reading-tool-tabs" aria-label="阅读工具分类">{([
         ['search', '搜索', '书内搜索'], ['notes', '笔记', '笔记'], ['offline', '缓存', '离线缓存'], ['speech', '朗读', '朗读检测'], ['edit', '整理', '内容整理'],
@@ -127,7 +133,7 @@ export function ReadingTools(props: ReadingToolsProps) {
       <div className="reading-tool-panel" id="reading-tool-panel">
       <FloatingNotice message={message} error={messageError} />
       {deleteId && <FloatingConfirm title="删除笔记" text="确定删除这条笔记或书签？" confirmText="确认删除" cancelText="取消" onCancel={()=>setDeleteId('')} onConfirm={()=>{const id=deleteId;setDeleteId('');void edit(async()=>{await props.offline.deleteNote(id);props.sync.schedule();setNotes(props.offline.notesFor(bookId));props.onNotes();});}} />}
-      {removeId && <FloatingConfirm title="清理缓存" text="只删除此设备的书籍缓存，保留原书、进度和笔记。" confirmText="确认清理" cancelText="保留缓存" onCancel={()=>setRemoveId('')} onConfirm={()=>{const id=removeId;setRemoveId('');void action(async()=>{await props.cache.removeBook(id);setDownload(null);await storage();});}} />}
+      {removeId && <FloatingConfirm title="清理缓存" text="只删除此设备的书籍缓存，保留原书、进度和笔记。" confirmText="确认清理" cancelText="保留缓存" onCancel={()=>setRemoveId('')} onConfirm={()=>{const id=removeId;setRemoveId('');void action(async()=>{props.onClearCache(id);await props.cache.removeBook(id);setDownload(null);await storage();});}} />}
       {tab === 'search' && <section aria-label="书内搜索">
         <h3>书内搜索</h3>
         <form className="reading-tool-search" onSubmit={event => { event.preventDefault(); if (query.trim()) void search(); }}><label>关键词<input placeholder="输入要查找的文字" value={query} maxLength={200} onInput={event => setQuery(event.currentTarget.value)} /></label><button className="button primary" disabled={searching || !query.trim()}>搜索全文</button></form>
@@ -155,7 +161,16 @@ export function ReadingTools(props: ReadingToolsProps) {
         {!visibleNotes.length && <div className="reading-tool-empty"><strong>{noteFilter === 'bookmark' ? '还没有书签' : noteFilter === 'annotation' ? '还没有高亮或批注' : '还没有阅读记录'}</strong><p>加书签，记住当前读到的位置。<br />在正文选中文字后，可添加高亮或批注。</p>{!props.selection && <button className="button" onClick={props.onClose}>返回正文</button>}</div>}</>}
       </section>}
       {tab === 'offline' && <section aria-label="离线缓存管理">
-        <p>缓存保存在当前设备、当前账号。关闭此面板会暂停任务，已下载内容保留。</p>
+        <p>章节缓存保存在当前设备、当前账号。</p>
+        {rangedDownload && <fieldset className="reading-cache-auto"><legend>自动预缓存</legend>
+          <label><span>提前缓存后续章节</span><input type="checkbox" checked={props.autoCache} onChange={event => props.onCacheSetting({ autoCache: event.currentTarget.checked })} /></label>
+          <label><span>预缓存章节数</span><select value={props.autoCacheChapters} disabled={!props.autoCache} onChange={event => props.onCacheSetting({ autoCacheChapters: Number(event.currentTarget.value) })}>
+            {[...new Set([1, 3, 5, 10, 20, 50, props.autoCacheChapters])].sort((a, b) => a - b).map(count => <option key={count} value={count}>{count} 章</option>)}
+          </select></label>
+          <p>收起面板后继续预缓存。省流量模式或慢速网络下暂停。</p>
+          <p role="status">{props.prefetchMessage}</p>
+        </fieldset>}
+        <h3>手动下载</h3><p>关闭面板会暂停手动下载，已缓存内容保留。</p>
         {rangedDownload && <div className="reading-tool-range"><label>起始章<input type="number" min={1} max={props.manifest.content?.total} value={from} onInput={e => setFrom(Number(e.currentTarget.value))} /></label><label>结束章<input type="number" min={from} max={props.manifest.content?.total} value={to} onInput={e => setTo(Number(e.currentTarget.value))} /></label></div>}
         <div className="reading-tool-actions">{download?.status === 'running' ? <><button className="button" onClick={() => void action(() => task.pause())}>暂停</button><button className="button" onClick={() => void action(() => task.pause(true))}>取消任务</button></> : <button className="button primary" disabled={!downloadReady} onClick={() => void action(async () => { await task.start(rangedDownload ? from : 1, rangedDownload ? to : 1); await storage(); })}>下载 / 继续</button>}</div>
         {download && <p role="status">{download.message} · {download.completed}/{download.total}</p>}

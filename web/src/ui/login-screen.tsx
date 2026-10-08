@@ -3,6 +3,7 @@ import type { ReaderApi } from '../api/client.ts';
 import type { InstanceInfo } from '../api/types.ts';
 import { mountUI } from './mount.ts';
 import { FloatingNotice } from './floating-notice.tsx';
+import { Button } from './toolkit.tsx';
 import { type JSX } from './vendor/preact.ts';
 
 export interface LoginScreenOptions {
@@ -157,9 +158,9 @@ export class LoginScreen {
         ) : null}
         {state.registering && state.instance?.invitationRequired && <div className="field"><label htmlFor="login-invite">邀请码</label><input id="login-invite" autoComplete="off" value={state.inviteCode} placeholder="填写管理员提供的邀请码" disabled={state.busy} onInput={event=>this.patch({inviteCode:event.currentTarget.value})} /></div>}
         {state.registering && state.instance && !state.instance.registrationOpen && <p className="notice">此书房暂未开放注册，请联系管理员创建账号或开放注册。</p>}
-        <button type="submit" className="button primary login-submit" disabled={state.busy || (state.registering && !!state.instance && !state.instance.registrationOpen)}>
+        <Button type="submit" className="primary login-submit" busy={state.busy} disabled={state.busy || (state.registering && !!state.instance && !state.instance.registrationOpen)}>
           {state.registering ? '注册并登录' : '登录'}
-        </button>
+        </Button>
         <p className="login-session-hint">登录状态自动保持，无需每天重新登录</p>
         <div className="login-switch">
           <span>{state.registering ? '已有账号？' : '还没有账号？'}</span>

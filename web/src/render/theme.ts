@@ -34,7 +34,8 @@
  * the only one that can be implemented without fighting the book.
  */
 
-export type ThemeMode = 'light' | 'sepia' | 'dark';
+export type ThemeMode = 'light' | 'sepia' | 'green' | 'dark'
+  | 'wechat-day' | 'wechat-night' | 'houmo-day' | 'houmo-night';
 
 export interface ReaderSettings {
   /** Base font size in CSS pixels. */
@@ -69,6 +70,11 @@ export const PALETTES: Record<ThemeMode, { background: string; text: string; mut
   light: { background: '#ffffff', text: '#111111', muted: '#6b7280' },
   sepia: { background: '#f6f0e4', text: '#3b3121', muted: '#8a7c63' },
   dark: { background: '#14161a', text: '#c9cdd4', muted: '#7c828c' },
+  green: { background: '#d5ecd7', text: '#23392c', muted: '#617a65' },
+  'wechat-day': { background: '#f4f5f7', text: '#1a1a1a', muted: '#646b75' },
+  'wechat-night': { background: '#000000', text: '#d8d4cc', muted: '#9a9fa8' },
+  'houmo-day': { background: '#f9f2e8', text: '#404048', muted: '#746d64' },
+  'houmo-night': { background: '#333949', text: '#e0e3eb', muted: '#afb6c5' },
 };
 
 /**

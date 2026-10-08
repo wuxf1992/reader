@@ -11,7 +11,8 @@
  *    of them — stop — was pushed off the right edge and the reader could not stop
  *    the voice at all (没法停止).
  */
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act } from 'preact/test-utils';
 import { createElement as h, render } from '../src/ui/vendor/preact.ts';
 import { ReaderChrome, type ChromeState, type ChromeHandlers } from '../src/ui/reader-chrome.tsx';
 
@@ -119,6 +120,65 @@ describe('ReaderChrome', () => {
     return container;
   }
 
+  it('shows delayed loading only on the selected chapter and clears it when navigation ends', () => {
+    vi.useFakeTimers();
+    const toc = [{ id: 'one', label: '第一章', depth: 0, spine: 0 }, { id: 'two', label: '第二章', depth: 0, spine: 1 }];
+    try {
+      act(() => { paint({ tocOpen: true, toc, navigating: true, pendingChapterRef: 'two' }); });
+      const first = container.querySelector<HTMLButtonElement>('[data-section=one] button')!;
+      const second = container.querySelector<HTMLButtonElement>('[data-section=two] button')!;
+      expect(first.disabled).toBe(true); expect(second.getAttribute('aria-busy')).toBe('true');
+      expect(container.querySelector('.busy-spinner')).toBeNull();
+      act(() => { vi.advanceTimersByTime(100); });
+      expect(first.querySelector('.busy-spinner')).toBeNull();
+      expect(second.querySelector('.busy-spinner')).not.toBeNull();
+      act(() => { paint({ tocOpen: true, toc, navigating: false }); });
+      expect(container.querySelector('.busy-spinner')).toBeNull();
+      expect(second.disabled).toBe(false);
+    } finally { act(() => { render(null, container); }); vi.useRealTimers(); }
+  });
+
+  it('centres the current chapter inside the list without scrolling the app', () => {
+    const scrollIntoView = vi.fn();
+    const original = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    const heights = vi.spyOn(Element.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains('panel-body') ? 320 : 40;
+    });
+    const rects = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const body = this.closest('.panel-body');
+      const index = this.matches('.toc-list button') ? this.querySelector('.toc-index')?.textContent : null;
+      return { top: 1000 + (index ? (Number(index) - 1) * 40 - body!.scrollTop : 0) } as DOMRect;
+    });
+    try {
+      const toc = Array.from({ length: 50 }, (_, i) => ({ id: 'ch' + i, label: '第 ' + (i + 1) + ' 章', depth: 0, spine: i }));
+      paint({ tocOpen: false, toc, currentSectionId: 'ch41' });
+      let tree = paint({ tocOpen: true, toc, currentSectionId: 'ch41' });
+      expect(tree.querySelector('.panel-body')?.scrollTop).toBe(1500);
+      expect(tree.querySelector('[aria-current="true"] .toc-label')?.textContent).toBe('第 42 章');
+      tree = paint({ tocOpen: true, toc, currentSectionId: 'ch30' });
+      expect(tree.querySelector('.panel-body')?.scrollTop).toBe(1060);
+      paint({ tocOpen: false, toc, currentSectionId: 'ch41' });
+      tree = paint({ tocOpen: true, toc, currentSectionId: 'ch41' });
+      expect(tree.querySelector('.panel-body')?.scrollTop).toBe(1500);
+      expect(scrollIntoView).not.toHaveBeenCalled();
+    } finally {
+      HTMLElement.prototype.scrollIntoView = original;
+      heights.mockRestore();
+      rects.mockRestore();
+    }
+  });
+
+  it('marks only cached chapters and keeps the chapter name separate', () => {
+    const tree = paint({ tocOpen: true, currentSectionId: 'one', toc: [
+      { id: 'one', label: '第一章', depth: 0, spine: 0, cached: true },
+      { id: 'two', label: '第二章', depth: 0, spine: 1, cached: false },
+    ] });
+    expect(tree.querySelector('[data-section="one"] .toc-cached')?.textContent).toBe('已缓存');
+    expect(tree.querySelector('[data-section="one"] .toc-label')?.textContent).toBe('第一章');
+    expect(tree.querySelector('[data-section="two"] .toc-cached')).toBeNull();
+  });
+
   it('keeps only the page-local controls on the rail', () => {
     // 主题 / 字号 / 听书. The five that were removed all open or reach the settings
     // sheet, so having them on the rail as well made it a worse copy of that sheet
@@ -133,6 +193,29 @@ describe('ReaderChrome', () => {
     for (const gone of ['目录', '字体', '行距', '页边距', '阅读设置']) {
       expect(labels).not.toContain(gone);
     }
+  });
+
+  it.each([
+    ['wechat-day', '微信阅读', '日间', 'wechat-night', '夜间'],
+    ['wechat-night', '微信阅读', '夜间', 'wechat-day', '日间'],
+    ['houmo-day', '厚墨', '日间', 'houmo-night', '夜间'],
+    ['houmo-night', '厚墨', '夜间', 'houmo-day', '日间'],
+  ] as const)('selects %s and switches within the same theme family', (theme, family, label, opposite, action) => {
+    const callbacks = { ...handlers(), onSetting: vi.fn() };
+    const stage = document.createElement('div');
+    render(h(ReaderChrome, { state: chromeState({ theme, settingsOpen: true, settingsTab: 'appearance' }), stage, handlers: callbacks }), container);
+    const native = [...container.querySelectorAll<HTMLButtonElement>('[aria-label="主题"] button')];
+    expect(native.map(button => button.textContent)).toEqual(['白', '米黄', '浅绿', '夜间']);
+    const options = [...container.querySelectorAll<HTMLButtonElement>(`[aria-label="${family}"] button`)];
+    expect(options).toHaveLength(2);
+    const selected = options.find(button => button.textContent === label)!;
+    expect(selected.getAttribute('aria-pressed')).toBe('true');
+    selected.click();
+    expect(callbacks.onSetting).toHaveBeenLastCalledWith({ theme });
+    const rail = container.querySelector<HTMLButtonElement>('.reader-rail .rail-button')!;
+    expect(rail.getAttribute('aria-label')).toBe(action);
+    rail.click();
+    expect(callbacks.onSetting).toHaveBeenLastCalledWith({ theme: opposite });
   });
 
   it('offers refresh only in the chapter publication contents panel and disables it while busy', () => {

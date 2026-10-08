@@ -1,3 +1,5 @@
+import type { ThemeMode } from '../render/theme.ts';
+import { applyTheme } from './settings.ts';
 import type { BookDoc, Section, StagedBook } from '../formats/types.ts';
 import type { BookContent } from '../net/api.ts';
 import type { NativePageHost } from './native-page.ts';
@@ -15,6 +17,7 @@ import { collectSpokenChunks, type SpokenChunk } from '../render/tts-text.ts';
 import { adoptWindow } from '../formats/windowed.ts';
 import { BOOK_RESOURCE_MARKER, chapterRefFromLink } from '../formats/book-resource.ts';
 import { anchorRange, selectedAnchor, type TextAnchor } from './text-anchor.ts';
+import { paginateLines, nearestTextPage, type TextPage } from './line-pages.ts';
 
 export interface ReaderViewOptions {
   onSelection?(anchor: TextAnchor | null, rect: DOMRect | null): void;
@@ -94,11 +97,11 @@ export type PageAnimation = 'none' | 'slide' | 'fade';
 export type TapZone = 'standard' | 'reversed';
 
 export interface ViewSettings {
-  /** 'scroll' keeps the author's continuous flow; 'paged' paginates by column. */
+  /** 'paged' advances by discrete pages; plain text uses measured screenfuls. */
   mode: 'scroll' | 'paged';
   fontScale: number;
   lineHeight: string;
-  theme: 'light' | 'sepia' | 'green' | 'dark';
+  theme: ThemeMode;
   /** Fixed-layout only. */
   fit: 'contain' | 'width';
   direction: 'ltr' | 'rtl';
@@ -177,12 +180,15 @@ export class ReaderView {
   private readonly staged: StagedBook | null;
   private settings: ViewSettings;
   private sectionIndex = 0;
+  private openingEpoch = 0;
   private sectionOffset = 0;
   private lastEmitted = '';
   private readonly options: ReaderViewOptions;
   private resizeObserver: ResizeObserver | null = null;
   private currentObjectUrl: string | null = null;
   private animationTimer: ReturnType<typeof setTimeout> | null = null;
+  private fadingPage: HTMLElement | null = null;
+  private animationRun = 0;
   private pageTurnDistance: number | null = null;
   private spokenChunks: SpokenChunk[] = [];
   private speechHighlight: HTMLElement | null = null;
@@ -206,6 +212,17 @@ export class ReaderView {
    * value it would write is the one already there.
    */
   private trimApplied: number | null = null;
+  private textPageCache: TextPage[] | null = null;
+  private textPagesMeasured = false;
+  /** Keep the same character through successive reflows; only a deliberate turn replaces it. */
+  private textPageAnchor: Range | null = null;
+  private textLineGeometry: Array<{ top: number; bottom: number; node: Text }> = [];
+  private readonly fontsChanged = () => {
+    this.animatePage('none');
+    this.invalidateTextPages();
+    this.restoreOffset();
+    this.emitPosition();
+  };
 
   constructor(options: ReaderViewOptions) {
     this.options = options;
@@ -221,6 +238,7 @@ export class ReaderView {
     this.resolver = new ResourceResolver(options.doc.resources);
     this.container.append(this.host);
     this.bindChapterLinks();
+    document.fonts?.addEventListener('loadingdone', this.fontsChanged);
     let timer: ReturnType<typeof setTimeout> | undefined;
     const changed = () => {
       clearTimeout(timer);
@@ -396,11 +414,15 @@ export class ReaderView {
 
   applySettings(next?: Partial<ViewSettings>): void {
     const previous = this.settings;
+    // Measurements must describe the final layout, not an in-flight transform.
+    if (next) this.animatePage('none');
     // Capture the live position before typography changes its scroll extent.
     if (next) this.measureWithin();
     if (next) this.settings = { ...this.settings, ...next };
-    document.documentElement.dataset['theme'] = this.settings.theme;
-    this.host.setAttribute('data-paginated', String(this.settings.mode === 'paged'));
+    if (previous.mode !== this.settings.mode) this.textPageAnchor = null;
+    this.invalidateTextPages();
+    applyTheme(document.documentElement, this.settings.theme);
+    this.syncPaginationLayout();
     this.container.style.setProperty('--reader-font-scale', String(this.settings.fontScale));
     // `inherit` is what keeps the author's line-height; only an explicit user
     // choice replaces it.
@@ -420,6 +442,7 @@ export class ReaderView {
     this.container.style.setProperty('--reader-txt-para-gap', `${this.settings.txtParagraphGap}em`);
 
     this.host.style.direction = this.settings.direction;
+    this.syncPagedHeight();
     // Toggling pagination changes the column count, so the stored offset has to
     // be re-applied after the browser has laid out the new column box.
     requestAnimationFrame(() => this.restoreOffset());
@@ -429,18 +452,49 @@ export class ReaderView {
     if (next && previous.mode !== this.settings.mode) this.animatePage('none');
   }
 
-  /**
-   * Flashes a page-turn animation.
-   *
-   * On the host rather than on the flow, because the flow's own transform would
-   * fight the column layout in paged mode. `data-animating` is cleared by a
-   * timer rather than by `animationend`: the same animation may be requested
-   * twice in a row (a fast double tap), and `animationend` would then never fire
-   * for the second one, leaving the host stuck in an animating state.
-   */
-  animatePage(direction: 'next' | 'previous' | 'none'): void {
-    if (this.settings.pageAnimation === 'none' || direction === 'none') return;
+  /** Freeze the outgoing novel page without putting a second flow in its scroller. */
+  preparePageAnimation(): void {
+    this.animatePage('none');
+    if (this.settings.pageAnimation !== 'fade' || !this.usesTextPages()) return;
     if (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const frame = document.createElement('div');
+    for (const attribute of this.host.attributes) {
+      if (!['class', 'style', 'data-animating', 'id'].includes(attribute.name)) frame.setAttribute(attribute.name, attribute.value);
+    }
+    frame.className = 'reader-page-fade';
+    frame.setAttribute('aria-hidden', 'true');
+    frame.setAttribute('inert', '');
+    frame.style.cssText = this.host.style.cssText;
+    const parent = this.container.getBoundingClientRect(), page = this.host.getBoundingClientRect();
+    const scaleX = this.container.offsetWidth > 0 ? parent.width / this.container.offsetWidth : 1;
+    const scaleY = this.container.offsetHeight > 0 ? parent.height / this.container.offsetHeight : 1;
+    Object.assign(frame.style, {
+      left: `${(page.left - parent.left) / scaleX - this.container.clientLeft + this.container.scrollLeft}px`,
+      top: `${(page.top - parent.top) / scaleY - this.container.clientTop + this.container.scrollTop}px`,
+      width: `${page.width / scaleX}px`, height: `${page.height / scaleY}px`,
+    });
+    const shadow = frame.attachShadow({ mode: 'open' });
+    shadow.append(...[...this.host.shadow.childNodes].map(node => node.cloneNode(true)));
+    this.container.append(frame);
+    frame.scrollTop = this.host.scrollTop;
+    this.fadingPage = frame;
+  }
+
+  /** Restart each turn, including repeated turns in the same direction. */
+  animatePage(direction: 'next' | 'previous' | 'none'): void {
+    if (this.settings.pageAnimation === 'none' || direction === 'none') {
+      this.animationRun++;
+      if (this.animationTimer !== null) clearTimeout(this.animationTimer);
+      this.animationTimer = null;
+      this.host.removeAttribute('data-animating');
+      this.fadingPage?.remove();
+      this.fadingPage = null;
+      return;
+    }
+    if (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      this.animatePage('none');
+      return;
+    }
     // The *axis* is the mode's, and the attribute carries it.
     //
     // A page turn moves the reader along the axis the page is defined on: in paged
@@ -459,12 +513,29 @@ export class ReaderView {
     // final screen), or one viewport when entering a different chapter.
     this.host.style.setProperty('--reader-turn-distance', `${this.pageTurnDistance ?? this.host.clientHeight}px`);
     const value = `${this.settings.pageAnimation}-${direction}-${axis}`;
+    this.host.removeAttribute('data-animating');
+    // Force a style update between equal animation names; changing the timer alone
+    // does not restart a CSS animation on another next/previous tap.
+    void this.host.flow.offsetWidth;
     this.host.setAttribute('data-animating', value);
+    this.fadingPage?.setAttribute('data-fading', 'true');
     if (this.animationTimer !== null) clearTimeout(this.animationTimer);
-    this.animationTimer = setTimeout(() => {
+    const run = ++this.animationRun;
+    const finished = () => {
+      if (run !== this.animationRun) return;
+      if (this.animationTimer !== null) clearTimeout(this.animationTimer);
       this.animationTimer = null;
       this.host.removeAttribute('data-animating');
-    }, 240);
+      this.fadingPage?.remove();
+      this.fadingPage = null;
+    };
+    // CSS animations can start a frame late. Wait for both pages to finish instead
+    // of cutting them off using wall-clock time measured before they began.
+    const animated = [this.host.flow, ...(this.fadingPage ? [this.fadingPage] : [])];
+    const animations = animated.flatMap(element => typeof element.getAnimations === 'function' ? element.getAnimations() : []);
+    if (animations.length) void Promise.all(animations.map(animation => animation.finished)).then(finished, () => undefined);
+    this.animationTimer = setTimeout(finished, 1000); // Legacy hosts / interrupted compositor.
+
   }
 
   /**
@@ -497,32 +568,108 @@ export class ReaderView {
     return true;
   }
 
-  /**
-   * The element that actually scrolls the chapter.
-   *
-   * Two different elements depending on the mode, and getting it wrong is silent:
-   * a `scroll` event does not bubble, so a listener on the wrong one never fires;
-   * `scrollTop` on the wrong one is always zero, so every measurement reads as
-   * "the top of the chapter". In scroll mode the *host* scrolls and the column
-   * inside it is simply taller than the viewport (`overflow-y: auto` on
-   * `book-host`, which is where the reading position has to be read from). In
-   * paged mode the host is `overflow: hidden` and the *column* is the horizontal
-   * scroller that holds the columns.
-   */
-  get scroller(): HTMLElement {
-    return this.settings.mode === 'paged' ? this.host.flow : this.host;
+  private usesColumns(): boolean {
+    return this.settings.mode === 'paged' && !this.isPlainText();
   }
+
+  private usesTextPages(): boolean {
+    return this.doc.layout === 'reflowable' && this.settings.mode === 'paged' && this.isPlainText();
+  }
+
+  private invalidateTextPages(): void {
+    this.textPageCache = null;
+    this.textPagesMeasured = false;
+    this.textLineGeometry = [];
+    this.host.flow.style.removeProperty('padding-bottom');
+    this.host.style.removeProperty('clip-path');
+  }
+
+  /** Measure once per layout, never redistribute pages across the scroll range. */
+  private textPages(): TextPage[] | null {
+    if (!this.usesTextPages()) return null;
+    if (this.textPagesMeasured) return this.textPageCache;
+    this.textPagesMeasured = true;
+    const height = this.host.clientHeight;
+    const pages = paginateLines(this.lineBoxes(), height);
+    if (!pages.length) { this.textPagesMeasured = false; return null; } // No geometry yet (or a layout-free test DOM).
+    this.textPageCache = pages;
+    const flow = this.host.flow;
+    const naturalBottom = flow.getBoundingClientRect().bottom - this.host.getBoundingClientRect().top + this.host.scrollTop;
+    const extra = Math.max(0, pages.at(-1)!.offset + height + 1 - naturalBottom);
+    if (extra > 0) {
+      const padding = Number.parseFloat(getComputedStyle(flow).paddingBottom) || 0;
+      // The last short page must be reachable without the browser clamping backwards.
+      flow.style.paddingBottom = `${padding + extra}px`;
+    }
+    return pages;
+  }
+
+  private showScreen(page: number, remember = true): void {
+    const pages = this.textPages();
+    const slice = pages?.[page];
+    this.scroller.scrollTop = this.screenOffset(page);
+    if (slice) this.host.style.clipPath = `inset(0 0 ${Math.max(0, this.host.clientHeight - slice.visibleHeight)}px 0)`;
+    else this.host.style.removeProperty('clip-path');
+    if (remember || !this.textPageAnchor) this.rememberTextPage(slice);
+  }
+
+  /** Find the first character of the first row, even inside a wrapped paragraph. */
+  private rememberTextPage(page: TextPage | undefined): void {
+    this.textPageAnchor = null;
+    if (!page || page.offset === 0) return;
+    const line = this.textLineGeometry.find(l => l.top >= page.offset - 0.5);
+    if (!line) return;
+    const range = document.createRange();
+    const hostTop = this.host.getBoundingClientRect().top;
+    let low = 0, high = line.node.length;
+    while (low < high) {
+      const mid = Math.floor((low + high) / 2);
+      range.setStart(line.node, mid); range.setEnd(line.node, mid + 1);
+      const rect = [...range.getClientRects()].find(r => r.width > 0 && r.height > 0);
+      const bottom = rect ? rect.bottom - hostTop + this.host.scrollTop : -Infinity;
+      if (bottom > line.top + 0.5) high = mid; else low = mid + 1;
+    }
+    if (low >= line.node.length) return;
+    range.setStart(line.node, low); range.setEnd(line.node, low + 1);
+    this.textPageAnchor = range;
+  }
+
+  private textPageAt(offset: number): number {
+    const pages = this.textPages();
+    if (!pages) return 0;
+    for (let i = pages.length - 1; i >= 0; i--) if (offset >= pages[i]!.offset - 1) return i;
+    return 0;
+  }
+
+  private syncPaginationLayout(): void {
+    this.host.setAttribute('data-paginated', String(this.settings.mode === 'paged'));
+    // Network novels and TXT use the known-good continuous layout, clipped to
+    // one screen and advanced only by the pager. No CSS column overflow metrics.
+    this.host.setAttribute('data-page-layout', this.usesColumns() ? 'columns' : 'screens');
+  }
+
+  /** EPUB columns move horizontally; continuous text moves inside the host. */
+  get scroller(): HTMLElement {
+    return this.usesColumns() ? this.host.flow : this.host;
+  }
+
+  /** An explicit jump supersedes a chapter fetch already in flight. */
+  cancelPendingOpen(): void { this.openingEpoch++; this.animatePage('none'); }
 
   /** Opens a section by index, optionally at a fractional offset within it. */
   async open(index: number, offset = 0): Promise<void> {
     const section = this.doc.sections[index];
     if (!section) return;
+    const epoch = ++this.openingEpoch;
 
     // A staged section has no body until it is asked for. Doing it here, rather
     // than in the loader, is what keeps "opening a book" and "showing a chapter"
     // from both needing to know about windows.
-    if (this.staged) await this.staged.loadSection(index);
+    try { if (this.staged) await this.staged.loadSection(index); }
+    catch (error) { if (epoch !== this.openingEpoch) return; throw error; }
+    if (epoch !== this.openingEpoch) return;
     this.sectionIndex = index;
+    this.textPageAnchor = null;
     this.sectionOffset = Math.min(1, Math.max(0, offset));
     this.releaseObjectUrl();
 
@@ -531,6 +678,7 @@ export class ReaderView {
     } else {
       await this.renderReflowable(section);
     }
+    if (epoch !== this.openingEpoch) return;
     this.options.onChapterChange?.(index, section);
     this.refreshSpokenChunks();
     this.restoreOffset();
@@ -624,10 +772,11 @@ export class ReaderView {
     const rect = rangeRect(range);
     if (rect) {
       const scroller = this.scroller, box = scroller.getBoundingClientRect();
-      if (this.settings.mode === 'paged') {
+      if (this.usesColumns()) {
           const stride = this.columnStride(this.columnCount());
           scroller.scrollLeft = Math.floor((scroller.scrollLeft + rect.left - box.left) / stride) * stride;
         }
+      else if (this.usesTextPages()) this.showScreen(this.textPageAt(scroller.scrollTop + rect.top - box.top));
       else scroller.scrollTop += rect.top - box.top - box.height / 3;
     }
     this.emitPosition();
@@ -650,7 +799,7 @@ export class ReaderView {
     // as a single page, which is worse than reporting nothing: a footer that
     // says "1/1" while the reader is scrolling through six screens is a footer
     // that is lying.
-    if (this.settings.mode === 'paged') {
+    if (this.usesColumns()) {
       // Both numbers from the same helpers the page turns use. A footer whose "2/3"
       // is computed one way and whose presses are counted another is a footer that
       // eventually disagrees with the reader, and the two were separate arithmetic
@@ -692,7 +841,7 @@ export class ReaderView {
   async next(): Promise<boolean> {
     this.pageTurnDistance = null;
     if (this.doc.layout === 'fixed') return this.stepFixed(1);
-    if (this.settings.mode === 'paged') {
+    if (this.usesColumns()) {
       const advanced = this.stepColumn(1);
       if (advanced) return true;
       return this.stepSection(1);
@@ -705,7 +854,7 @@ export class ReaderView {
   async previous(): Promise<boolean> {
     this.pageTurnDistance = null;
     if (this.doc.layout === 'fixed') return this.stepFixed(-1);
-    if (this.settings.mode === 'paged') {
+    if (this.usesColumns()) {
       const moved = this.stepColumn(-1);
       if (moved) return true;
       return this.stepSection(-1, true);
@@ -737,7 +886,7 @@ export class ReaderView {
    */
   async seekPageInChapter(page: number): Promise<void> {
     if (this.doc.layout === 'fixed') return;
-    if (this.settings.mode === 'paged') {
+    if (this.usesColumns()) {
       const columns = this.columnCount();
       const target = Math.min(columns - 1, Math.max(0, Math.round(page)));
       this.scroller.scrollLeft = target * this.columnStride(columns);
@@ -746,11 +895,13 @@ export class ReaderView {
     }
     const total = this.screenCount();
     const target = Math.min(total - 1, Math.max(0, Math.round(page)));
-    this.scroller.scrollTop = this.screenOffset(target);
+    this.showScreen(target);
     this.emitPosition();
   }
 
   dispose(): void {
+    this.cancelPendingOpen();
+    document.fonts?.removeEventListener('loadingdone', this.fontsChanged);
     this.detachSelection?.(); this.detachSelection = null;
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
@@ -888,6 +1039,7 @@ export class ReaderView {
 
   private async renderReflowable(section: Section): Promise<void> {
     this.options.pageHost?.hide();
+    this.invalidateTextPages();
     // The client typesets what the server sent.
     //
     // Whether the server's rendition arrived with paragraphs or as one slab, this
@@ -908,6 +1060,8 @@ export class ReaderView {
     // is still honoured first: it is the declaration, and a book that declares itself
     // is not asked to prove it.
     this.host.setPlainText(this.isPlainText(section));
+    this.syncPaginationLayout();
+    this.syncPagedHeight();
     const body = extractBody(raw);
     const inlineStyles = extractInlineStyles(raw);
     // The chapter's own <style> blocks are prepended so the book's link-level
@@ -926,6 +1080,7 @@ export class ReaderView {
     // measured before they arrive — so the trim is re-synced on the same callback.
     this.syncPageTrim();
     this.waitForImages().then(() => {
+      this.invalidateTextPages();
       this.syncPageTrim();
       this.restoreOffset();
       this.refreshSpokenChunks();
@@ -1010,14 +1165,15 @@ export class ReaderView {
     // position is entirely expressed by the section index.
     if (this.doc.layout === 'fixed') return 0;
     const scroller = this.scroller;
-    if (this.settings.mode === 'paged') {
+    if (this.usesColumns()) {
       const width = scroller.scrollWidth;
       if (width <= 0) return this.sectionOffset;
       const within = Math.min(1, Math.max(0, scroller.scrollLeft / Math.max(1, width - scroller.clientWidth)));
       this.sectionOffset = within;
       return within;
     }
-    const limit = scroller.scrollHeight - scroller.clientHeight;
+    const pages = this.textPages();
+    const limit = pages ? pages.at(-1)!.offset : scroller.scrollHeight - scroller.clientHeight;
     if (limit <= 0) return 0;
     const within = Math.min(1, Math.max(0, scroller.scrollTop / limit));
     // ResizeObserver re-anchors after the viewport changes. Keep the latest
@@ -1027,19 +1183,43 @@ export class ReaderView {
     return within;
   }
 
+  private syncPagedHeight(): void {
+    const flow = this.host.flow;
+    if (!this.usesColumns()) {
+      flow.style.removeProperty('height');
+      return;
+    }
+    // An absolute host sized by its insets can leave percentage heights
+    // unresolved in Safari. A measured page height keeps the chapter in columns.
+    const height = this.host.clientHeight;
+    const value = `${height}px`;
+    if (height > 0 && flow.style.height !== value) flow.style.height = value;
+  }
+
   private restoreOffset(): void {
     const scroller = this.scroller;
     if (this.doc.layout === 'fixed') return;
     // Before the offset is applied, because the page's height decides which offsets
     // exist: a trim applied afterwards would move the reader by the trim.
     this.syncPageTrim();
-    if (this.settings.mode === 'paged') {
+    this.syncPagedHeight();
+    if (this.usesColumns()) {
       const max = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
       scroller.scrollLeft = max * this.sectionOffset;
       return;
     }
     const limit = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
-    scroller.scrollTop = limit * this.sectionOffset;
+    this.host.flow.scrollLeft = 0;
+    if (this.settings.mode === 'paged') {
+      const pages = this.textPages();
+      const anchor = this.textPageAnchor;
+      const rect = anchor && this.host.flow.contains(anchor.startContainer) ? rangeRect(anchor) : null;
+      const target = rect ? scroller.scrollTop + rect.top - this.host.getBoundingClientRect().top : null;
+      const page = pages ? target !== null ? this.textPageAt(target)
+        : nearestTextPage(pages, this.sectionOffset * pages.at(-1)!.offset)
+        : Math.round(this.sectionOffset * (this.screenCount() - 1));
+      this.showScreen(page, false);
+    } else scroller.scrollTop = limit * this.sectionOffset;
   }
 
   private emitPosition(): void {
@@ -1062,13 +1242,26 @@ export class ReaderView {
   private attachResizeObserver(): void {
     this.resizeObserver?.disconnect();
     if (typeof ResizeObserver === 'undefined') return;
+    let geometry = this.layoutGeometry();
     this.resizeObserver = new ResizeObserver(() => {
+      if (geometry === this.layoutGeometry()) return;
+      this.animatePage('none');
+      this.invalidateTextPages();
       // A rotation changes the viewport, and the page's line grid with it: the trim is
       // recomputed before the offset is restored for the same reason as everywhere else.
       this.restoreOffset();
       this.emitPosition();
+      geometry = this.layoutGeometry();
     });
     this.resizeObserver.observe(this.host);
+    this.resizeObserver.observe(this.host.flow);
+  }
+
+  /** Ignore the extra last-page padding while watching for real content reflows. */
+  private layoutGeometry(): string {
+    const flow = this.host.flow;
+    const bottomPadding = Number.parseFloat(getComputedStyle(flow).paddingBottom) || 0;
+    return `${this.host.clientWidth}:${this.host.clientHeight}:${flow.clientWidth}:${Math.round(flow.offsetHeight - bottomPadding)}`;
   }
 
   private async stepFixed(delta: number): Promise<boolean> {
@@ -1112,7 +1305,7 @@ export class ReaderView {
     const target = page + delta;
     if (target < 0 || target >= this.screenCount()) return false;
     const before = scroller.scrollTop;
-    scroller.scrollTop = this.screenOffset(target);
+    this.showScreen(target);
     this.pageTurnDistance = Math.abs(scroller.scrollTop - before);
     this.emitPosition();
     return true;
@@ -1152,6 +1345,8 @@ export class ReaderView {
    * page offsets have to be computed from the same range or they cannot agree.
    */
   private screenCount(): number {
+    const pages = this.textPages();
+    if (pages) return pages.length;
     const range = this.scrollRange();
     if (range <= 0) return 1;
     // Ceil: the last screen is a screen even when it shows only a line, and its text
@@ -1222,6 +1417,11 @@ export class ReaderView {
    * number and would close the loop described in `pageHeight`.
    */
   private syncPageTrim(): void {
+    if (this.usesTextPages()) {
+      this.trimApplied = null;
+      this.host.style.removeProperty('--reader-page-trim');
+      return;
+    }
     const line = this.lineHeight();
     if (line <= 0) {
       this.trimApplied = null;
@@ -1294,6 +1494,8 @@ export class ReaderView {
    * own first line and moving it down by half a line would hide the heading.
    */
   private screenOffset(page: number): number {
+    const pages = this.textPages();
+    if (pages) return pages[Math.min(pages.length - 1, Math.max(0, page))]!.offset;
     const total = this.screenCount();
     if (total <= 1) return 0;
     if (page === 0) return 0;
@@ -1358,6 +1560,23 @@ export class ReaderView {
     const lines: Array<{ top: number; bottom: number }> = [];
     const root = flow.firstElementChild;
     if (!root) return lines;
+    if (this.usesTextPages()) {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      let node: Node | null;
+      while ((node = walker.nextNode())) {
+        if (!node.textContent?.trim()) continue;
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        for (const rect of typeof range.getClientRects === 'function' ? range.getClientRects() : []) {
+          if (rect.width > 0 && rect.height > 0) {
+            const line = { top: rect.top - hostTop + scrollTop, bottom: rect.bottom - hostTop + scrollTop };
+            lines.push(line);
+            this.textLineGeometry.push({ ...line, node: node as Text });
+          }
+        }
+      }
+      return lines;
+    }
     for (const block of root.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, blockquote, div')) {
       const range = document.createRange();
       range.selectNodeContents(block);
@@ -1555,7 +1774,7 @@ export class ReaderView {
     }
     const rect = rangeRect(range);
     if (!rect) return;
-    if (this.settings.mode === 'paged') {
+    if (this.usesColumns()) {
       // In paged mode the page is found by measurement, not by `scrollIntoView`,
       // because the browser's idea of "into view" is a horizontal jump to a
       // column boundary that ignores the chapter's own padding.
@@ -1563,10 +1782,7 @@ export class ReaderView {
       flow.scrollLeft = Math.max(0, target);
       return;
     }
-    const hostRect = flow.getBoundingClientRect();
-    if (rect.top < hostRect.top + 8 || rect.bottom > hostRect.bottom - 8) {
-      flow.scrollTop += rect.top - hostRect.top - hostRect.height / 3;
-    }
+    this.revealRange(range);
   }
 
   clearSpeechHighlight(): void {
@@ -1585,15 +1801,14 @@ export class ReaderView {
    */
   speechAnchor(): SpokenChunk | null {
     if (this.spokenChunks.length === 0) return null;
-    const flow = this.host.flow;
-    const hostRect = flow.getBoundingClientRect();
+    const hostRect = this.scroller.getBoundingClientRect();
     if (hostRect.width === 0 && hostRect.height === 0) return this.spokenChunks[0] ?? null;
-    const edge = this.settings.mode === 'paged' ? hostRect.left + 4 : hostRect.top + 4;
+    const edge = this.usesColumns() ? hostRect.left + 4 : hostRect.top + 4;
     const first = this.spokenChunks[0] ?? null;
     for (const chunk of this.spokenChunks) {
       const rect = this.chunkRect(chunk);
       if (!rect) return first;
-      const start = this.settings.mode === 'paged' ? rect.left : rect.top;
+      const start = this.usesColumns() ? rect.left : rect.top;
       if (start >= edge) return chunk;
     }
     return this.spokenChunks[this.spokenChunks.length - 1] ?? first;
@@ -1626,14 +1841,17 @@ export class ReaderView {
   revealBlock(index: number): void {
     const block = this.host.flow.children[index];
     if (!(block instanceof HTMLElement)) return;
-    if (this.settings.mode === 'paged') {
+    if (this.usesColumns()) {
       const flow = this.host.flow;
       flow.scrollLeft = Math.max(0, block.offsetLeft - flow.clientWidth / 2);
       return;
     }
-    const flow = this.host.flow;
-    const target = block.offsetTop - flow.clientHeight / 3;
-    flow.scrollTop = Math.max(0, target);
+    const scroller = this.scroller;
+    const target = block.offsetTop - scroller.clientHeight / 3;
+    if (this.usesTextPages()) {
+      const rect = block.getBoundingClientRect(), box = scroller.getBoundingClientRect();
+      this.showScreen(this.textPageAt(scroller.scrollTop + rect.top - box.top));
+    } else scroller.scrollTop = Math.max(0, target);
   }
 
   private objectUrl(bytes: Uint8Array, mediaType: string): string {

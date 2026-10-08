@@ -12,7 +12,7 @@
  */
 
 import type { ReaderSettings, ThemeMode } from '../render/theme.ts';
-import { DEFAULT_SETTINGS } from '../render/theme.ts';
+import { DEFAULT_SETTINGS, PALETTES } from '../render/theme.ts';
 
 const KEY = 'reader.settings';
 
@@ -45,8 +45,7 @@ export function saveSettings(settings: ReaderSettings): void {
 /** Set the theme on the root element, where the shell's own variables live. */
 export function applyTheme(root: HTMLElement, theme: ThemeMode): void {
   root.dataset.theme = theme;
-  const colors: Record<ThemeMode, string> = { light: '#ffffff', sepia: '#f6f0e4', dark: '#14161a' };
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', colors[theme]);
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', PALETTES[theme].background);
 }
 
 function clamp(value: unknown, min: number, max: number, fallback: number): number {
@@ -55,7 +54,7 @@ function clamp(value: unknown, min: number, max: number, fallback: number): numb
 }
 
 function isTheme(value: unknown): value is ThemeMode {
-  return value === 'light' || value === 'sepia' || value === 'dark';
+  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(PALETTES, value);
 }
 
 export type { ReaderSettings };

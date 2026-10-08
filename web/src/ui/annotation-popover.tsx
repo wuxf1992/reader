@@ -14,6 +14,7 @@ export function AnnotationPopover({ target, save, remove, close }: {
   const [editing, setEditing] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState('');
   const [comment, setComment] = useState(target.note?.comment ?? ''), [color, setColor] = useState(target.note?.color || '#ffd54f');
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [, refreshViewport] = useState(0);
   const panel = useRef<HTMLDivElement>(null), input = useRef<HTMLTextAreaElement>(null);
   const viewport = window.visualViewport;
   const width = Math.min(328, (viewport?.width ?? innerWidth) - 24);
@@ -33,9 +34,10 @@ export function AnnotationPopover({ target, save, remove, close }: {
     };
     const key = (event: KeyboardEvent) => { if (event.key === 'Escape' && !busy && !confirmDelete) { event.stopPropagation(); close(); } };
     const moved = (event: Event) => { if (target.note && !editing && !busy && !confirmDelete && !(event.target instanceof Node && panel.current?.contains(event.target))) close(); };
+    const resized = (event: Event) => { moved(event); refreshViewport(value => value + 1); };
     document.addEventListener('pointerdown', dismiss); document.addEventListener('keydown', key, true);
-    window.addEventListener('resize',moved); document.addEventListener('scroll',moved,true);
-    return () => { document.removeEventListener('pointerdown', dismiss); document.removeEventListener('keydown', key, true); window.removeEventListener('resize',moved); document.removeEventListener('scroll',moved,true); };
+    window.addEventListener('resize',resized); viewport?.addEventListener('resize',resized); document.addEventListener('scroll',moved,true);
+    return () => { document.removeEventListener('pointerdown', dismiss); document.removeEventListener('keydown', key, true); window.removeEventListener('resize',resized); viewport?.removeEventListener('resize',resized); document.removeEventListener('scroll',moved,true); };
   }, [editing, busy, confirmDelete]);
   useEffect(() => { if (editing) input.current?.focus(); }, [editing]);
   if (editing) return <Modal title={target.note ? '编辑批注' : '添加批注'} busy={busy} onClose={close}>

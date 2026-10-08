@@ -36,6 +36,7 @@ import { AnnotationPopover, type AnnotationTarget } from './annotation-popover.t
 import { newId } from '../core/id.ts';
 import { textToChapterHtml } from '../formats/segments.ts';
 import { parseLocator } from './locator.ts';
+import { shouldPrefetch } from '../render/prefetch.ts';
 
 export interface ReaderScreenOptions {
   api: ReaderApi;
@@ -184,9 +185,18 @@ export class ReaderScreen {
    * difference between "slow" and "broken" to the reader pressing it.
    */
   private navigating = false;
+  private tocRun = 0;
+  private tocCacheRun = 0;
+  private prefetchRun: AbortController | null = null;
+  private prefetchChapter: number | null = null;
+  private prefetchReady = false;
+  private manualDownloadRunning = false;
+  private prefetchMessage = '';
   private detachGestures: (() => void) | null = null;
   private progressTimer: ReturnType<typeof setTimeout> | null = null;
   private progressWrite: Promise<void> = Promise.resolve();
+  private pageTurnQueue: Promise<void> = Promise.resolve();
+  private pageTurnEpoch = 0;
   private readonly noticeId = Symbol('reader-status');
   private disposed = false;
   private pendingPosition: Position | null = null;
@@ -244,6 +254,20 @@ export class ReaderScreen {
             sections={signal => this.searchSections(signal)} navigate={target => this.navigateTool(target)}
             overrides={this.overrides} saveOverrides={value => this.saveOverrides(value)} undoOverrides={() => this.undoOverrides()}
             previewHeadings={prefix => this.previewHeadings(prefix)}
+            autoCache={this.settings.autoCache} autoCacheChapters={this.settings.autoCacheChapters} prefetchMessage={this.prefetchMessage}
+            onCacheSetting={patch => void this.updateSetting(patch)}
+            onClearCache={id => {
+              if (id !== this.book?.id) return;
+              this.stopPrefetch();
+              this.prefetchMessage = '缓存已清理，切换章节后继续预缓存'; this.patch({});
+            }}
+            onDownloadRunning={running => {
+              if (running === this.manualDownloadRunning || this.disposed) return;
+              this.manualDownloadRunning = running;
+              this.stopPrefetch(); this.prefetchChapter = null;
+              if (running) { this.prefetchMessage = '手动下载期间暂停预缓存'; this.patch({}); }
+              else this.startPrefetch();
+            }}
             onNotes={() => this.paintNotes()} onClose={() => { this.toolsOpen = false; this.patch({}); }}
             previewSpeech={() => this.previewSpeech()} stopPreview={() => this.stopPreview()} /> : null}</>}
           state={this.chrome}
@@ -285,6 +309,11 @@ export class ReaderScreen {
     );
 
     this.bindSyncStatus();
+    this.listeners.push(options.platform.onConnectivityChange(state => {
+      this.stopPrefetch(); this.prefetchChapter = null;
+      if (state === 'online') this.startPrefetch();
+      else { this.prefetchMessage = '当前网络下暂停预缓存'; this.patch({}); }
+    }));
   }
 
   private async generateAiSummary(): Promise<void> {
@@ -304,6 +333,7 @@ export class ReaderScreen {
 
   /** Opens a book: fetch bytes, parse, restore position, start reporting. */
   async open(book: Book): Promise<void> {
+    this.stopPrefetch(); this.prefetchChapter = null; this.prefetchReady = false; this.prefetchMessage = '';
     this.closeAlternatives(); this.chapterRefresh?.abort(); this.chapterRefresh = null;
     const token = ++this.loadingToken;
     this.toolsOpen = false; this.annotation = null; this.toolsReturn = ''; this.toolsSelection = null; this.stopPreview();
@@ -348,6 +378,8 @@ export class ReaderScreen {
         // returning to a book saw no confirmation at all. The other order lets the
         // restore message overwrite "正在载入…", which is what it is there for.
         await this.restorePosition(book, token);
+        if (token !== this.loadingToken) return;
+        this.prefetchReady = true; this.startPrefetch();
         if (this.chrome.statusState === 'loading') this.hideStatus();
         return;
       }
@@ -466,12 +498,15 @@ export class ReaderScreen {
     // text before this change and the markup after it must not serve the cached
     // plain text for a chapter it is now rendering as a document.
     const cached = await this.publicationCache.resource(book.id, ref);
+    if (!cached) { this.stopPrefetch(); this.prefetchChapter = null; }
     const blob = cached ? new Blob([toArrayBuffer(cached)]) : await this.options.api.asset(book.id, ref);
     if (!cached) {
       // Cached per section, not per book, so a partially read book is partially
       // readable offline and re-opening one does not re-fetch what was read.
       const bytes = new Uint8Array(await blob.arrayBuffer());
-      await this.publicationCache.putResource(book.id, ref, bytes).catch(() => undefined);
+      await this.publicationCache.putResource(book.id, ref, bytes).then(() => {
+        if (this.chrome.tocOpen && book === this.book) void this.refreshTocCache();
+      }).catch(() => undefined);
     }
     if (item.kind === 'page') {
       return { image: { mediaType: item.mediaType, bytes: new Uint8Array(await blob.arrayBuffer()) } };
@@ -480,6 +515,7 @@ export class ReaderScreen {
   }
 
   dispose(): void {
+    this.stopPrefetch(); this.prefetchReady = false;
     this.closeAlternatives(); this.chapterRefresh?.abort();
     this.stopPreview();
     this.disposed = true;
@@ -607,8 +643,55 @@ export class ReaderScreen {
     }
   }
 
+  private stopPrefetch(): void {
+    this.prefetchRun?.abort(); this.prefetchRun = null;
+  }
+
+  private startPrefetch(position = this.view?.position()): void {
+    const book = this.book, content = this.content;
+    if (!this.prefetchReady || this.disposed || this.chrome.switching || this.chrome.refreshing || this.chrome.refreshingChapter || !position || !book || !content || !['chapters', 'txt'].includes(book.format)) return;
+    if (this.prefetchChapter === position.chapterPosition) return;
+    this.stopPrefetch(); this.prefetchChapter = position.chapterPosition;
+    if (!this.settings.autoCache || this.manualDownloadRunning) {
+      this.prefetchMessage = this.settings.autoCache ? '手动下载期间暂停预缓存' : '自动预缓存已关闭'; this.patch({}); return;
+    }
+    const run = this.prefetchRun = new AbortController();
+    const message = (value: string) => { if (!run.signal.aborted) { this.prefetchMessage = value; this.patch({}); } };
+    const count = Math.min(this.settings.autoCacheChapters, content.total - position.chapterPosition - 1);
+    void (async () => {
+      if (!shouldPrefetch() || await this.options.platform.connectivity() === 'offline') { message('当前网络下暂停预缓存'); return; }
+      run.signal.throwIfAborted();
+      let window = content;
+      for (let step = 1; step <= count; step++) {
+        run.signal.throwIfAborted();
+        const spine = position.chapterPosition + step;
+        let item = window.items.find(item => item.seq === spine);
+        if (!item) {
+          const group = windowIndexOf(content, spine);
+          const saved = await this.publicationCache.window(book.id, group);
+          window = saved && saved.revision === content.revision ? saved : await this.readWindow(book.id, group, run.signal);
+          run.signal.throwIfAborted();
+          if (window.revision !== content.revision) throw new Error('目录已更新，请刷新后重试');
+          item = window.items.find(item => item.seq === spine);
+        }
+        if (!item) throw new Error('暂时无法获取后续章节');
+        message(`正在预缓存 ${step}/${count} 章`);
+        const ref = renditionRef(item);
+        if (!await this.publicationCache.resource(book.id, ref)) {
+          run.signal.throwIfAborted();
+          const blob = await this.options.api.asset(book.id, ref, { signal: run.signal });
+          const bytes = new Uint8Array(await blob.arrayBuffer());
+          run.signal.throwIfAborted();
+          await this.publicationCache.putResource(book.id, ref, bytes);
+          if (this.chrome.tocOpen && !run.signal.aborted) await this.refreshTocCache();
+        }
+      }
+      message(count ? `后续 ${count} 章已缓存` : '已到最后一章');
+    })().catch(error => { if (!run.signal.aborted) message(`预缓存暂停：${error instanceof Error ? error.message : '缓存失败'}`); });
+  }
+
   private async readWindow(bookId: string, group: number, signal?: AbortSignal): Promise<BookContent> {
-    try { const content = await this.options.api.items(bookId, group, signal ? { signal } : {}); await this.publicationCache.putWindow(bookId, group, content).catch(() => undefined); return content; }
+    try { const content = await this.options.api.items(bookId, group, signal ? { signal } : {}); signal?.throwIfAborted(); await this.publicationCache.putWindow(bookId, group, content).catch(() => undefined); return content; }
     catch (error) {
       if (error instanceof ApiError && !error.isConnectivity && error.kind !== 'server') throw error;
       const cached = await this.publicationCache.window(bookId, group);
@@ -690,13 +773,14 @@ export class ReaderScreen {
 
   private async sourceAction(action: () => Promise<void>): Promise<void> {
     if (this.chrome.switching || this.chrome.refreshing || this.chrome.refreshingChapter || this.navigating) return;
+    this.stopPrefetch(); this.prefetchChapter = null;
     const token = this.loadingToken; this.patch({ switching: true });
     try { await action(); }
     catch (error) {
       if (token !== this.loadingToken) return;
       if (error instanceof ApiError && error.isAuthFailure) this.options.onSignedOut();
       else this.flashStatus(error instanceof Error ? error.message : '换源操作失败', 5000);
-    } finally { if (token === this.loadingToken) this.patch({ switching: false }); }
+    } finally { if (token === this.loadingToken) { this.patch({ switching: false }); this.startPrefetch(); } }
   }
   private closeAlternatives(): void {
     this.qualityRun?.abort(); this.qualityRun = null;
@@ -727,6 +811,7 @@ export class ReaderScreen {
     const book = this.book, content = this.content, token = this.loadingToken;
     const item = content?.items.find(value => value.href === this.chrome.currentSectionId);
     if (!book || !content || !item || this.chapterRefresh || this.chrome.refreshing || this.chrome.switching || this.navigating) return;
+    this.stopPrefetch(); this.prefetchChapter = null;
     const run = new AbortController(); this.chapterRefresh = run;
     this.patch({ refreshingChapter: true }); this.setStatus('loading', '正在重新获取当前章节…');
     try {
@@ -756,7 +841,7 @@ export class ReaderScreen {
         if (error instanceof ApiError && error.isAuthFailure) this.options.onSignedOut();
         else this.flashStatus('刷新正文失败，已保留当前章节', 4000);
       }
-    } finally { if (this.chapterRefresh === run) { this.chapterRefresh = null; this.patch({ refreshingChapter: false }); } }
+    } finally { if (this.chapterRefresh === run) { this.chapterRefresh = null; this.patch({ refreshingChapter: false }); this.startPrefetch(); } }
   }
   private async previewAlternative(ref: string, title: string): Promise<void> {
     const book = this.book, token = this.loadingToken; if (!book) return;
@@ -824,6 +909,7 @@ export class ReaderScreen {
     if (!book || book.format !== 'chapters' || !previousManifest || this.chrome.refreshing || this.chrome.switching || this.navigating) return;
     const token = this.loadingToken;
     const previousHrefs = new Set(previousManifest.content?.items.map((item) => item.href));
+    this.stopPrefetch(); this.prefetchChapter = null;
     this.patch({ refreshing: true });
     this.setStatus('loading', '正在刷新目录…');
     try {
@@ -873,7 +959,7 @@ export class ReaderScreen {
       if (error instanceof ApiError && error.isAuthFailure) this.options.onSignedOut();
       else this.flashStatus('刷新目录失败，已保留当前章节', 3200);
     } finally {
-      if (token === this.loadingToken) this.patch({ refreshing: false });
+      if (token === this.loadingToken) { this.patch({ refreshing: false }); this.startPrefetch(); }
     }
   }
 
@@ -973,6 +1059,7 @@ export class ReaderScreen {
    * for a diff to describe.
    */
   private buildView(): void {
+    this.stopPrefetch(); this.prefetchChapter = null;
     const epoch = ++this.viewEpoch;
     this.detachGestures?.();
     for (const off of this.viewListeners) off();
@@ -1109,23 +1196,44 @@ export class ReaderScreen {
    * a turn that bypassed this method would leave the engine speaking from a
    * detached node, which sounds exactly like the reader being ignored.
    */
-  private async turnPage(direction: 'next' | 'previous'): Promise<void> {
-    if (this.chrome.refreshing) return;
+  private cancelPageTurns(): void {
+    this.stopPrefetch(); this.prefetchChapter = null;
+    this.pageTurnEpoch++;
+    this.pageTurnQueue = Promise.resolve();
+    this.view?.cancelPendingOpen();
+  }
+
+  private turnPage(direction: 'next' | 'previous'): Promise<void> {
     const view = this.view;
-    if (!view) return;
-    let moved: boolean;
-    try {
-      moved = direction === 'next' ? await view.next() : await view.previous();
-    } catch (error) {
-      this.handleLoadError(error);
-      return;
-    }
-    if (!moved) {
-      this.flashStatus(direction === 'next' ? '已经是最后一页' : '已经是第一页');
-      return;
-    }
-    view.animatePage(direction);
-    this.pendingSpeechAnchor = null;
+    if (!view || this.chrome.refreshing || this.navigating || this.chrome.switching) return Promise.resolve();
+    const epoch = this.pageTurnEpoch;
+    // A chapter fetch is asynchronous. Preserve tap order instead of letting
+    // the next tap act on the old chapter while the first one is still loading.
+    const turn = async () => {
+      if (epoch !== this.pageTurnEpoch || this.disposed || view !== this.view || this.chrome.refreshing || this.navigating) return;
+      view.preparePageAnimation();
+      let moved: boolean;
+      try {
+        moved = direction === 'next' ? await view.next() : await view.previous();
+      } catch (error) {
+        if (epoch === this.pageTurnEpoch && !this.disposed && view === this.view) {
+          view.animatePage('none');
+          this.handleLoadError(error);
+        }
+        return;
+      }
+      if (epoch !== this.pageTurnEpoch || this.disposed || view !== this.view) return;
+      if (!moved) {
+        view.animatePage('none');
+        this.flashStatus(direction === 'next' ? '已经是最后一页' : '已经是第一页');
+        return;
+      }
+      view.animatePage(direction);
+      this.pendingSpeechAnchor = null;
+    };
+    const pending = this.pageTurnQueue.then(turn, turn);
+    this.pageTurnQueue = pending;
+    return pending;
   }
 
   /**
@@ -1246,6 +1354,7 @@ export class ReaderScreen {
       ...(chapterMoved ? { currentSectionId: sectionId } : {}),
     });
 
+    this.startPrefetch(position);
     this.pendingPosition = position;
     this.recordSpeechAnchor();
 
@@ -1315,6 +1424,36 @@ export class ReaderScreen {
     this.closeAlternatives();
     const open = !this.chrome.tocOpen;
     this.patch({ tocOpen: open, settingsOpen: false });
+    if (open) void this.refreshTocCache();
+  }
+
+  private async refreshTocCache(): Promise<void> {
+    const book = this.book, token = this.loadingToken, run = ++this.tocCacheRun;
+    if (!book) return;
+    const current = () => run === this.tocCacheRun && token === this.loadingToken
+      && book === this.book && !this.disposed && this.chrome.tocOpen;
+    try {
+      await this.renderToc();
+      if (!current()) return;
+      const content = this.content;
+      const [entries, windows] = await Promise.all([
+        this.publicationCache.entries(),
+        Promise.all((content?.groups ?? []).map((_, group) => this.publicationCache.window(book.id, group))),
+      ]);
+      if (!current() || content !== this.content) return;
+      const cached = new Set(entries.filter(entry => entry.bookId === book.id).map(entry => entry.ref));
+      const refs = new Map((content?.items ?? []).map(item => [item.href, renditionRef(item)]));
+      for (const window of windows) {
+        if (window?.revision !== content?.revision) continue;
+        for (const item of window?.items ?? []) if (!refs.has(item.href)) refs.set(item.href, renditionRef(item));
+      }
+      this.patch({ toc: this.chrome.toc.map(entry => {
+        const href = entry.id.split('#')[0]!;
+        return { ...entry, cached: cached.has(OFFLINE_FILE) || cached.has(refs.get(href) ?? href) };
+      }) });
+    } catch {
+      if (current()) this.patch({ toc: this.chrome.toc.map(entry => ({ ...entry, cached: false })) });
+    }
   }
 
   private toggleSettings(tab: 'appearance' | 'behavior' | 'speech' = 'behavior'): void {
@@ -1465,22 +1604,30 @@ export class ReaderScreen {
     const fragment = ref.includes('#') ? ref.slice(ref.indexOf('#') + 1) : '';
     const sectionRef = this.localSectionId(ref.split('#')[0]!);
     const view = this.view;
-    if (!view || this.navigating || this.chrome.refreshing || this.chrome.switching) return;
+    if (!view || this.navigating || this.chrome.refreshing || this.chrome.refreshingChapter || this.chrome.switching) return;
     const book = this.book;
     if (!book) return;
 
+    this.cancelPageTurns();
+
     const local = view.indexOfSection(sectionRef);
+    const run = ++this.tocRun;
+    const current = () => run === this.tocRun && view === this.view && !this.disposed;
 
     // The overwhelmingly common case: the chapter is one the window already
     // holds. No network, no window, no second render.
     if (local >= 0) {
-      try { await view.open(local, 0); if (fragment) view.revealFragment(fragment); this.patch({ tocOpen: false }); } catch (error) { this.handleLoadError(error); }
+      this.patch({ pendingChapterRef: ref });
+      this.setStatus('loading', '正在跳到这一章…');
+      try { await view.open(local, 0); if (!current()) return; if (fragment) view.revealFragment(fragment); this.patch({ tocOpen: false }); this.hideStatus(); }
+      catch (error) { if (current()) this.handleLoadError(error); }
+      finally { if (current()) this.patch({ pendingChapterRef: undefined }); }
       return;
     }
     if (!this.content) return;
 
     this.navigating = true;
-    this.patch({ navigating: true });
+    this.patch({ navigating: true, pendingChapterRef: ref });
     this.setStatus('loading', '正在跳到这一章…');
     try {
       const spine = view.windowIndexOfRef(sectionRef) ?? this.tocSpineFor(ref);
@@ -1502,7 +1649,7 @@ export class ReaderScreen {
       this.setStatus('error', '无法跳到这一章');
     } finally {
       this.navigating = false;
-      this.patch({ navigating: false });
+      this.patch({ navigating: false, pendingChapterRef: undefined });
     }
   }
 
@@ -1556,6 +1703,7 @@ export class ReaderScreen {
     if (this.chrome.refreshing) return;
     const view = this.view;
     if (!view) return;
+    this.cancelPageTurns();
     await view.seekPageInChapter(page - 1);
     // The drag can end between two scroll events, and a book with no reported
     // position after the seek would leave the bar showing the pre-drag value.
@@ -1620,6 +1768,7 @@ export class ReaderScreen {
     const view = this.view;
     const book = this.book;
     if (!view || !book) return;
+    this.cancelPageTurns();
     // The local index of a whole-book position, when the loaded window holds it.
     // Resolved by arithmetic against the window's offset rather than by looking a
     // reference up: a section id is the server's, and a whole-book position is
@@ -1656,10 +1805,13 @@ export class ReaderScreen {
     this.options.onSettingsChange(patch);
     Object.assign(this.settings, patch);
     // Reading information changes only the chrome, never the book's pagination.
-    if (Object.keys(patch).some(key => !READOUT_FIELDS.some(field => field.key === key))) {
+    if (Object.keys(patch).some(key => !['autoCache', 'autoCacheChapters'].includes(key) && !READOUT_FIELDS.some(field => field.key === key))) {
       this.view?.applySettings(this.viewSettings());
     }
     this.patch({});
+    if ('autoCache' in patch || 'autoCacheChapters' in patch) {
+      this.stopPrefetch(); this.prefetchChapter = null; this.startPrefetch();
+    }
     // Fixed-layout fit and direction changes are structural, so the current page
     // has to be re-rendered rather than merely re-styled.
     if (this.doc?.layout === 'fixed' && ('fit' in patch || 'comicDirection' in patch)) {
@@ -2077,6 +2229,8 @@ function emptyChromeSettings(): Partial<ChromeState> {
       txtIndent: 2,
       txtParagraphGap: 0.55,
       txtEncoding: '',
+      autoCache: true,
+      autoCacheChapters: 3,
       comicDirection: 'ltr',
       ttsRate: 1,
       ttsPitch: 1,

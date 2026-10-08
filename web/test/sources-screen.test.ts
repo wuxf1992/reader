@@ -47,7 +47,7 @@ beforeAll(() => {
 async function chooseSource(root: HTMLElement) {
   const select = root.querySelector<HTMLSelectElement>('[aria-label="选择来源"]')!;
   select.value = 'source-1'; select.dispatchEvent(new Event('change', { bubbles: true }));
-  await vi.waitFor(() => expect([...document.querySelectorAll('[role=status]')].map(el => el.textContent).join('')).not.toMatch(/正在处理|正在保存/));
+  await vi.waitFor(() => expect(root.querySelector('.sources-body')?.getAttribute('aria-busy')).toBe('false'));
 }
 afterEach(() => { screens.splice(0).forEach((screen) => screen.dispose()); document.body.replaceChildren(); });
 async function setup(admin = true) {
@@ -126,6 +126,7 @@ it('merges events from one stream, aborts on stop, ignores late data and resumes
     new Promise<SourcePage>(done => { resolve = done; })));
   input(screen.element, '搜索书籍', '斗罗'); button(screen.element, '搜索').click();
   await vi.waitFor(() => expect(screen.element.querySelectorAll('.catalog-book')).toHaveLength(1));
+  await vi.waitFor(() => expect(screen.element.querySelector('.search-progress .busy-spinner')).not.toBeNull());
   expect(search).toHaveBeenCalledTimes(1);
   const signal = search.mock.calls[0]![2]!.signal!;
   await click(screen.element, '停止搜索'); expect(signal.aborted).toBe(true);
@@ -158,7 +159,7 @@ function button(root: HTMLElement, label: string) {
 }
 async function click(root: HTMLElement, label: string) {
   button(root, label).click();
-  await vi.waitFor(() => expect([...document.querySelectorAll('[role=status]')].map(el => el.textContent).join('')).not.toMatch(/正在处理|正在保存|正在搜索/));
+  await vi.waitFor(() => expect(root.querySelector('.sources-body')?.getAttribute('aria-busy')).toBe('false'));
 }
 function input(root: HTMLElement, label: string, value: string) {
   const element = [...root.querySelectorAll('label')].find((item) => item.textContent?.startsWith(label))?.querySelector('input');
@@ -438,6 +439,7 @@ it('allows details and acquisition while search continues, then offers restart i
   await vi.waitFor(() => expect(noticeText()).toContain('已加入书架'));
   expect(search.mock.calls[0]![2]!.signal!.aborted).toBe(false);
   await click(screen.element, '停止搜索'); finish({ items: [] });
+  expect(screen.element.querySelector('.search-progress .busy-spinner')).toBeNull();
   expect(button(screen.element, '继续搜索').closest('.sources-search')).not.toBeNull();
   await click(screen.element, '搜索选项');
   search.mockImplementationOnce(() => pages({ items: [{ ref: 'new', title: '新结果' }] }));

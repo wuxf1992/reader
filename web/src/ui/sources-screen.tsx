@@ -7,6 +7,7 @@ import type { Book } from '../api/types.ts';
 import type { ChapterSubscription, SourceEntry, SourceInstance, SourcePage, SourcePlugin, SourceType } from '../api/sources.ts';
 import { Modal } from './modal.tsx';
 import { FloatingNotice } from './floating-notice.tsx';
+import { BusyIndicator } from './busy.tsx';
 import { CatalogFeedback } from './catalog-feedback.tsx';
 import { mountUI } from './mount.ts';
 import { Button, IconButton, Icon } from './toolkit.tsx';
@@ -282,7 +283,8 @@ export class SourcesScreen {
           this.element.querySelector<HTMLElement>('#sources-tab-' + tabs[next]!.id)?.focus();
         }}>{tab.title}{tab.id === 'updates' && this.subscriptions.some(s => s.newChapters > 0) && <span className="sources-tab-dot" aria-label="有更新" />}</button>)}</nav>
       <FloatingNotice busy={this.working} error={this.messageError} message={this.installing ? '正在安装插件并启用，请稍候…' : this.working ? '正在处理…' : this.message} />
-      <main key="body" className="sources-body" role="tabpanel" id={'sources-panel-' + this.tab} aria-labelledby={'sources-tab-' + this.tab} tabIndex={0}>
+      <main key="body" className="sources-body" role="tabpanel" id={'sources-panel-' + this.tab} aria-labelledby={'sources-tab-' + this.tab} aria-busy={this.working || !!this.searchRun} tabIndex={0}>
+        {!this.selected && this.working && <BusyIndicator busy label="正在加载书源…" />}
       {this.tab === 'sources' && <>
         {!!this.savedSource?.descriptor?.extensions?.pages?.length && <section className="sources-card source-next-step"><strong>{this.savedSource!.name}</strong>
           <p>可为此书源单独管理订阅和规则。</p>{this.savedSource!.descriptor!.extensions!.pages!.map(page => <a className="button primary" href={'#/sources/' + encodeURIComponent(this.savedSource!.id) + '/' + encodeURIComponent(page.id)}>{page.title}</a>)}
@@ -341,7 +343,7 @@ export class SourcesScreen {
                   items[next]?.focus();
                 }
               }}>
-                <Button className="primary" type="submit" disabled={this.busy}><Icon name={resume ? 'play' : 'search'} />{resume ? '继续搜索' : '搜索'}</Button>
+                <Button className="primary" type="submit" disabled={this.busy} busy={!!this.searchRun}><Icon name={resume ? 'play' : 'search'} />{resume ? '继续搜索' : '搜索'}</Button>
                 {this.searchRequest && <><button type="button" className="button primary search-menu-toggle" aria-label="搜索选项" aria-haspopup="menu" aria-expanded={this.searchMenu} aria-controls="source-search-menu" disabled={this.busy}
                   onClick={() => { this.searchMenu = !this.searchMenu; this.draw(); }}><Icon name="chevron-right" /></button>
                   {this.searchMenu && <div id="source-search-menu" className="search-menu" role="menu" aria-label="搜索选项">
@@ -350,6 +352,7 @@ export class SourcesScreen {
                   </div>}</>}
               </div>}</form>}
           {this.searchState !== 'idle' && <div className="search-progress" role="status">
+            <BusyIndicator busy={!!this.searchRun} label="" />
             <span>{({ searching: '正在搜索', stopped: '已停止搜索', complete: '搜索完成', error: '搜索中断', limited: '已达到结果上限' })[this.searchState]}{this.page?.batch ? ` · 已检查 ${this.page.batch.completed} / ${this.page.batch.total} 个来源` : ''} · 已找到 {results.length} 本书</span>
             {this.page?.batch && <progress aria-label="书源搜索进度" max={Math.max(1, this.page.batch.total)} value={this.page.batch.completed} />}
             {this.searchState === 'searching' && <small>可查看详情、加入书架，或随时停止。</small>}
@@ -407,7 +410,7 @@ export class SourcesScreen {
           <form hidden={this.installMethod !== 'npm'} role="tabpanel" id="install-panel-npm" aria-labelledby="install-tab-npm" onSubmit={(event) => { event.preventDefault(); void this.installPlugin(false); }}>
             <label>npm 包名<input required disabled={this.busy} value={this.folder} placeholder="reader-source-example 或 @scope/package" onInput={(event) => { this.folder = event.currentTarget.value; this.draw(); }} /></label>
             <small>支持包名、@scope/包名，以及包名@版本或标签。</small>
-            <Button type="submit" disabled={this.busy || !this.trusted || !this.folder.trim()}>安装并启用</Button>
+            <Button type="submit" busy={this.installing} disabled={this.busy || !this.trusted || !this.folder.trim()}>安装并启用</Button>
           </form>
           <form hidden={this.installMethod !== 'upload'} role="tabpanel" id="install-panel-upload" aria-labelledby="install-tab-upload" onSubmit={(event) => { event.preventDefault(); void this.installPlugin(true); }}>
             <label>npm pack 安装包<input key={this.pluginFileVersion} required disabled={this.busy} type="file" accept=".tgz,application/gzip,application/x-gzip" onChange={(event) => {
@@ -416,7 +419,7 @@ export class SourcesScreen {
               this.pluginFile = error ? null : file; this.message = error || ''; this.messageError = !!error; this.draw();
             }} /></label>
             <small>仅支持 .tgz 文件，最大 100 MiB。未打包的依赖仍需联网下载。</small>
-            <Button type="submit" disabled={this.busy || !this.trusted || !this.pluginFile}>上传并启用</Button>
+            <Button type="submit" busy={this.installing} disabled={this.busy || !this.trusted || !this.pluginFile}>上传并启用</Button>
           </form>
         </div>
         </details>
@@ -446,7 +449,7 @@ export class SourcesScreen {
         {this.detailEntry && <Modal title="书籍信息" busy={this.working} onClose={() => { this.detailEpoch++; this.detailEntry = null; this.detailLoading = false; this.draw(); }}>
           <article className="book-detail source-modal-content" aria-busy={this.detailLoading}>
             <h3>{this.detailEntry.title}</h3><p className="book-detail-author">{this.detailEntry.authors?.join(' / ') || '作者未知'}</p>
-            {this.detailLoading && <p role="status">正在加载完整信息…</p>}
+            <BusyIndicator busy={this.detailLoading} label="正在加载完整信息…" />
             <dl><dt>书源</dt><dd>{this.detailEntry.sourceName || this.selected?.name}</dd><dt>最新章节</dt><dd>{this.detailEntry.latestChapter || '暂无信息'}</dd></dl>
             <h4>内容简介</h4><p className="book-detail-description">{this.detailEntry.description || '暂无简介'}</p>
           </article>
@@ -475,7 +478,7 @@ export class SourcesScreen {
                   }} />}
             </label>) : <label>配置（JSON）<textarea disabled={this.busy} value={this.editor.raw} onInput={(event) => { this.editor!.raw = event.currentTarget.value; }} /></label>}
             <p className="notice">配置不包含密码。修改连接配置会清除该来源保存的个人凭据。</p>
-            </div><footer className="source-modal-actions"><Button className="primary" type="submit" disabled={this.busy}>保存来源</Button>
+            </div><footer className="source-modal-actions"><Button className="primary" type="submit" disabled={this.busy} busy={this.working}>保存来源</Button>
               <Button disabled={this.busy} onClick={() => { this.editor = null; this.message = ''; this.draw(); }}>取消</Button>
               {this.editor.id && <Button disabled={this.busy || type?.id === 'local'} onClick={() => void this.run(async () => {
                 await this.options.api.removeSource(this.editor!.id!); this.editor = null; await this.reload();
@@ -499,7 +502,7 @@ export class SourcesScreen {
             {this.credentialSource.descriptor?.credentialKeys?.map((field) => <label key={field.key}>{field.label} · {this.credentialStatus?.fields.find(item => item.key === field.key)?.configured ? '已配置' : this.credentialStatus ? '未配置' : '状态未知'}
             <input aria-label={field.label} autoFocus disabled={this.busy} type="password" autoComplete="off" value={this.credentialValues[field.key] ?? ''} onInput={(event) => { this.credentialValues[field.key] = event.currentTarget.value; }} />
             <Button disabled={this.busy} onClick={() => { this.credentialValues[field.key] = ''; this.draw(); }}>清空{field.label}（保存后删除）</Button></label>)}
-            </div><footer className="source-modal-actions"><Button className="primary" type="submit" disabled={this.busy}>保存个人凭据</Button></footer></form></Modal>}
+            </div><footer className="source-modal-actions"><Button className="primary" type="submit" disabled={this.busy} busy={this.working}>保存个人凭据</Button></footer></form></Modal>}
 
     </>;
   }

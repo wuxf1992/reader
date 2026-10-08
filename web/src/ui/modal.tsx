@@ -3,10 +3,15 @@ import { IconButton } from './toolkit.tsx';
 import { placeNotifications } from './notifications.ts';
 
 /** Native modal supplies focus containment and makes the background inert. */
-export function Modal({ title, busy, onClose, children, className }: {
-  title: string; busy: boolean; onClose(): void; children: ComponentChildren; className?: string;
+export function Modal({ title, busy, onClose, children, className, dismissOnBackdrop = false }: {
+  title: string; busy: boolean; onClose(): void; children: ComponentChildren; className?: string; dismissOnBackdrop?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const pressedOutside = useRef(false);
+  function outside(event: MouseEvent): boolean {
+    const rect = ref.current!.getBoundingClientRect();
+    return event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom;
+  }
   useLayoutEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     const dialog = ref.current!;
@@ -19,6 +24,11 @@ export function Modal({ title, busy, onClose, children, className }: {
     };
   }, []);
   return <dialog ref={ref} className={['source-modal', className].filter(Boolean).join(' ')} aria-label={title} aria-busy={busy}
+    onPointerDown={event => { pressedOutside.current = event.target === ref.current && outside(event); }}
+    onClick={event => {
+      if (dismissOnBackdrop && !busy && pressedOutside.current && event.target === ref.current && outside(event)) onClose();
+      pressedOutside.current = false;
+    }}
     onKeyDown={event => {
       if (event.key !== 'Tab') return;
       const dialog = event.currentTarget;
@@ -33,7 +43,7 @@ export function Modal({ title, busy, onClose, children, className }: {
       }
     }}
     onCancel={event => { event.preventDefault(); if (!busy) onClose(); }}>
-    <header className="source-modal-header"><h2>{title}</h2><IconButton icon="xmark" label="关闭弹窗" disabled={busy} onClick={onClose} /></header>
+    <header className="source-modal-header"><h2>{title}</h2><IconButton icon="close" label="关闭弹窗" disabled={busy} onClick={onClose} /></header>
     {children}
   </dialog>;
 }

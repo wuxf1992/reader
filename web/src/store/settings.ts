@@ -1,3 +1,4 @@
+import { PALETTES } from '../render/theme.ts';
 import type { KeyValueStore } from '../core/platform.ts';
 import type { ViewSettings } from '../ui/reader-view.ts';
 
@@ -51,6 +52,8 @@ export interface AppSettings extends ViewSettings {
   readoutBottomRight: ReadoutMode;
   /** UTF-8 by default; a reader can force another for an odd TXT file. */
   txtEncoding: string;
+  autoCache: boolean;
+  autoCacheChapters: number;
   /** Only meaningful for fixed-layout books. */
   comicDirection: 'ltr' | 'rtl';
   /** Read-aloud preferences. The voice itself is per device, like the rest. */
@@ -110,6 +113,8 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   txtIndent: 2,
   txtParagraphGap: 0.55,
   txtEncoding: '',
+  autoCache: true,
+  autoCacheChapters: 3,
   comicDirection: 'ltr',
   ttsRate: 1,
   ttsPitch: 1,
@@ -136,6 +141,13 @@ export class SettingsStore {
       try {
         const parsed = JSON.parse(raw) as Partial<AppSettings> & { shelfSort?: string };
         this.settings = { ...DEFAULT_APP_SETTINGS, ...parsed };
+        if (typeof this.settings.theme !== 'string' || !Object.prototype.hasOwnProperty.call(PALETTES, this.settings.theme)) {
+          this.settings.theme = DEFAULT_APP_SETTINGS.theme;
+        }
+        if (typeof this.settings.autoCache !== 'boolean') this.settings.autoCache = DEFAULT_APP_SETTINGS.autoCache;
+        if (!Number.isInteger(this.settings.autoCacheChapters) || this.settings.autoCacheChapters < 1 || this.settings.autoCacheChapters > 50) {
+          this.settings.autoCacheChapters = DEFAULT_APP_SETTINGS.autoCacheChapters;
+        }
         for (const { key } of READOUT_FIELDS) {
           if (!READOUT_OPTIONS.some(option => option.value === this.settings[key])) {
             this.settings[key] = DEFAULT_APP_SETTINGS[key];

@@ -8,7 +8,8 @@ import { ApiError } from '../src/api/errors.ts';
 import type { Book, BookContent, Manifest, Session } from '../src/api/types.ts';
 import { OfflineStore } from '../src/store/offline.ts';
 import { PublicationCache, publicationScope } from '../src/store/publications.ts';
-import { DEFAULT_APP_SETTINGS } from '../src/store/settings.ts';
+import { DEFAULT_APP_SETTINGS, type AppSettings } from '../src/store/settings.ts';
+import type { ReaderView } from '../src/ui/reader-view.ts';
 import { ReaderScreen } from '../src/ui/reader-screen.tsx';
 import { App } from '../src/app.ts';
 import type { SyncEngine } from '../src/core/sync.ts';
@@ -60,7 +61,7 @@ afterEach(() => {
   document.body.replaceChildren();
 });
 
-async function setup(kv = new MemoryKv(), blobs = new MemoryBlobs(), userId = 'u1', server = 'http://one.test') {
+async function setup(kv = new MemoryKv(), blobs = new MemoryBlobs(), userId = 'u1', server = 'http://one.test', settings: Partial<AppSettings> = {}) {
   const transport = new FakeTransport();
   const platform = makePlatform(transport, kv, blobs);
   const api = new ReaderApi(platform, {
@@ -77,7 +78,7 @@ async function setup(kv = new MemoryKv(), blobs = new MemoryBlobs(), userId = 'u
     onStatus: () => () => undefined,
     schedule: vi.fn(),
   } as unknown as SyncEngine;
-  const screen = new ReaderScreen({ api, offline, sync, platform, settings: DEFAULT_APP_SETTINGS,
+  const screen = new ReaderScreen({ api, offline, sync, platform, settings: { ...DEFAULT_APP_SETTINGS, autoCache: false, ...settings },
     onBack() {}, onSettingsChange() {}, onSignedOut });
   screens.push(screen);
   document.body.append(screen.element);
@@ -317,6 +318,39 @@ describe('chapter publication reading', () => {
     if (status === 401) expect(env.onSignedOut).toHaveBeenCalled();
   });
 
+  it('reads actual scoped cache on every directory open, including downloads and clearing', async () => {
+    const env = await setup(); serve(env.transport, content(['a', 'b', 'c']));
+    const cache = new PublicationCache(env.platform.kv, env.platform.blobs, publicationScope(env.api.baseUrl, 'u1'));
+    const other = new PublicationCache(env.platform.kv, env.platform.blobs, publicationScope(env.api.baseUrl, 'u2'));
+    await other.putResource(book.id, 'resource:r1:c', new TextEncoder().encode('另一账号正文'));
+    await cache.putResource('another-book', 'resource:r1:c', new TextEncoder().encode('另一本书正文'));
+    await cache.putResource(book.id, 'resource:old:c', new TextEncoder().encode('旧版本正文'));
+    await env.screen.open(book);
+    const cached = () => [...env.screen.element.querySelectorAll('.toc-list li')]
+      .filter(row => row.querySelector('.toc-cached')).map(row => row.getAttribute('data-section'));
+    await click(env.screen, '目录');
+    await vi.waitFor(() => expect(cached()).toEqual(['chapter:a']));
+    await click(env.screen, '目录');
+    await cache.putResource(book.id, 'resource:r1:b', new TextEncoder().encode('手动下载的正文'));
+    await click(env.screen, '目录');
+    await vi.waitFor(() => expect(cached()).toEqual(['chapter:a', 'chapter:b']));
+    await click(env.screen, '目录');
+    await cache.removeBook(book.id);
+    await click(env.screen, '目录');
+    await vi.waitFor(() => expect(cached()).toEqual([]));
+    expect(body(env.screen)?.textContent).toContain('resource:r1:a');
+  });
+
+  it('does not mark displayed chapters when the cache write fails', async () => {
+    const env = await setup(); serve(env.transport, content(['a', 'b']));
+    vi.spyOn(env.platform.blobs, 'put').mockRejectedValueOnce(new Error('storage full'));
+    await env.screen.open(book);
+    await click(env.screen, '目录');
+    await vi.waitFor(() => expect(env.screen.element.querySelectorAll('.toc-list li')).toHaveLength(2));
+    expect(env.screen.element.querySelector('.toc-cached')).toBeNull();
+    expect(body(env.screen)?.textContent).toContain('resource:r1:a');
+  });
+
   it('separates cached manifests, chapter bytes and progress between accounts and servers', async () => {
     const kv = new MemoryKv();
     const blobs = new MemoryBlobs();
@@ -426,4 +460,198 @@ it('opens tools, searches the whole book, navigates and returns, and persists a 
  expect(env.offline.notesFor(book.id)).toHaveLength(1);
  await act(() => click(env.screen,'删除笔记'));await act(() => document.querySelector<HTMLButtonElement>('.swal2-confirm')!.click());
  await vi.waitFor(()=>expect(env.offline.notesFor(book.id)).toHaveLength(0));
+});
+
+it('preserves page-turn order while a chapter is still loading', async () => {
+  const env = await setup(); serve(env.transport, content(['a','b'])); await env.screen.open(book);
+  const reader = env.screen as unknown as { view: ReaderView; turnPage(direction:'next'|'previous'):Promise<void> };
+  let finish!: (moved:boolean) => void;
+  const order: string[] = [];
+  const next = vi.spyOn(reader.view,'next').mockImplementation(() => {order.push('next');return new Promise(resolve => {finish=resolve;});});
+  const previous = vi.spyOn(reader.view,'previous').mockImplementation(async () => {order.push('previous');return true;});
+  try {
+    const first=reader.turnPage('next'); await vi.waitFor(()=>expect(next).toHaveBeenCalledOnce());
+    const second=reader.turnPage('previous'); await Promise.resolve();
+    expect(previous).not.toHaveBeenCalled();
+    finish(true);await Promise.all([first,second]);expect(order).toEqual(['next','previous']);
+  } finally { next.mockRestore();previous.mockRestore(); }
+});
+it('allows a queued reverse turn after a chapter load fails', async () => {
+  const env = await setup(); serve(env.transport, content(['a','b'])); await env.screen.open(book);
+  const reader = env.screen as unknown as { view: ReaderView; turnPage(direction:'next'|'previous'):Promise<void> };
+  const next=vi.spyOn(reader.view,'next').mockRejectedValue(new Error('Chapter unavailable'));
+  const previous=vi.spyOn(reader.view,'previous').mockResolvedValue(true);
+  try {await Promise.all([reader.turnPage('next'),reader.turnPage('previous')]);expect(previous).toHaveBeenCalledOnce();}
+  finally {next.mockRestore();previous.mockRestore();}
+});
+
+it('cancels queued page turns after an explicit chapter selection', async () => {
+  const env=await setup();serve(env.transport,content(['a','b','c']));await env.screen.open(book);
+  const reader=env.screen as unknown as {view:ReaderView;turnPage(direction:'next'|'previous'):Promise<void>;goToSection(index:number):Promise<void>};
+  let finish!:(moved:boolean)=>void;
+  const next=vi.spyOn(reader.view,'next').mockImplementation(()=>new Promise(resolve=>{finish=resolve;}));
+  const previous=vi.spyOn(reader.view,'previous').mockResolvedValue(true);
+  try {
+    const first=reader.turnPage('next');await vi.waitFor(()=>expect(finish).toBeDefined());
+    const queued=reader.turnPage('previous');await reader.goToSection(1);
+    finish(true);await Promise.all([first,queued]);
+    expect(previous).not.toHaveBeenCalled();expect(reader.view.position().sectionId).toBe('chapter:b');
+  }finally{next.mockRestore();previous.mockRestore();}
+});
+
+it('keeps the latest directory selection busy when an earlier local chapter finishes', async () => {
+  const env = await setup(); serve(env.transport, content(['a', 'b', 'c'])); await env.screen.open(book);
+  const reader = env.screen as unknown as { view: ReaderView; chrome: { pendingChapterRef?: string; tocOpen: boolean }; goToChapterRef(ref: string): Promise<void> };
+  const finish: Array<() => void> = [];
+  const open = vi.spyOn(reader.view, 'open').mockImplementation(() => new Promise<void>(resolve => { finish.push(resolve); }));
+  try {
+    reader.chrome.tocOpen = true;
+    const first = reader.goToChapterRef('chapter:b');
+    const second = reader.goToChapterRef('chapter:c');
+    expect(open).toHaveBeenCalledTimes(2);
+    finish[0]!(); await first;
+    expect(reader.chrome.pendingChapterRef).toBe('chapter:c');
+    expect(reader.chrome.tocOpen).toBe(true);
+    finish[1]!(); await second;
+    expect(reader.chrome.pendingChapterRef).toBeUndefined();
+    expect(reader.chrome.tocOpen).toBe(false);
+  } finally { open.mockRestore(); }
+});
+
+describe('automatic chapter caching', () => {
+  it('caches only the configured upcoming chapters and marks persisted chapters in the contents', async () => {
+    const env = await setup(undefined, undefined, undefined, undefined, { autoCache: true, autoCacheChapters: 3 });
+    serve(env.transport, content(['a', 'b', 'c', 'd', 'e']));
+    const cache = new PublicationCache(env.platform.kv, env.platform.blobs, publicationScope(env.api.baseUrl, 'u1'));
+    await env.screen.open(book);
+    await vi.waitFor(async () => expect((await cache.entries()).map(item => item.ref)).toEqual(['resource:r1:a', 'resource:r1:b', 'resource:r1:c', 'resource:r1:d']));
+    expect(body(env.screen)?.textContent).toContain('resource:r1:a');
+    await click(env.screen, '目录');
+    await vi.waitFor(() => expect(env.screen.element.querySelectorAll('.toc-cached')).toHaveLength(4));
+    expect(env.transport.countMatching(request => request.url.includes('/assets?'))).toBe(4);
+    expect(await new PublicationCache(env.platform.kv, env.platform.blobs, publicationScope(env.api.baseUrl, 'u2')).entries()).toEqual([]);
+  });
+
+  it('continues outside the tools panel and stops a pending write when disabled', async () => {
+    const env = await setup(); serve(env.transport, content(['a', 'b', 'c'])); await env.screen.open(book);
+    const cache = new PublicationCache(env.platform.kv, env.platform.blobs, publicationScope(env.api.baseUrl, 'u1'));
+    let finish!: (value: Blob) => void;
+    const asset = vi.spyOn(env.api, 'asset').mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    await click(env.screen, '工具'); await click(env.screen, '离线缓存');
+    const toggle = () => env.screen.element.querySelector<HTMLInputElement>('.reading-cache-auto input')!;
+    await act(() => toggle().click());
+    await vi.waitFor(() => expect(asset).toHaveBeenCalledOnce());
+    await click(env.screen, '关闭弹窗');
+    finish(new Blob(['chapter b']));
+    await vi.waitFor(() => expect(asset).toHaveBeenCalledTimes(2));
+    expect(await cache.resource(book.id, 'resource:r1:b')).toBeTruthy();
+    await click(env.screen, '工具'); await click(env.screen, '离线缓存');
+    expect(toggle().checked).toBe(true);
+    await act(() => toggle().click());
+    expect(asset.mock.calls[1]![2]?.signal?.aborted).toBe(true);
+    finish(new Blob(['chapter c'])); await new Promise(resolve => setTimeout(resolve, 20));
+    expect(await cache.resource(book.id, 'resource:r1:c')).toBeNull();
+    expect(body(env.screen)?.textContent).toContain('resource:r1:a');
+  });
+
+  it('cancels stale requests on a chapter jump and departure', async () => {
+    const env = await setup(undefined, undefined, undefined, undefined, { autoCache: true, autoCacheChapters: 1 });
+    serve(env.transport, content(['a', 'b', 'c', 'd']));
+    let finish!: (value: Blob) => void;
+    const realAsset = env.api.asset.bind(env.api);
+    const asset = vi.spyOn(env.api, 'asset').mockImplementation((id, ref, options) => ref === 'resource:r1:b'
+      ? new Promise(resolve => { finish = resolve; }) : realAsset(id, ref, options));
+    await env.screen.open(book);
+    await vi.waitFor(() => expect(finish).toBeDefined());
+    const old = asset.mock.calls.find(call => call[1] === 'resource:r1:b')![2]!.signal!;
+    await click(env.screen, '目录'); await click(env.screen, '章节 c');
+    await vi.waitFor(() => expect(body(env.screen)?.textContent).toContain('resource:r1:c'));
+    expect(old.aborted).toBe(true);
+    finish(new Blob(['obsolete']));
+    const cache = new PublicationCache(env.platform.kv, env.platform.blobs, publicationScope(env.api.baseUrl, 'u1'));
+    await vi.waitFor(async () => expect(await cache.resource(book.id, 'resource:r1:d')).toBeTruthy());
+    expect(await cache.resource(book.id, 'resource:r1:b')).toBeNull();
+    await click(env.screen, '工具'); await click(env.screen, '离线缓存');
+    const select = env.screen.element.querySelector<HTMLSelectElement>('.reading-cache-auto select')!;
+    select.value = '3'; await act(() => { select.dispatchEvent(new Event('change', { bubbles: true })); });
+    env.screen.dispose();
+    for (const call of asset.mock.calls.filter(call => call[2]?.signal)) expect(call[2]!.signal!.aborted).toBe(true);
+    screens.splice(screens.indexOf(env.screen), 1);
+  });
+
+  it('stops on a failed cache write and preserves the current text', async () => {
+    const blobs = new MemoryBlobs(); const env = await setup(undefined, blobs, undefined, undefined, { autoCache: true });
+    serve(env.transport, content(['a', 'b', 'c']));
+    const realPut = blobs.put.bind(blobs);
+    vi.spyOn(blobs, 'put').mockImplementation((key, bytes) => decodeURIComponent(key).includes('resource:r1:b') ? Promise.reject(new Error('quota full')) : realPut(key, bytes));
+    await env.screen.open(book); await click(env.screen, '工具'); await click(env.screen, '离线缓存');
+    await vi.waitFor(() => expect(env.screen.element.textContent).toContain('预缓存暂停：quota full'));
+    expect(env.transport.countMatching(request => request.url.includes('/assets?'))).toBe(2);
+    expect(body(env.screen)?.textContent).toContain('resource:r1:a');
+    await click(env.screen, '关闭弹窗'); await click(env.screen, '目录');
+    await vi.waitFor(() => expect(env.screen.element.querySelectorAll('.toc-cached')).toHaveLength(1));
+  });
+
+  it('skips prefetch while offline', async () => {
+    const env = await setup(undefined, undefined, undefined, undefined, { autoCache: true });
+    serve(env.transport, content(['a', 'b'])); env.platform.setOnline(false);
+    await env.screen.open(book); await click(env.screen, '工具'); await click(env.screen, '离线缓存');
+    await vi.waitFor(() => expect(env.screen.element.textContent).toContain('当前网络下暂停预缓存'));
+    expect(env.transport.countMatching(request => request.url.includes('/assets?'))).toBe(1);
+  });
+});
+
+it('pre-caches across metadata windows without moving the reader, skips saved bodies, and resumes online', async () => {
+  const env = await setup(undefined, undefined, undefined, undefined, { autoCache: true });
+  const value = content(['a', 'b', 'c', 'd']);
+  value.groups = [{ id: 'one', seq: 0, offset: 0, count: 2, title: '一' }, { id: 'two', seq: 1, offset: 2, count: 2, title: '二' }];
+  const first = { ...value, items: value.items.slice(0, 2) }, second = { ...value, items: value.items.slice(2) };
+  const cache = new PublicationCache(env.platform.kv, env.platform.blobs, publicationScope(env.api.baseUrl, 'u1'));
+  await cache.putResource(book.id, 'resource:r1:b', new TextEncoder().encode('already saved'));
+  serve(env.transport, first);
+  const items = vi.spyOn(env.api, 'items').mockResolvedValue(second);
+  env.platform.setOnline(false); await env.screen.open(book);
+  expect(env.transport.countMatching(request => request.url.includes('/assets?'))).toBe(1);
+  env.platform.setOnline(true);
+  await vi.waitFor(async () => expect(await cache.resource(book.id, 'resource:r1:d')).toBeTruthy());
+  expect(items).toHaveBeenCalledOnce(); expect(items.mock.calls[0]![1]).toBe(1);
+  expect(env.transport.countMatching(request => request.url.includes('/assets?'))).toBe(3);
+  expect(body(env.screen)?.textContent).toContain('resource:r1:a');
+  expect(await cache.window(book.id, 1)).toEqual(second);
+});
+
+it('cancels pending pre-cache before clearing the current book', async () => {
+  const env = await setup(undefined, undefined, undefined, undefined, { autoCache: true });
+  serve(env.transport, content(['a', 'b']));
+  const realAsset = env.api.asset.bind(env.api);
+  let finish!: (value: Blob) => void;
+  const asset = vi.spyOn(env.api, 'asset').mockImplementation((id, ref, options) => ref === 'resource:r1:b'
+    ? new Promise(resolve => { finish = resolve; }) : realAsset(id, ref, options));
+  await env.screen.open(book); await vi.waitFor(() => expect(finish).toBeDefined());
+  await click(env.screen, '工具'); await click(env.screen, '离线缓存');
+  await vi.waitFor(() => expect(env.screen.element.textContent).toContain('清理缓存'));
+  await click(env.screen, '清理缓存');
+  await vi.waitFor(() => expect(document.querySelector('dialog[aria-label="清理缓存"]')).toBeTruthy());
+  const confirm = [...document.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent?.trim() === '确认清理')!;
+  await act(() => confirm.click());
+  const cache = new PublicationCache(env.platform.kv, env.platform.blobs, publicationScope(env.api.baseUrl, 'u1'));
+  await vi.waitFor(async () => expect(await cache.entries()).toEqual([]));
+  expect(asset.mock.calls.find(call => call[1] === 'resource:r1:b')![2]!.signal!.aborted).toBe(true);
+  finish(new Blob(['late body'])); await new Promise(resolve => setTimeout(resolve, 20));
+  expect(await cache.entries()).toEqual([]);
+  expect(body(env.screen)?.textContent).toContain('resource:r1:a');
+});
+
+it('updates cache markers when the directory opens before the visible chapter finishes saving', async () => {
+  const env = await setup(); serve(env.transport, content(['a', 'b']));
+  let finish!: (value: Blob) => void;
+  vi.spyOn(env.api, 'asset').mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  const opening = env.screen.open(book);
+  await vi.waitFor(() => expect(finish).toBeDefined());
+  await click(env.screen, '目录');
+  await vi.waitFor(() => expect(env.screen.element.querySelectorAll('.toc-list button')).toHaveLength(2));
+  expect(env.screen.element.querySelectorAll('.toc-cached')).toHaveLength(0);
+  finish(new Blob(['visible body'])); await opening;
+  await vi.waitFor(() => expect(env.screen.element.querySelectorAll('.toc-cached')).toHaveLength(1));
+  expect(env.screen.element.querySelector('.toc-cached')?.closest('button')?.textContent).toContain('章节 a');
 });

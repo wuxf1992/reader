@@ -6,6 +6,7 @@ export type NoticeKind = 'info' | 'success' | 'error' | 'loading';
 export interface NoticeOptions { kind?: NoticeKind; duration?: number }
 interface ActiveNotice { notification: NotyfNotification; node: HTMLElement; message: string; kind: NoticeKind }
 const active = new Map<symbol, ActiveNotice>();
+const pending = new Map<symbol, { timer: ReturnType<typeof setTimeout>; message: string; options: NoticeOptions }>();
 let library: Notyf | undefined;
 let container: HTMLElement | undefined;
 let announcer: HTMLElement | undefined;
@@ -35,6 +36,8 @@ export function placeNotifications(): void {
 }
 
 export function dismissNotice(id: symbol): void {
+  clearTimeout(pending.get(id)?.timer);
+  pending.delete(id);
   const current = active.get(id);
   if (!current) return;
   active.delete(id);
@@ -47,6 +50,21 @@ export function dismissNotice(id: symbol): void {
 /** Plain text only: Notyf accepts HTML, whereas server/plugin messages are untrusted. */
 export function notify(message: string, options: NoticeOptions = {}, id = Symbol('notice')): symbol {
   if (!message) { dismissNotice(id); return id; }
+  if (options.kind === 'loading' && active.get(id)?.kind !== 'loading') {
+    const waiting = pending.get(id);
+    if (waiting) { waiting.message = message; waiting.options = options; return id; }
+    dismissNotice(id);
+    const notice = { message, options, timer: setTimeout(() => {
+      pending.delete(id);
+      showNotice(notice.message, notice.options, id);
+    }, 100) };
+    pending.set(id, notice);
+    return id;
+  }
+  return showNotice(message, options, id);
+}
+
+function showNotice(message: string, options: NoticeOptions, id: symbol): symbol {
   const notyf = service(), kind = options.kind ?? 'info';
   for (const [key, notice] of active) {
     if (!notice.node.isConnected || notice.node.classList.contains('notyf__toast--disappear')) dismissNotice(key);
@@ -78,5 +96,6 @@ export function notify(message: string, options: NoticeOptions = {}, id = Symbol
 }
 
 export function dismissAllNotices(): void {
+  for (const id of pending.keys()) dismissNotice(id);
   for (const id of active.keys()) dismissNotice(id);
 }

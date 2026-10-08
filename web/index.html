@@ -82,11 +82,18 @@
       }
       .app-startup { position: fixed; inset: 0; display: grid; place-items: center; background: #fbfaf7; z-index: 9999; }
       .app-startup img { width: 96px; height: 96px; }
+      .app-startup-loading { position: absolute; top: calc(50% + 64px); color: #6b6b6b; display: flex; align-items: center; gap: 8px; font: 14px sans-serif; opacity: 0; animation: startup-reveal 1ms 100ms forwards; }
+      .app-startup-loading::before { content: ''; width: 14px; height: 14px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: startup-spin 700ms linear infinite; }
+      html[data-theme='dark'] .app-startup { background: #16171a; }
+      html[data-theme='dark'] .app-startup-loading { color: #9a958c; }
+      @keyframes startup-reveal { to { opacity: 1; } }
+      @keyframes startup-spin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) { .app-startup-loading::before { animation: none; } }
     </style>
   </head>
   <body>
     <div id="app"></div>
-    <div id="app-startup" class="app-startup" role="status" aria-label="正在启动 reader"><img src="./icons/icon-192.png" width="96" height="96" alt="" /></div>
+    <div id="app-startup" class="app-startup" role="status" aria-label="正在启动 reader"><img src="./icons/icon-192.png" width="96" height="96" alt="" /><span class="app-startup-loading">正在加载…</span></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
