@@ -234,9 +234,12 @@ async function runReaderReview(browser, origin, checks, errors) {
 }
 
 async function loginAs(page, origin, username) {
+  await page.route('https://wuxf.top/**', route => route.abort());
   await page.goto(`${origin}/#/media/video`, { waitUntil: 'domcontentloaded' });
   const user = page.locator('input[autocomplete="username"]');
   if (await user.isVisible().catch(() => false)) {
+    await page.getByText('更换服务地址', { exact: true }).click();
+    await page.locator('input[type="url"]').fill(origin);
     await user.fill(username);
     await page.locator('input[type="password"]').fill('review-test-pass');
     await page.locator('form button[type="submit"]').click();
