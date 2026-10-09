@@ -57,7 +57,7 @@ try {
           const family = id.startsWith('wechat-') ? '微信阅读' : '厚墨';
           const group = page.getByRole('group', { name: family, exact: true });
           assert.equal(await group.locator('button').count(), 2);
-          const native = page.getByRole('group', { name: '主题', exact: true });
+          const native = page.getByRole('group', { name: '内置', exact: true });
           assert.deepEqual(await native.locator('button').allTextContents(), ['白', '米黄', '浅绿', '夜间']);
           for (const row of [native, group]) {
             assert.ok(await row.locator('button').evaluateAll(buttons => buttons.every(button => Math.abs(button.getBoundingClientRect().top - buttons[0].getBoundingClientRect().top) < 1)), 'theme buttons stay on one row');
@@ -82,7 +82,7 @@ try {
           assert.ok(fit, 'theme names must fit on phone and desktop');
           if (width === 390) {
             await page.locator('.panel-body').evaluate(body => {
-              const heading = [...body.querySelectorAll('.section-title')].find(title => title.textContent === '正文与主题');
+              const heading = [...body.querySelectorAll('.section-title')].find(title => title.textContent === '主题');
               body.scrollTop += heading.getBoundingClientRect().top - body.getBoundingClientRect().top;
             });
             await page.screenshot({ path: `${output}/${engineName}-${id}.png` });

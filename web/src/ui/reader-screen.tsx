@@ -12,7 +12,7 @@ import type { Platform } from '../core/platform.ts';
 import { ReaderView, type Position, type ViewSettings } from './reader-view.ts';
 import { makeAssetSigner } from '../net/asset-url.ts';
 import { attachGestures } from './gestures.ts';
-import { READOUT_FIELDS, type AppSettings } from '../store/settings.ts';
+import { DEFAULT_APP_SETTINGS, READOUT_FIELDS, type AppSettings } from '../store/settings.ts';
 import { createStagedDoc, isStagedKind, windowIndexOf } from '../formats/windowed.ts';
 import type { BookDoc } from '../formats/types.ts';
 import type { TocEntry } from '../api/types.ts';
@@ -1804,10 +1804,14 @@ export class ReaderScreen {
   }
 
   private async updateSetting(patch: Partial<AppSettings>): Promise<void> {
+    if (patch.theme) {
+      const day = patch.theme === 'dark' || patch.theme.endsWith('-night') ? this.settings.theme : patch.theme;
+      if (day !== 'dark' && !day.endsWith('-night')) patch = { ...patch, lastDayTheme: day };
+    }
     this.options.onSettingsChange(patch);
     Object.assign(this.settings, patch);
     // Reading information changes only the chrome, never the book's pagination.
-    if (Object.keys(patch).some(key => !['autoCache', 'autoCacheChapters'].includes(key) && !READOUT_FIELDS.some(field => field.key === key))) {
+    if (Object.keys(patch).some(key => !['autoCache', 'autoCacheChapters', 'lastDayTheme', 'readerSections'].includes(key) && !READOUT_FIELDS.some(field => field.key === key))) {
       this.view?.applySettings(this.viewSettings());
     }
     this.patch({});
@@ -2103,13 +2107,15 @@ export class ReaderScreen {
       const status = this.options.sync.status();
       if (status.state === 'idle') this.paintNotes();
       if (status.state === 'syncing') {
-        this.setStatus('syncing', '同步中…');
+        return;
       } else if (status.state === 'offline') {
         this.setStatus('offline', status.pending ? '离线 · 进度待同步' : '离线 · 阅读进度存在本机');
       } else if (status.state === 'error') {
         this.setStatus('error', status.message || '同步失败');
       } else if (status.state === 'signed-out') {
         this.options.onSignedOut();
+      } else if (status.message) {
+        this.setStatus('error', status.message);
       } else if (this.chrome.statusState !== 'loading') {
         this.hideStatus();
       }
@@ -2215,40 +2221,7 @@ export type { SyncStatus };
 /** A blank settings projection, so the initial chrome state is well-formed. */
 function emptyChromeSettings(): Partial<ChromeState> {
   return settingsView(
-    {
-      mode: 'scroll',
-      fontScale: 1,
-      lineHeight: 'inherit',
-      theme: 'light',
-      fit: 'contain',
-      direction: 'ltr',
-      fontFamily: 'inherit',
-      pageMargin: 1.5,
-      textAlign: 'inherit',
-      brightness: 1,
-      pageAnimation: 'slide',
-      tapZone: 'standard',
-      txtIndent: 2,
-      txtParagraphGap: 0.55,
-      txtEncoding: '',
-      autoCache: true,
-      autoCacheChapters: 3,
-      comicDirection: 'ltr',
-      ttsRate: 1,
-      ttsPitch: 1,
-      ttsVolume: 1,
-      ttsVoice: '',
-      ttsAutoAdvance: true,
-      ttsEngine: 'auto',
-      shelfDensity: 'cozy',
-      shelfSort: 'recent',
-      shelfShowAuthor: true,
-      shelfShowProgress: true,
-      readoutTopLeft: 'chapter',
-      readoutTopRight: 'none',
-      readoutBottomLeft: 'progress',
-      readoutBottomRight: 'time',
-    },
+    DEFAULT_APP_SETTINGS,
     { layout: 'reflowable', format: '', availability: { system: false, native: false, http: false, preferred: null }, engine: null, voices: [] },
   );
 }
@@ -2295,6 +2268,8 @@ function settingsView(
     fontScale: settings.fontScale,
     lineHeight: settings.lineHeight,
     theme: settings.theme,
+    lastDayTheme: settings.lastDayTheme,
+    readerSections: settings.readerSections,
     fit: settings.fit,
     fontFamily: settings.fontFamily,
     pageMargin: settings.pageMargin,

@@ -8,7 +8,7 @@ import { ApiError } from '../src/api/errors.ts';
 import type { Book, BookContent, Manifest, Session } from '../src/api/types.ts';
 import { OfflineStore } from '../src/store/offline.ts';
 import { PublicationCache, publicationScope } from '../src/store/publications.ts';
-import { DEFAULT_APP_SETTINGS, type AppSettings } from '../src/store/settings.ts';
+import { DEFAULT_APP_SETTINGS, SettingsStore, type AppSettings } from '../src/store/settings.ts';
 import type { ReaderView } from '../src/ui/reader-view.ts';
 import { ReaderScreen } from '../src/ui/reader-screen.tsx';
 import { App } from '../src/app.ts';
@@ -75,14 +75,15 @@ async function setup(kv = new MemoryKv(), blobs = new MemoryBlobs(), userId = 'u
   const onSignedOut = vi.fn();
   const sync = {
     status: () => ({ state: 'idle', pending: false, message: '', lastSyncAt: null }),
-    onStatus: () => () => undefined,
+    onStatus: vi.fn((_listener: (status: ReturnType<SyncEngine['status']>) => void) => () => undefined),
     schedule: vi.fn(),
   } as unknown as SyncEngine;
+  const onSettingsChange = vi.fn();
   const screen = new ReaderScreen({ api, offline, sync, platform, settings: { ...DEFAULT_APP_SETTINGS, autoCache: false, ...settings },
-    onBack() {}, onSettingsChange() {}, onSignedOut });
+    onBack() {}, onSettingsChange, onSignedOut });
   screens.push(screen);
   document.body.append(screen.element);
-  return { screen, api, offline, transport, platform, onSignedOut };
+  return { screen, api, offline, transport, platform, onSignedOut, onSettingsChange, sync };
 }
 
 function serve(transport: FakeTransport, current: BookContent, next = current) {
@@ -654,4 +655,56 @@ it('updates cache markers when the directory opens before the visible chapter fi
   finish(new Blob(['visible body'])); await opening;
   await vi.waitFor(() => expect(env.screen.element.querySelectorAll('.toc-cached')).toHaveLength(1));
   expect(env.screen.element.querySelector('.toc-cached')?.closest('button')?.textContent).toContain('章节 a');
+});
+
+
+it.each(['sepia', 'green'] as const)('restores %s after a night toggle and reopening the reader', async theme => {
+  const env = await setup(undefined, undefined, 'u1', 'http://one.test', { theme });
+  serve(env.transport, content(['a'])); await env.screen.open(book);
+  await click(env.screen, '夜间');
+  expect(env.onSettingsChange).toHaveBeenLastCalledWith({ theme: 'dark', lastDayTheme: theme });
+  const kv = new MemoryKv(), store = new SettingsStore(kv);
+  await store.load(); await store.update(env.onSettingsChange.mock.calls.at(-1)![0]);
+  const restored = await new SettingsStore(kv).load();
+  const next = await setup(undefined, undefined, 'u1', 'http://one.test', restored);
+  serve(next.transport, content(['a'])); await next.screen.open(book);
+  await click(next.screen, '日间');
+  expect(next.onSettingsChange).toHaveBeenLastCalledWith({ theme, lastDayTheme: theme });
+});
+
+it('keeps automatic sync quiet while preserving failures and offline feedback', async () => {
+  const env = await setup(); serve(env.transport, content(['a'])); await env.screen.open(book);
+  const update = vi.mocked(env.sync.onStatus).mock.calls[0]![0];
+  const status = { state: 'syncing' as const, pending: true, message: '', lastSyncAt: null };
+  vi.spyOn(env.sync, 'status').mockReturnValue(status); update(status);
+  expect(noticeText()).not.toContain('同步中');
+  vi.mocked(env.sync.status).mockReturnValue({ ...status, state: 'error', message: '同步失败' }); update(env.sync.status());
+  expect(noticeText()).toContain('同步失败');
+  vi.mocked(env.sync.status).mockReturnValue({ ...status, state: 'offline' }); update(env.sync.status());
+  expect(noticeText()).toContain('进度待同步');
+});
+
+
+it('remembers each settings section independently across reopening and reload', async () => {
+  const env = await setup(); serve(env.transport, content(['a'])); await env.screen.open(book);
+  await click(env.screen, '界面');
+  const section = [...env.screen.element.querySelectorAll<HTMLDetailsElement>('details')]
+    .find(details => details.querySelector('summary')?.textContent === '阅读信息')!;
+  section.open = false;
+  section.dispatchEvent(new Event('toggle'));
+  await vi.waitFor(() => expect(env.onSettingsChange).toHaveBeenCalled());
+  const saved = env.onSettingsChange.mock.calls.at(-1)![0];
+  expect(saved.readerSections).toEqual({ readout: false, text: true, theme: true, paging: true });
+  await click(env.screen, '界面'); await click(env.screen, '界面');
+  expect([...env.screen.element.querySelectorAll<HTMLDetailsElement>('details')]
+    .find(details => details.querySelector('summary')?.textContent === '阅读信息')?.open).toBe(false);
+  const kv = new MemoryKv(), store = new SettingsStore(kv);
+  await store.load(); await store.update(saved);
+  const next = await setup(undefined, undefined, 'u1', 'http://one.test', await new SettingsStore(kv).load());
+  serve(next.transport, content(['a'])); await next.screen.open(book); await click(next.screen, '界面');
+  const details = [...next.screen.element.querySelectorAll<HTMLDetailsElement>('details')];
+  expect(details.map(item => item.querySelector('summary')?.textContent)).toEqual(['阅读信息', '正文', '主题']);
+  expect(details.map(item => item.open)).toEqual([false, true, true]);
+  const readout = details[0]!; readout.open = true; readout.dispatchEvent(new Event('toggle'));
+  await vi.waitFor(() => expect(next.onSettingsChange).toHaveBeenCalledWith({ readerSections: { readout: true, text: true, theme: true, paging: true } }));
 });

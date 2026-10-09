@@ -184,6 +184,15 @@ describe('ReaderChrome', () => {
     expect(tree.querySelector('[data-section="two"] .toc-cached')).toBeNull();
   });
 
+  it('places contents before tools in the bottom toolbar', () => {
+    const stage = document.createElement('div');
+    render(h(ReaderChrome, { state: chromeState(), stage,
+      handlers: { ...handlers(), onTools: () => {} } }), container);
+    const labels = [...container.querySelectorAll('.reader-actions button')].map(button => button.textContent?.trim());
+    expect(labels.indexOf('目录')).toBeLessThan(labels.indexOf('工具'));
+    expect(labels.indexOf('目录')).toBeGreaterThanOrEqual(0);
+  });
+
   it('keeps only the page-local controls on the rail', () => {
     // 主题 / 字号 / 听书. The five that were removed all open or reach the settings
     // sheet, so having them on the rail as well made it a worse copy of that sheet
@@ -209,7 +218,7 @@ describe('ReaderChrome', () => {
     const callbacks = { ...handlers(), onSetting: vi.fn() };
     const stage = document.createElement('div');
     render(h(ReaderChrome, { state: chromeState({ theme, settingsOpen: true, settingsTab: 'appearance' }), stage, handlers: callbacks }), container);
-    const native = [...container.querySelectorAll<HTMLButtonElement>('[aria-label="主题"] button')];
+    const native = [...container.querySelectorAll<HTMLButtonElement>('[aria-label="内置"] button')];
     expect(native.map(button => button.textContent)).toEqual(['白', '米黄', '浅绿', '夜间']);
     const options = [...container.querySelectorAll<HTMLButtonElement>(`[aria-label="${family}"] button`)];
     expect(options).toHaveLength(2);

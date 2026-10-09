@@ -26,7 +26,7 @@ import { DEFAULT_APP_SETTINGS, READOUT_FIELDS, READOUT_OPTIONS, type ReadoutMode
 import { ReaderIndicators } from './reader-indicators.tsx';
 import type { SpeechEngineKind } from '../render/speech.ts';
 import { type ReactNode, type JSX, useLayoutEffect, useRef, useState } from 'react';
-import { Button, IconButton, SectionTitle } from './toolkit.tsx';
+import { Button, IconButton } from './toolkit.tsx';
 import { Icon, type IconName } from './icon.tsx';
 
 /**
@@ -114,6 +114,8 @@ export interface ChromeState {
   fontScale: number;
   lineHeight: string;
   theme: AppSettings['theme'];
+  lastDayTheme?: AppSettings['lastDayTheme'];
+  readerSections?: AppSettings['readerSections'];
   fit: AppSettings['fit'];
   fontFamily: string;
   pageMargin: number;
@@ -218,7 +220,7 @@ export function ReaderChrome({ state, stage, handlers, tools }: ReaderChromeProp
   const tab = state.settingsTab ?? 'behavior';
   const nightTheme = state.theme === 'dark' || state.theme.endsWith('-night');
   const oppositeTheme: Record<AppSettings['theme'], AppSettings['theme']> = {
-    light: 'dark', sepia: 'dark', green: 'dark', dark: 'light',
+    light: 'dark', sepia: 'dark', green: 'dark', dark: state.lastDayTheme ?? 'light',
     'wechat-day': 'wechat-night', 'wechat-night': 'wechat-day',
     'houmo-day': 'houmo-night', 'houmo-night': 'houmo-day',
   };
@@ -260,8 +262,8 @@ export function ReaderChrome({ state, stage, handlers, tools }: ReaderChromeProp
             onClick={() => handlers.onChapter(1)}>{fixed ? '下一页' : '下一章'}</button>
         </div>
         <div className="reader-actions">
-          {handlers.onTools && <TopButton icon="search" label="工具" onClick={handlers.onTools} />}
           <TopButton icon="menu" label="目录" onClick={handlers.toggleToc} />
+          {handlers.onTools && <TopButton icon="search" label="工具" onClick={handlers.onTools} />}
           <TopButton icon="volume" label="朗读" onClick={() => handlers.toggleSettings('speech')} />
           <TopButton icon="text-size" label="界面" onClick={() => handlers.toggleSettings('appearance')} />
           <TopButton icon="settings" label="设置" onClick={() => handlers.toggleSettings('behavior')} />
@@ -432,18 +434,34 @@ function Panel({
   );
 }
 
+function SettingsSection({ id, title, state, handlers, children }: {
+  id: keyof AppSettings['readerSections']; title: string; state: ChromeState;
+  handlers: ChromeHandlers; children: ReactNode;
+}): JSX.Element {
+  const open = state.readerSections?.[id] ?? DEFAULT_APP_SETTINGS.readerSections[id];
+  return <details className="reader-settings-section" open={open} onToggle={event => {
+    const next = event.currentTarget.open;
+    if (next !== open) handlers.onSetting({ readerSections: {
+      ...DEFAULT_APP_SETTINGS.readerSections, ...state.readerSections, [id]: next,
+    } });
+  }}>
+    <summary className="section-title">{title}<Icon name="chevron-right" /></summary>
+    {children}
+  </details>;
+}
+
 function SettingsBody({ state, handlers }: { state: ChromeState; handlers: ChromeHandlers }): JSX.Element {
   return (
     <>
       {(state.settingsTab ?? 'behavior') === 'appearance' ? <>
-      <SectionTitle>阅读信息</SectionTitle>
+      <SettingsSection id="readout" title="阅读信息" state={state} handlers={handlers}>
       {READOUT_FIELDS.map(({ key, label }) => (
         <SelectRow key={key} label={label} options={READOUT_OPTIONS}
           value={state[key] ?? DEFAULT_APP_SETTINGS[key]}
           onChange={(value) => handlers.onSetting({ [key]: value as ReadoutMode })} />
       ))}
-      <SectionTitle>正文与主题</SectionTitle>
-      {state.layout !== 'fixed' ? <>
+      </SettingsSection>
+      {state.layout !== 'fixed' ? <SettingsSection id="text" title="正文" state={state} handlers={handlers}>
       <SliderRow
         label="字号"
         value={state.fontScale}
@@ -496,9 +514,51 @@ function SettingsBody({ state, handlers }: { state: ChromeState; handlers: Chrom
         value={state.fontFamily}
         onChange={(value) => handlers.onSetting({ fontFamily: value })}
       />
-      </> : null}
+      {/* Plain text is the one format with no typography of its own, so these are
+          the rows that give it some. They sit with 排版 rather than at the end,
+          because they are the *same kind of setting* — how the text looks — and a
+          reader looking for the indent should not have to scroll past the
+          read-aloud controls to find it. They are absent for every other format,
+          where the answer to all three is "whatever the book said". */}
+      {state.showTxtRows ? (
+        <>
+          <SliderRow
+            label="段落缩进"
+            value={state.txtIndent}
+            min={0}
+            max={4}
+            step={0.25}
+            format={(value) => (value === 0 ? '无' : `${value.toFixed(2)} 字`)}
+            onChange={(value) => handlers.onSetting({ txtIndent: value })}
+          />
+          <SliderRow
+            label="段间距"
+            value={state.txtParagraphGap}
+            min={0}
+            max={1.5}
+            step={0.05}
+            format={(value) => (value === 0 ? '无' : `${value.toFixed(2)} 字`)}
+            onChange={(value) => handlers.onSetting({ txtParagraphGap: value })}
+          />
+          <SelectRow
+            label="TXT 编码"
+            options={[
+              { value: '', label: '自动识别' },
+              { value: 'utf-8', label: 'utf-8' },
+              { value: 'gb18030', label: 'gb18030' },
+              { value: 'big5', label: 'big5' },
+              { value: 'utf-16le', label: 'utf-16le' },
+            ]}
+            value={state.txtEncoding}
+            onChange={(value) => handlers.onSetting({ txtEncoding: value })}
+          />
+        </>
+      ) : null}
+
+      </SettingsSection> : null}
+      <SettingsSection id="theme" title="主题" state={state} handlers={handlers}>
       <SegmentedRow
-        label="主题"
+        label="内置"
         options={[
           { value: 'light', label: '白' },
           { value: 'sepia', label: '米黄' },
@@ -535,50 +595,9 @@ function SettingsBody({ state, handlers }: { state: ChromeState; handlers: Chrom
         format={(value) => `${Math.round(value * 100)}%`}
         onChange={(value) => handlers.onSetting({ brightness: value })}
       />
+      </SettingsSection>
 
-      {/* Plain text is the one format with no typography of its own, so these are
-          the rows that give it some. They sit with 排版 rather than at the end,
-          because they are the *same kind of setting* — how the text looks — and a
-          reader looking for the indent should not have to scroll past the
-          read-aloud controls to find it. They are absent for every other format,
-          where the answer to all three is "whatever the book said". */}
-      {state.showTxtRows ? (
-        <>
-          <SectionTitle>正文</SectionTitle>
-          <SliderRow
-            label="段落缩进"
-            value={state.txtIndent}
-            min={0}
-            max={4}
-            step={0.25}
-            format={(value) => (value === 0 ? '无' : `${value.toFixed(2)} 字`)}
-            onChange={(value) => handlers.onSetting({ txtIndent: value })}
-          />
-          <SliderRow
-            label="段间距"
-            value={state.txtParagraphGap}
-            min={0}
-            max={1.5}
-            step={0.05}
-            format={(value) => (value === 0 ? '无' : `${value.toFixed(2)} 字`)}
-            onChange={(value) => handlers.onSetting({ txtParagraphGap: value })}
-          />
-          <SelectRow
-            label="TXT 编码"
-            options={[
-              { value: '', label: '自动识别' },
-              { value: 'utf-8', label: 'utf-8' },
-              { value: 'gb18030', label: 'gb18030' },
-              { value: 'big5', label: 'big5' },
-              { value: 'utf-16le', label: 'utf-16le' },
-            ]}
-            value={state.txtEncoding}
-            onChange={(value) => handlers.onSetting({ txtEncoding: value })}
-          />
-        </>
-      ) : null}
-
-      </> : <>
+      </> : <SettingsSection id="paging" title="翻页" state={state} handlers={handlers}>
       {state.layout !== 'fixed' ?
       <SegmentedRow
         label="翻页方式"
@@ -590,7 +609,6 @@ function SettingsBody({ state, handlers }: { state: ChromeState; handlers: Chrom
         onChange={(value) => handlers.onSetting({ mode: value as AppSettings['mode'] })}
       />
       : null}
-      <SectionTitle>翻页</SectionTitle>
       <Button onClick={() => handlers.onSetting({ pageAnimation: 'none', mode: 'paged', theme: 'light' })}>应用电纸书预设</Button>
       <p className="muted">浅色、分页、无翻页动画；仅保存到当前设备，可继续单独调整。屏幕刷新由设备控制。</p>
       <SegmentedRow
@@ -638,7 +656,7 @@ function SettingsBody({ state, handlers }: { state: ChromeState; handlers: Chrom
         />
       ) : null}
 
-      </>}
+      </SettingsSection>}
     </>
   );
 }

@@ -46,6 +46,8 @@ export const READOUT_OPTIONS: Array<{ value: ReadoutMode; label: string }> = [
 ];
 
 export interface AppSettings extends ViewSettings {
+  lastDayTheme: ViewSettings['theme'];
+  readerSections: Record<'readout' | 'text' | 'theme' | 'paging', boolean>;
   readoutTopLeft: ReadoutMode;
   readoutTopRight: ReadoutMode;
   readoutBottomLeft: ReadoutMode;
@@ -102,6 +104,8 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   fontScale: 1,
   lineHeight: 'inherit',
   theme: 'light',
+  lastDayTheme: 'light',
+  readerSections: { readout: true, text: true, theme: true, paging: true },
   fit: 'contain',
   direction: 'ltr',
   fontFamily: 'inherit',
@@ -143,6 +147,17 @@ export class SettingsStore {
         this.settings = { ...DEFAULT_APP_SETTINGS, ...parsed };
         if (typeof this.settings.theme !== 'string' || !Object.prototype.hasOwnProperty.call(PALETTES, this.settings.theme)) {
           this.settings.theme = DEFAULT_APP_SETTINGS.theme;
+        }
+        const dayThemes = ['light', 'sepia', 'green', 'wechat-day', 'houmo-day'];
+        if (!dayThemes.includes(this.settings.lastDayTheme)) {
+          this.settings.lastDayTheme = DEFAULT_APP_SETTINGS.lastDayTheme;
+        }
+        if (!parsed.lastDayTheme && dayThemes.includes(this.settings.theme)) {
+          this.settings.lastDayTheme = this.settings.theme;
+        }
+        this.settings.readerSections = { ...DEFAULT_APP_SETTINGS.readerSections };
+        for (const key of Object.keys(this.settings.readerSections) as Array<keyof AppSettings['readerSections']>) {
+          if (typeof parsed.readerSections?.[key] === 'boolean') this.settings.readerSections[key] = parsed.readerSections[key];
         }
         if (typeof this.settings.autoCache !== 'boolean') this.settings.autoCache = DEFAULT_APP_SETTINGS.autoCache;
         if (!Number.isInteger(this.settings.autoCacheChapters) || this.settings.autoCacheChapters < 1 || this.settings.autoCacheChapters > 50) {

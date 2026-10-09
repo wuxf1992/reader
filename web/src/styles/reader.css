@@ -4305,3 +4305,15 @@ svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; verti
 .catalog-source-search input { width:100%; min-height:42px; box-sizing:border-box; padding:.6rem .8rem; border:1px solid var(--reader-line); border-radius:.7rem; background:var(--reader-paper); color:var(--reader-ink); }
 .catalog-source-search input:focus { border-color:var(--reader-accent); outline:2px solid color-mix(in srgb,var(--reader-accent) 25%,transparent); outline-offset:1px; }
 @media (max-width:600px) { .catalog-source-meta { align-items:stretch; flex-direction:column; gap:.55rem; } .catalog-source-search { max-width:none; } }
+
+.reader-screen .reader-settings-section > summary.section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 44px;
+  margin: 0 0 var(--space-2);
+  cursor: pointer;
+  list-style: none;
+}
+.reader-settings-section > summary::-webkit-details-marker { display: none; }
+.reader-settings-section[open] > summary .icon { transform: rotate(90deg); }

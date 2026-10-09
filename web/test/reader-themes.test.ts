@@ -43,3 +43,14 @@ describe('Legado themes', () => {
     expect(loadSettings().theme).toBe('light');
   });
 });
+
+
+it('migrates an existing day theme and rejects invalid remembered settings', async () => {
+  const store = new SettingsStore({ get: async () => JSON.stringify({ theme: 'sepia',
+    readerSections: { readout: false, text: 'false', theme: null } }), set: async () => {}, remove: async () => {} });
+  expect(await store.load()).toMatchObject({ lastDayTheme: 'sepia',
+    readerSections: { readout: false, text: true, theme: true, paging: true } });
+  const invalid = new SettingsStore({ get: async () => JSON.stringify({ theme: 'dark', lastDayTheme: 'dark' }),
+    set: async () => {}, remove: async () => {} });
+  expect((await invalid.load()).lastDayTheme).toBe('light');
+});
