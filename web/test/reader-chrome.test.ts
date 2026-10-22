@@ -15,6 +15,7 @@ import { render } from '../src/shared/ui/render-root.ts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement as h } from 'react';
 import { ReaderChrome, type ChromeState, type ChromeHandlers } from '../src/ui/reader-chrome.tsx';
+import { PALETTES, type ThemeMode } from '../src/render/theme.ts';
 
 afterEach(async () => {
   await act(async () => { for (const element of [...document.body.children]) render(null, element); });
@@ -57,7 +58,6 @@ function chromeState(overrides: Partial<ChromeState> = {}): ChromeState {
     theme: 'light',
     fit: 'contain',
     fontFamily: 'inherit',
-    pageMargin: 1.5,
     textAlign: 'inherit',
     brightness: 1,
     pageAnimation: 'slide',
@@ -209,25 +209,26 @@ describe('ReaderChrome', () => {
     }
   });
 
-  it.each([
-    ['wechat-day', '微信阅读', '日间', 'wechat-night', '夜间'],
-    ['wechat-night', '微信阅读', '夜间', 'wechat-day', '日间'],
-    ['houmo-day', '厚墨', '日间', 'houmo-night', '夜间'],
-    ['houmo-night', '厚墨', '夜间', 'houmo-day', '日间'],
-  ] as const)('selects %s and switches within the same theme family', (theme, family, label, opposite, action) => {
+  it.each(Object.keys(PALETTES) as ThemeMode[])('previews %s with a Chinese name in its mode', theme => {
     const callbacks = { ...handlers(), onSetting: vi.fn() };
     const stage = document.createElement('div');
-    render(h(ReaderChrome, { state: chromeState({ theme, settingsOpen: true, settingsTab: 'appearance' }), stage, handlers: callbacks }), container);
-    const native = [...container.querySelectorAll<HTMLButtonElement>('[aria-label="内置"] button')];
-    expect(native.map(button => button.textContent)).toEqual(['白', '米黄', '浅绿', '夜间']);
-    const options = [...container.querySelectorAll<HTMLButtonElement>(`[aria-label="${family}"] button`)];
-    expect(options).toHaveLength(2);
-    const selected = options.find(button => button.textContent === label)!;
+    render(h(ReaderChrome, { state: chromeState({ theme, settingsOpen: true, settingsTab: 'appearance',
+      lastDayTheme: 'rose-pine-dawn-day', lastNightTheme: 'nord-night' }), stage, handlers: callbacks }), container);
+    const palette = PALETTES[theme];
+    const group = container.querySelector(`[aria-label="${palette.scheme === 'light' ? '日间主题' : '夜间主题'}"]`)!;
+    const selected = group.querySelector<HTMLButtonElement>(`[aria-label="${palette.label}"]`)!;
     expect(selected.getAttribute('aria-pressed')).toBe('true');
+    expect(selected.dataset.themeOption).toBe(theme);
+    expect(selected.textContent).toContain(palette.name);
+    expect(group.querySelectorAll('button')).toHaveLength(palette.scheme === 'light' ? 12 : 9);
     selected.click();
     expect(callbacks.onSetting).toHaveBeenLastCalledWith({ theme });
+    const opposite = palette.scheme === 'light' ? 'nord-night' : 'rose-pine-dawn-day';
+    const modes = container.querySelectorAll<HTMLButtonElement>('.theme-modes button');
+    modes[palette.scheme === 'light' ? 1 : 0]!.click();
+    expect(callbacks.onSetting).toHaveBeenLastCalledWith({ theme: opposite });
     const rail = container.querySelector<HTMLButtonElement>('.reader-rail .rail-button')!;
-    expect(rail.getAttribute('aria-label')).toBe(action);
+    expect(rail.getAttribute('aria-label')).toBe(palette.scheme === 'light' ? '夜间' : '日间');
     rail.click();
     expect(callbacks.onSetting).toHaveBeenLastCalledWith({ theme: opposite });
   });
@@ -249,6 +250,22 @@ describe('ReaderChrome', () => {
     expect(slider.getAttribute('aria-label')).toBe('章节内页数');
   });
 
+  it('offers independent reading-area insets without changing the other edges', () => {
+    const onSetting = vi.fn();
+    const stage = document.createElement('div');
+    act(() => render(h(ReaderChrome, { stage,
+      state: chromeState({ settingsOpen: true, settingsTab: 'appearance', pageInsets: { top: 12, bottom: 8, left: 4, right: 6 } }),
+      handlers: { ...handlers(), onSetting } }), container));
+    for (const label of ['上边距', '下边距', '左边距', '右边距']) {
+      const slider = container.querySelector(`input[aria-label="${label}"]`);
+      expect(slider?.closest('details')?.querySelector('summary')?.textContent).toBe('正文');
+    }
+    expect(container.querySelector('input[aria-label="页边距"]')).toBeNull();
+    const slider = container.querySelector<HTMLInputElement>('input[aria-label="上边距"]')!;
+    act(() => { slider.value = '24'; slider.dispatchEvent(new Event('input', { bubbles: true })); });
+    expect(onSetting).toHaveBeenCalledWith({ pageInsets: { top: 24, bottom: 8, left: 4, right: 6 } });
+  });
+
   it('separates appearance and behavior settings and omits text controls for comics', () => {
     let tree = paint({ settingsOpen: true, settingsTab: 'appearance' });
     expect(tree.querySelector('.panel')?.textContent).toContain('浅绿');
@@ -258,6 +275,7 @@ describe('ReaderChrome', () => {
     expect(tree.querySelector('.panel')?.textContent).not.toContain('字号');
     tree = paint({ settingsOpen: true, settingsTab: 'appearance', layout: 'fixed' });
     expect(tree.querySelector('.panel')?.textContent).not.toContain('字号');
+    expect(tree.querySelector('input[aria-label="上边距"]')?.closest('details')?.querySelector('summary')?.textContent).toBe('正文');
   });
 
   it('draws every read-aloud control, including stop, in their own row', () => {

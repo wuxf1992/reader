@@ -906,6 +906,12 @@ export function createReviewServer({ port = 5199 } = {}) {
     if (path === `/api/v1/books/${BOOK_ID}`) {
       return json(reply, { book, progress: null });
     }
+    if (path === `/api/v1/books/${ILLUSTRATED_ID}`) {
+      return json(reply, { book: illustratedBook(), progress: null });
+    }
+    if (path === `/api/v1/books/${ILLUSTRATED_ID}/progress`) {
+      return json(reply, null);
+    }
     if (path === `/api/v1/books/${BOOK_ID}/progress`) {
       return json(reply, null);
     }

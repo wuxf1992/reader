@@ -25,6 +25,7 @@ interface FixtureState {
   resources: Record<string, string>;
   failManifest?: boolean;
   resourceMediaType?: string;
+  cover?: { mediaType: string; base64: string };
 }
 
 const PLUGIN_ID = 'reader.source.chapters-test';
@@ -110,7 +111,7 @@ const entry = { ref: ${JSON.stringify(BOOK_REF)}, title: '来自插件的章节�
 const methods = {
   validateConfig: () => null,
   browse: () => ({ items: [entry] }),
-  detail: () => entry,
+  detail: async () => { const state = JSON.parse(await readFile(new URL('./state.json', import.meta.url), 'utf8')); return {...entry, ...(state.cover ? {coverUrl: 'https://covers.example.com/book.png'} : {})}; },
   acquire: () => ({ kind: 'chapters', publicationRef: entry.ref }),
   getManifest: async ({ publicationRef }) => {
     const state = JSON.parse(await readFile(new URL('./state.json', import.meta.url), 'utf8'));
@@ -119,6 +120,7 @@ const methods = {
   },
   readResource: async ({ context, request }) => {
     const state = JSON.parse(await readFile(new URL('./state.json', import.meta.url), 'utf8'));
+    if (request.ref === 'cover:https://covers.example.com/book.png' && state.cover) return state.cover;
     const text = state.resources[request.ref];
     if (text === undefined) throw Object.assign(new Error('missing fixture chapter'), { code: 'RESOURCE_GONE' });
     return { mediaType: state.resourceMediaType ?? 'text/plain; charset=utf-8', text: text + '\\nreader=' + context.userId };
@@ -338,4 +340,68 @@ test('chapter reading rejects executable upstream resources without replacing al
   assert.ok(rejected.statusCode >= 400, rejected.body);
   assert.doesNotMatch(rejected.headers['content-type'] as string, /^text\/html/);
   assert.equal((await asset(h, h.admin, id, book.items[0]!)).body, first.body);
+});
+
+
+test('chapter covers are cached privately, retried for existing books and cannot break acquisition', async (t) => {
+  const h = await harness(); t.after(() => h.close());
+  const fixture = await installFixture(h);
+  const member = await h.member();
+  const id = await acquire(h, member);
+  const state = initialState();
+  state.cover = {mediaType: 'image/png', base64: Buffer.from('89504e470d0a1a0a', 'hex').toString('base64')};
+  await fixture.state(state);
+  assert.equal(await acquire(h, member), id);
+  const cover = await h.app.inject({method: 'GET', url: `/api/v1/books/${id}/cover`, headers: auth(member)});
+  assert.equal(cover.statusCode, 200, cover.body);
+  assert.equal(cover.headers['content-type'], 'image/png');
+  assert.match(String(cover.headers['cache-control']), /^private/);
+  assert.deepEqual(cover.rawPayload, Buffer.from(state.cover.base64, 'base64'));
+  assert.equal((await h.app.inject({method: 'GET', url: `/api/v1/books/${id}/cover`, headers: auth(h.admin)})).statusCode, 404);
+  const reads = (await fixture.calls('readResource')).length;
+  assert.equal(await acquire(h, member), id);
+  assert.equal((await fixture.calls('readResource')).length, reads, 'cached covers are not downloaded again');
+  state.cover = {mediaType: 'image/png', base64: Buffer.from('<html>not an image</html>').toString('base64')};
+  await fixture.state(state);
+  const otherId = await acquire(h, h.admin);
+  assert.notEqual(otherId, id);
+  assert.equal((await h.app.inject({method: 'GET', url: `/api/v1/books/${otherId}/cover`, headers: auth(h.admin)})).statusCode, 404);
+  state.cover = {mediaType: 'image/webp', base64: Buffer.from('RIFF0000WEBP').toString('base64')};
+  await fixture.state(state);
+  assert.equal(await acquire(h, h.admin), otherId);
+  const webp = await h.app.inject({method: 'GET', url: `/api/v1/books/${otherId}/cover`, headers: auth(h.admin)});
+  assert.equal(webp.statusCode, 200);
+  assert.equal(webp.headers['content-type'], 'image/webp');
+});
+
+
+test('source details report the current account shelf and preview validated covers without acquisition', async (t) => {
+  const h = await harness(); t.after(() => h.close());
+  const fixture = await installFixture(h), member = await h.member();
+  const state = initialState();
+  state.cover = {mediaType: 'image/png', base64: Buffer.from('89504e470d0a1a0a', 'hex').toString('base64')};
+  await fixture.state(state);
+  const path = `/api/v1/sources/${SOURCE_ID}/`;
+  const query = `?ref=${encodeURIComponent(BOOK_REF)}`;
+  const detail = async (session: Session) => (await h.app.inject({method: 'GET', url: path + 'entries' + query, headers: auth(session)})).json();
+  assert.equal((await detail(member)).shelfBookId, null);
+  const cover = await h.app.inject({method: 'GET', url: path + 'cover' + query, headers: auth(member)});
+  assert.equal(cover.statusCode, 200, cover.body);
+  assert.equal(cover.headers['content-type'], 'image/png');
+  assert.equal(cover.headers['x-content-type-options'], 'nosniff');
+  assert.match(String(cover.headers['cache-control']), /^private/);
+  assert.deepEqual(cover.rawPayload, Buffer.from(state.cover.base64, 'base64'));
+  assert.equal(h.ctx.db.get<{n: number}>('SELECT count(*) AS n FROM books')!.n, 0, 'preview does not add books');
+  assert.equal((await h.app.inject({method: 'GET', url: path + 'cover' + query})).statusCode, 401);
+  const id = await acquire(h, member);
+  assert.equal((await detail(member)).shelfBookId, id);
+  assert.equal((await detail(member)).coverUrl, `/api/v1/books/${id}/cover`, 'details reuse the saved cover');
+  assert.equal((await detail(h.admin)).shelfBookId, null, 'shelf status belongs to the requesting account');
+  h.ctx.db.run('UPDATE user_books SET hidden=1 WHERE user_id=? AND book_id=?', member.id, id);
+  assert.equal((await detail(member)).shelfBookId, null, 'removed books are not reported as on the shelf');
+  state.cover = {mediaType: 'image/png', base64: Buffer.from('<script>not an image</script>').toString('base64')};
+  await fixture.state(state);
+  assert.equal((await h.app.inject({method: 'GET', url: path + 'cover' + query, headers: auth(member)})).statusCode, 400);
+  delete state.cover; await fixture.state(state);
+  assert.equal((await h.app.inject({method: 'GET', url: path + 'cover' + query, headers: auth(member)})).statusCode, 404);
 });

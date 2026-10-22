@@ -473,6 +473,8 @@ export async function saveCover(
     ? '.png'
     : cover.contentType.includes('svg')
       ? '.svg'
+      : cover.contentType.includes('webp')
+        ? '.webp'
       : cover.contentType.includes('gif')
         ? '.gif'
         : '.jpg';

@@ -132,6 +132,34 @@ describe('ReaderView navigation', () => {
     expect(view.position().sectionId).toBe('ch0.xhtml');
   });
 
+  it('keeps selected notes and corrections in source text while displaying and speaking the chosen script', async () => {
+    const doc = reflowableDoc(1);
+    doc.sections[0]!.html = '<p>头发<b>发展</b>，皇后后来。</p>';
+    const original = doc.sections[0]!.html;
+    const view = make(container, doc);
+    try {
+      view.applySettings({ chineseVariant: 'traditional' });
+      await view.open(0, 0);
+      const root = view.elementHost.shadow.querySelector<HTMLElement>('.book-flow')!;
+      expect(root.textContent).toBe('頭髮發展，皇后後來。');
+      const range = document.createRange(); range.selectNodeContents(root.querySelector('p')!);
+      Object.defineProperty(view.elementHost.shadow, 'getSelection', { configurable: true,
+        value: () => ({ rangeCount: 1, getRangeAt: () => range }) });
+      const anchor = view.selectionAnchor()!;
+      expect(anchor.quote).toBe('头发发展，皇后后来。');
+      expect(view.displayedQuote(anchor)).toBe('頭髮發展，皇后後來。');
+      expect(view.showTextAnchor(anchor)).toBe(true);
+      expect(view.speechChunks.map(chunk => chunk.text).join('')).toContain('頭髮發展');
+      const position = view.position();
+      view.applySettings({ chineseVariant: 'simplified' }); await view.openLocator(position.locator);
+      expect(root.textContent).toBe('头发发展，皇后后来。');
+      expect(view.showTextAnchor(anchor)).toBe(true);
+      view.applySettings({ chineseVariant: 'original' }); await view.openLocator(position.locator);
+      expect(root.textContent).toBe('头发发展，皇后后来。');
+      expect(doc.sections[0]!.html).toBe(original);
+    } finally { view.dispose(); }
+  });
+
   it('reports a locator that round-trips back to the same section', async () => {
     const view = make(container, reflowableDoc(4));
     await view.open(2, 0.5);
@@ -394,11 +422,12 @@ describe('ReaderView appearance settings', () => {
     expect(settings.lineHeight).toBe('inherit');
   });
 
-  it('exposes brightness as a number so a dimming overlay can be computed', () => {
-    const view = make(container, reflowableDoc(1));
-    view.applySettings({ brightness: 0.6 });
-    expect(container.style.getPropertyValue('--reader-brightness')).toBe('0.6');
-  });
+  it.each([[0, 0.5], [-1, 0.5], [0.35, 0.5], [0.6, 0.6], [0.75, 0.75], [2, 1], [NaN, 1], [Infinity, 1]])(
+    'keeps brightness %s within a visible range', (brightness, expected) => {
+      const view = make(container, reflowableDoc(1));
+      view.applySettings({ brightness });
+      expect(view.settingsSnapshot.brightness).toBe(expected);
+    });
 
   it('sets a page-turn animation on the host and clears it again', () => {
     vi.useFakeTimers();

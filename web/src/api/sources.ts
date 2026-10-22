@@ -9,6 +9,8 @@ export interface SourceInstance {
   config?: Record<string, unknown>; descriptor: SourceType | null;
 }
 export interface SourceEntry {
+  metadata?: Record<string, unknown>;
+  shelfBookId?: string | null;
   latestChapter?: string; sourceName?: string; coverUrl?: string;
   ref: string; title: string; authors?: string[]; description?: string;
   options?: Array<{ id: string; label: string; available?: boolean }>;
@@ -60,3 +62,5 @@ export interface ExtensionPage extends ExtensionContent {
 export interface ChapterQuality { chapterId:string; title:string; latestChapter:string; characters:number; images:number; bytes:number; elapsedMs:number }
 export interface CredentialStatus { state:'unknown'|'reachable'|'auth-required'|'verification-required'; checkedAt:number|null; available:boolean; fields:Array<{key:string;label:string;configured:boolean}> }
 export interface OpdsCredential { id: string; name: string; createdAt: number; expiresAt: number }
+
+export interface SourceChapter { id: string; title: string; seq: number }

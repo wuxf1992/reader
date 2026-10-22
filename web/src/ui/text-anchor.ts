@@ -27,8 +27,7 @@ export function decodeAnchor(locator: string): TextAnchor | null {
   } catch { return null; }
 }
 
-export function anchorRange(root: Node, anchor: TextAnchor): Range | null {
-  const nodes = textNodes(root), text = nodes.map(n => n.data).join('');
+export function anchorOffset(text: string, anchor: TextAnchor): number | null {
   let start = anchor.start;
   if (text.slice(start, start + anchor.quote.length) !== anchor.quote) {
     const context = anchor.prefix + anchor.quote + anchor.suffix;
@@ -40,6 +39,13 @@ export function anchorRange(root: Node, anchor: TextAnchor): Range | null {
       if (start < 0 || text.indexOf(anchor.quote, start + 1) >= 0) return null;
     }
   }
+  return start;
+}
+
+export function anchorRange(root: Node, anchor: TextAnchor): Range | null {
+  const nodes = textNodes(root), text = nodes.map(n => n.data).join('');
+  const start = anchorOffset(text, anchor);
+  if (start === null) return null;
   const range = root.ownerDocument!.createRange();
   const end = start + anchor.quote.length;
   let offset = 0, started = false;

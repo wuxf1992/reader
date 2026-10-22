@@ -33,6 +33,7 @@ try {
   for (const base of ['/', '/nested/']) {
     updated = false;
     const context = await browser.newContext();
+    await context.route('https://wuxf.top/**', route => route.abort());
     let page = await context.newPage();
     await page.goto(`${origin}${base}`);
     await page.evaluate(async () => {
@@ -62,7 +63,7 @@ try {
       return (await Promise.all(names.map(async (name) =>
         (await (await caches.open(name)).keys()).map((req) => req.url)))).flat();
     });
-    assert(cached.some((url) => url.endsWith('/assets/client.js')));
+    assert(cached.some((url) => new URL(url).pathname.endsWith('/assets/client.js')));
     assert(!cached.some((url) => url.includes('/api/')));
     await context.setOffline(true);
     await page.close();
@@ -97,7 +98,7 @@ try {
     const bounds = await page.locator('.pwa-update').boundingBox();
     assert(bounds && bounds.x >= 0 && bounds.x + bounds.width <= 320);
     await page.evaluate(() => {
-      window.readerApp.saveBeforeUpdate = async () => {
+      window.__readerFlush = async () => {
         await new Promise((resolve) => setTimeout(resolve, 100));
         sessionStorage.setItem('pwa-saved', 'yes');
       };

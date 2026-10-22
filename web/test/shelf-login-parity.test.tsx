@@ -6,6 +6,7 @@ import { MantineProvider } from '@mantine/core';
 import { QueryClientProvider, QueryClient } from '@tanstack/react-query';
 import { render } from '../src/shared/ui/render-root.ts';
 import { RuntimeContext } from '../src/app/providers/runtime-context.tsx';
+import { useSyncStore } from '../src/shared/stores/sync.store.ts';
 import { useAuthStore } from '../src/shared/stores/auth.store.ts';
 import { ShelfPage } from '../src/features/shelf/pages/ShelfPage.tsx';
 import { LoginPage } from '../src/features/auth/pages/LoginPage.tsx';
@@ -70,6 +71,10 @@ it('keeps the shelf entry points available and restores clear, settings and OPDS
 
   const settingsButton = [...root.querySelectorAll('button')].find(button => button.textContent === '设置');
   await act(async () => settingsButton?.click());
+  const textChoices = root.querySelector('[role="group"][aria-label="繁简转换（全局）"]')!;
+  expect(textChoices).not.toBeNull();
+  await act(async () => [...textChoices.querySelectorAll('button')].find(button => button.textContent === '繁体')!.click());
+  expect(value.updateSettings).toHaveBeenCalledWith({ chineseVariant: 'traditional' });
   expect(root.textContent).toContain('连接外部阅读器');
   await act(async () => [...root.querySelectorAll('button')].find(button => button.textContent === '连接外部阅读器')?.click());
   await vi.waitFor(() => expect(root.querySelector('dialog')).not.toBeNull());
@@ -83,4 +88,16 @@ it('collapses the server address and explains that sessions are remembered on lo
   expect(root.textContent).toContain('登录状态自动保持，无需每天重新登录');
   details.querySelector('summary')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   expect(details.open).toBe(true);
+});
+
+it('refreshes the visible shelf after synchronized reading progress arrives and unsubscribes on exit', async () => {
+  const invalidate = vi.spyOn(QueryClient.prototype, 'invalidateQueries');
+  const value = mount(<ShelfPage />);
+  const status = useSyncStore.getState().status;
+  await act(async () => useSyncStore.getState().update({ ...status, lastSyncAt: (status.lastSyncAt ?? 0) + 1 }));
+  expect(invalidate).toHaveBeenCalledWith({ queryKey: ['shelf', value.api.baseUrl] });
+  act(() => render(null, root));
+  invalidate.mockClear();
+  await act(async () => useSyncStore.getState().update({ ...status, lastSyncAt: (status.lastSyncAt ?? 0) + 2 }));
+  expect(invalidate).not.toHaveBeenCalled();
 });

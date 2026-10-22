@@ -14,6 +14,8 @@ async function load(value: AppRuntime, sort: 'recent' | 'title' = 'recent', sear
 }
 it('persists the online shelf for offline reopening', async () => {
   const value = runtime(); await load(value);
+  expect(value.api.listBooks).toHaveBeenCalledWith(expect.objectContaining({ sort: 'recent' }), expect.anything());
+  expect(shelfQuery(value).staleTime).toBe(0);
   expect(value.offline.replaceBooks).toHaveBeenCalledWith(books);
 });
 it('uses scoped cached books when offline and applies sorting and search', async () => {

@@ -67,25 +67,32 @@
     <link rel="apple-touch-startup-image" href="./startup/startup-2732x2048.png" media="(device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape)" />
     <!-- startup-images:end -->
     <title>reader</title>
+    <script>
+      try {
+        const color = localStorage.getItem('reader.theme-color');
+        if (/^#[\da-f]{6}$/i.test(color || '')) {
+          document.documentElement.style.setProperty('--reader-paper', color);
+          document.documentElement.style.colorScheme = localStorage.getItem('reader.theme-scheme') === 'dark' ? 'dark' : 'light';
+          const cachedBrowserColor = localStorage.getItem('reader.browser-color');
+          const browserColor = /^#[\da-f]{6}$/i.test(cachedBrowserColor || '') ? cachedBrowserColor : color;
+          document.documentElement.style.setProperty('--reader-browser-paper', browserColor);
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', browserColor);
+        }
+      } catch { /* Browser storage may be disabled. */ }
+    </script>
     <style>
       /* First paint only: prevents a white flash before the bundle applies the
          stored theme, and gives the reader something to look at on a slow LAN. */
-      html,
+      html { margin: 0; height: 100%; background: var(--reader-browser-paper, var(--reader-paper, #fbfaf7)); }
       body {
         margin: 0;
         height: 100%;
-        background: #fbfaf7;
+        background: var(--reader-browser-paper, var(--reader-paper, #fbfaf7));
       }
-      html[data-theme='dark'],
-      html[data-theme='dark'] body {
-        background: #16171a;
-      }
-      .app-startup { position: fixed; inset: 0; display: grid; place-items: center; background: #fbfaf7; z-index: 9999; }
+      .app-startup { position: fixed; inset: 0; display: grid; place-items: center; background: var(--reader-browser-paper, var(--reader-paper, #fbfaf7)); z-index: 9999; }
       .app-startup img { width: 96px; height: 96px; }
-      .app-startup-loading { position: absolute; top: calc(50% + 64px); color: #6b6b6b; display: flex; align-items: center; gap: 8px; font: 14px sans-serif; opacity: 0; animation: startup-reveal 1ms 100ms forwards; }
+      .app-startup-loading { position: absolute; top: calc(50% + 64px); color: CanvasText; display: flex; align-items: center; gap: 8px; font: 14px sans-serif; opacity: 0; animation: startup-reveal 1ms 100ms forwards; }
       .app-startup-loading::before { content: ''; width: 14px; height: 14px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: startup-spin 700ms linear infinite; }
-      html[data-theme='dark'] .app-startup { background: #16171a; }
-      html[data-theme='dark'] .app-startup-loading { color: #9a958c; }
       @keyframes startup-reveal { to { opacity: 1; } }
       @keyframes startup-spin { to { transform: rotate(360deg); } }
       @media (prefers-reduced-motion: reduce) { .app-startup-loading::before { animation: none; } }

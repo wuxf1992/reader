@@ -15,6 +15,29 @@ async function apiWith(transport: FakeTransport): Promise<ReaderApi> {
 }
 
 describe('ReaderApi navigation query cache', () => {
+  it('reloads subscriptions after toggles, interval changes and manual checks', async () => {
+    const transport = new FakeTransport();
+    let subscription = { bookId: 'book/id', enabled: false, intervalMinutes: 60, newChapters: 0 };
+    transport.respondWith(request => {
+      if (request.method === 'PATCH') subscription = { ...subscription, ...JSON.parse(String(request.body)) };
+      if (request.method === 'POST') subscription = { ...subscription, newChapters: 3 };
+      return { status: 200, headers: {}, json: { subscriptions: [{ ...subscription }] } };
+    });
+    const api = await apiWith(transport);
+    await api.subscriptions();
+    await api.subscriptions();
+    expect(transport.requests).toHaveLength(1);
+    for (const enabled of [true, false]) {
+      await api.configureSubscription('book/id', { enabled });
+      expect((await api.subscriptions())[0]?.enabled).toBe(enabled);
+    }
+    await api.configureSubscription('book/id', { intervalMinutes: 15 });
+    expect((await api.subscriptions())[0]?.intervalMinutes).toBe(15);
+    await api.refreshPublication('book/id');
+    expect((await api.subscriptions())[0]?.newChapters).toBe(3);
+    expect(transport.countMatching(request => request.method === 'GET')).toBe(5);
+  });
+
   it('refreshes explicitly, separates pages, and leaves polling uncached', async () => {
     const transport = new FakeTransport();
     transport.json({ items: [], total: 0 });
@@ -92,4 +115,31 @@ describe('ReaderApi navigation query cache', () => {
     expect(transport.countMatching(request => request.url.startsWith('/api/v1/library/continue'))).toBe(2);
   });
 
+});
+
+it('uses the existing authenticated manifest endpoint and keeps only chapters in reading order', async () => {
+  const transport = new FakeTransport();
+  transport.json({ items: [{ id: 'b', seq: 2, title: '第二章', kind: 'chapter' }, { id: 'page', seq: 0, title: '页面', kind: 'page' }, { id: 'a', seq: 1, title: '第一章', kind: 'chapter' }] });
+  const api = await apiWith(transport);
+  const chapters = await api.sourceChapters('source/id', 'legado:ref');
+  expect(chapters.map(item => item.id)).toEqual(['a', 'b']);
+  expect(transport.requests.at(-1)?.url).toBe('/api/v1/sources/source%2Fid/publications/legado%3Aref/manifest');
+  expect(transport.requests).toHaveLength(1);
+});
+
+it('refreshes recent reading order on return while retaining other shelf caches', async () => {
+  const transport = new FakeTransport();
+  let read = false;
+  transport.respondWith(request => {
+    if (request.method === 'PUT') { read = true; return { status: 200, headers: {}, json: { progress: null } }; }
+    return { status: 200, headers: {}, json: { items: read ? [{ id: 'b' }, { id: 'a' }] : [{ id: 'a' }, { id: 'b' }], total: 2 } };
+  });
+  const api = await apiWith(transport);
+  await api.listBooks({ sort: 'recent' });
+  await api.listBooks({ sort: 'added' });
+  await api.putProgress({ bookId: 'b', locator: 'r1:0:c0', percentage: 0.4, chapterTitle: '第一章', device: 'test', updatedAt: 300 });
+  expect((await api.listBooks({ sort: 'recent' })).items.map(book => book.id)).toEqual(['b', 'a']);
+  await api.listBooks({ sort: 'added' });
+  expect(transport.countMatching(request => request.method === 'GET' && request.url.includes('sort=recent'))).toBe(2);
+  expect(transport.countMatching(request => request.method === 'GET' && request.url.includes('sort=added'))).toBe(1);
 });

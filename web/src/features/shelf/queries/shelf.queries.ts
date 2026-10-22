@@ -4,10 +4,9 @@ import { ApiError } from '../../../api/errors.ts';
 import { useRuntime } from '../../../app/providers/runtime-context.tsx';
 export function shelfQuery(runtime: ReturnType<typeof useRuntime>, page = 1, sort: 'recent' | 'added' | 'title' | 'author' = 'recent', search = '') {
   const userId = runtime.api.currentSession()?.user.id;
-  const apiSort = sort === 'recent' ? 'updated' : sort;
-  return queryOptions({ queryKey: ['shelf', runtime.api.baseUrl, userId, page, sort, search], queryFn: async ({ signal }) => {
+  return queryOptions({ queryKey: ['shelf', runtime.api.baseUrl, userId, page, sort, search], staleTime: sort === 'recent' ? 0 : 60_000, queryFn: async ({ signal }) => {
     try {
-      const response = await runtime.api.listBooks({ scope: 'shelf', page, pageSize: 60, sort: apiSort, order: sort === 'title' || sort === 'author' ? 'asc' : 'desc', search: search.trim() }, { signal });
+      const response = await runtime.api.listBooks({ scope: 'shelf', page, pageSize: 60, sort, order: sort === 'title' || sort === 'author' ? 'asc' : 'desc', search: search.trim() }, { signal });
       if (runtime.api.currentSession()?.user.id === userId) await runtime.offline.replaceBooks(response.items).catch(() => undefined);
       return response;
     } catch (error) {

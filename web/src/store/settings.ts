@@ -1,6 +1,7 @@
-import { PALETTES } from '../render/theme.ts';
+import { PALETTES, clampBrightness, type ThemeMode } from '../render/theme.ts';
 import type { KeyValueStore } from '../core/platform.ts';
 import type { ViewSettings } from '../ui/reader-view.ts';
+import { CHINESE_VARIANTS } from '../render/chinese.ts';
 
 /**
  * Reader preferences, persisted per device.
@@ -46,7 +47,9 @@ export const READOUT_OPTIONS: Array<{ value: ReadoutMode; label: string }> = [
 ];
 
 export interface AppSettings extends ViewSettings {
+  pageInsets: Record<'top' | 'bottom' | 'left' | 'right', number>;
   lastDayTheme: ViewSettings['theme'];
+  lastNightTheme: ViewSettings['theme'];
   readerSections: Record<'readout' | 'text' | 'theme' | 'paging', boolean>;
   readoutTopLeft: ReadoutMode;
   readoutTopRight: ReadoutMode;
@@ -96,6 +99,7 @@ export interface AppSettings extends ViewSettings {
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
+  pageInsets: { top: 0, bottom: 0, left: 0, right: 0 },
   readoutTopLeft: 'chapter',
   readoutTopRight: 'none',
   readoutBottomLeft: 'progress',
@@ -105,12 +109,14 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   lineHeight: 'inherit',
   theme: 'light',
   lastDayTheme: 'light',
+  lastNightTheme: 'dark',
   readerSections: { readout: true, text: true, theme: true, paging: true },
   fit: 'contain',
   direction: 'ltr',
   fontFamily: 'inherit',
   pageMargin: 1.5,
   textAlign: 'inherit',
+  chineseVariant: 'original',
   brightness: 1,
   pageAnimation: 'slide',
   tapZone: 'standard',
@@ -145,15 +151,19 @@ export class SettingsStore {
       try {
         const parsed = JSON.parse(raw) as Partial<AppSettings> & { shelfSort?: string };
         this.settings = { ...DEFAULT_APP_SETTINGS, ...parsed };
+        this.settings.pageInsets = normalizePageInsets(parsed.pageInsets);
+        this.settings.brightness = clampBrightness(this.settings.brightness);
+        if (!CHINESE_VARIANTS.some(option => option.value === this.settings.chineseVariant)) this.settings.chineseVariant = 'original';
         if (typeof this.settings.theme !== 'string' || !Object.prototype.hasOwnProperty.call(PALETTES, this.settings.theme)) {
           this.settings.theme = DEFAULT_APP_SETTINGS.theme;
         }
-        const dayThemes = ['light', 'sepia', 'green', 'wechat-day', 'houmo-day'];
-        if (!dayThemes.includes(this.settings.lastDayTheme)) {
-          this.settings.lastDayTheme = DEFAULT_APP_SETTINGS.lastDayTheme;
-        }
-        if (!parsed.lastDayTheme && dayThemes.includes(this.settings.theme)) {
-          this.settings.lastDayTheme = this.settings.theme;
+        for (const key of ['lastDayTheme', 'lastNightTheme'] as const) {
+          const scheme = key === 'lastDayTheme' ? 'light' : 'dark';
+          const theme = this.settings[key];
+          if (typeof theme !== 'string' || !Object.prototype.hasOwnProperty.call(PALETTES, theme) || PALETTES[theme].scheme !== scheme) {
+            this.settings[key] = DEFAULT_APP_SETTINGS[key];
+          }
+          if (!parsed[key] && PALETTES[this.settings.theme].scheme === scheme) this.settings[key] = this.settings.theme;
         }
         this.settings.readerSections = { ...DEFAULT_APP_SETTINGS.readerSections };
         for (const key of Object.keys(this.settings.readerSections) as Array<keyof AppSettings['readerSections']>) {
@@ -197,7 +207,8 @@ export class SettingsStore {
   }
 
   async update(patch: Partial<AppSettings>): Promise<AppSettings> {
-    this.settings = { ...this.settings, ...patch };
+    this.settings = { ...this.settings, ...withThemeMemory(this.settings, patch) };
+    this.settings.pageInsets = normalizePageInsets(this.settings.pageInsets);
     await this.kv.set(KEY, JSON.stringify(this.settings));
     return this.settings;
   }
@@ -211,4 +222,19 @@ export class SettingsStore {
   async setServerUrl(url: string): Promise<void> {
     await this.kv.set(SERVER_KEY, url.replace(/\/+$/, ''));
   }
+}
+
+function normalizePageInsets(value: AppSettings['pageInsets'] | undefined): AppSettings['pageInsets'] {
+  const insets = { ...DEFAULT_APP_SETTINGS.pageInsets };
+  for (const edge of Object.keys(insets) as Array<keyof typeof insets>) {
+    const number = value?.[edge];
+    if (typeof number === 'number' && Number.isFinite(number)) insets[edge] = Math.max(0, Math.min(80, Math.round(number)));
+  }
+  return insets;
+}
+
+export function withThemeMemory(settings: AppSettings, patch: Partial<AppSettings>): Partial<AppSettings> {
+  if (!patch.theme) return patch;
+  const memoryKey = (theme: ThemeMode) => PALETTES[theme].scheme === 'dark' ? 'lastNightTheme' : 'lastDayTheme';
+  return { [memoryKey(settings.theme)]: settings.theme, ...patch, [memoryKey(patch.theme)]: patch.theme };
 }

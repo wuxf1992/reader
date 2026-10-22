@@ -19,6 +19,7 @@ export class FetchTransport implements Transport {
       response = await fetch(url, {
         method: request.method,
         headers: request.headers,
+        ...(request.cache ? { cache: request.cache } : {}),
         // A `FormData` body must be sent without a caller-set `content-type`:
         // only the browser knows the multipart boundary, and it can only add one
         // it chose itself.
@@ -52,7 +53,7 @@ export class FetchTransport implements Transport {
       return { status: response.status, headers, stream: response.body };
     }
     if (request.binary) {
-      if (!response.ok) throw await this.toError(response);
+      if (!response.ok && response.status !== 304) throw await this.toError(response);
       const buffer = new Uint8Array(await response.arrayBuffer());
       return { status: response.status, headers, bytes: buffer };
     }

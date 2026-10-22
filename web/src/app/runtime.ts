@@ -89,8 +89,7 @@ export async function createAppRuntime(defaultServerUrl = '') {
       player.reconnectNative();
     },
     async updateSettings(patch: Partial<AppSettings>) {
-      await settings.update(patch);
-      useSettingsStore.getState().update(patch);
+      useSettingsStore.getState().replace(await settings.update(patch));
     },
     registerReader(book: Book, flush: () => Promise<void>) {
       currentBook = book; readerFlush = flush;

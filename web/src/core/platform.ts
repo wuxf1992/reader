@@ -23,6 +23,7 @@ export interface HttpRequest {
   body?: string | FormData;
   /** Binary response mode: used for book bodies and covers. */
   binary?: boolean;
+  cache?: RequestCache;
   /** Return the response body without buffering it (Streamable HTTP). */
   stream?: boolean;
   /**

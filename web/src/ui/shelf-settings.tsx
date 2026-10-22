@@ -24,6 +24,8 @@
 import type { AppSettings } from '../store/settings.ts';
 import { Button, IconButton, SectionTitle, Segmented, SwitchRow } from './toolkit.tsx';
 import { type JSX, useLayoutEffect, useRef } from 'react';
+import { ThemePicker } from './theme-picker.tsx';
+import { CHINESE_VARIANTS } from '../render/chinese.ts';
 
 export const DENSITY_LABELS: Record<AppSettings['shelfDensity'], string> = {
   compact: '紧凑',
@@ -75,6 +77,13 @@ export function ShelfSettingsPanel({
         <IconButton label="关闭" icon="close" onClick={onClose} />
       </div>
       <div className="panel-body">
+        <SectionTitle>主题</SectionTitle>
+        <ThemePicker value={settings.theme} lastDayTheme={settings.lastDayTheme} lastNightTheme={settings.lastNightTheme}
+          onChange={theme => onPatch({ theme })} />
+        <SectionTitle>正文</SectionTitle>
+        <Segmented label="繁简转换（全局）" options={[...CHINESE_VARIANTS]}
+          value={settings.chineseVariant} onChange={value => onPatch({ chineseVariant: value })} />
+        <div className="notice">应用于此设备上的所有书籍，保留原始正文。</div>
         <SectionTitle>封面大小</SectionTitle>
         <Segmented
           label="封面大小"

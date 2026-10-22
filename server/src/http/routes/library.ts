@@ -7,7 +7,7 @@ import { assertSafeRel, normalizeRel, resolveInside } from '../../lib/paths.ts';
 import { createHash } from 'node:crypto';
 import { createReadStream, existsSync } from 'node:fs';
 import { join, extname } from 'node:path';
-import { stat } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import {
   capabilities,
   contentTypeFor,
@@ -471,15 +471,22 @@ export function registerLibraryRoutes(app: FastifyInstance, ctx: AppContext): vo
 
   app.get('/api/v1/books/:id/cover', { preHandler: auth }, async (request, reply) => {
     const { id } = request.params as { id: string };
+    if (ctx.sources?.chapters.has(id)) ctx.sources.chapters.binding(currentUser(request).id, id);
     const row = ctx.db.get<{ cover_path: string | null }>('SELECT cover_path FROM books WHERE id = ?', id);
     if (!row?.cover_path) throw notFound('no cover for this book', 'NO_COVER');
     const abs = resolveInside(ctx.config.dataDir, assertSafeRel(row.cover_path));
     if (!existsSync(abs)) throw notFound('cover cache missing', 'NO_COVER');
     const ext = extname(abs).toLowerCase();
-    const mime = ext === '.png' ? 'image/png' : ext === '.gif' ? 'image/gif' : ext === '.svg' ? 'image/svg+xml' : 'image/jpeg';
+    const mime = ext === '.png' ? 'image/png' : ext === '.gif' ? 'image/gif' : ext === '.svg' ? 'image/svg+xml' : ext === '.webp' ? 'image/webp' : 'image/jpeg';
     reply.header('content-type', mime);
-    reply.header('cache-control', 'public, max-age=31536000, immutable');
-    return reply.send(createReadStream(abs));
+    const bytes = await readFile(abs);
+    const etag = '"' + createHash('md5').update(bytes).digest('hex') + '"';
+    reply.header('etag', etag);
+    reply.header('cache-control', 'private, no-cache');
+    reply.header('vary', 'origin, authorization');
+    const validators = request.headers['if-none-match']?.split(',').map(value => value.trim().replace(/^W\//, ''));
+    if (validators?.some(value => value === '*' || value === etag)) return reply.status(304).send();
+    return reply.send(bytes);
   });
 
   /**

@@ -127,6 +127,12 @@ export function registerSourceRoutes(app: FastifyInstance, ctx: AppContext): voi
     const ref = parameter(q.ref, 'ref', true)!;
     return withSignal(request, reply, (signal) => host.detail(user.id, id, ref, signal));
   });
+  app.get('/api/v1/sources/:id/cover', { preHandler: auth }, async (request, reply) => {
+    const ref = parameter((request.query as { ref?: string }).ref, 'ref', true)!;
+    const image = await withSignal(request, reply, signal => host.cover(currentUser(request).id, (request.params as { id: string }).id, ref, signal));
+    return reply.type(image.type).header('x-content-type-options', 'nosniff')
+      .header('cache-control', 'private, max-age=300').send(image.bytes);
+  });
   app.post('/api/v1/sources/:id/acquire', { preHandler: auth }, async (request, reply) => {
     const user = currentUser(request); const { id } = request.params as { id: string };
     const body = request.body as Record<string, unknown> | null;

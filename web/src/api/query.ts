@@ -63,7 +63,8 @@ export function affectedNavigationQuery(mutation: string, query: string): boolea
   if (/^\/api\/v1\/library\/browse\//.test(mutation)) return query.startsWith('/api/v1/library/browse') || query.startsWith('/api/v1/books');
   if (/^\/api\/v1\/books\//.test(mutation)) {
     const id = mutation.match(/^\/api\/v1\/books\/([^/]+)/)?.[1];
-    return query.startsWith('/api/v1/books') && (!id || query.includes('/books/' + id));
+    return (query.startsWith('/api/v1/books') && (!id || query.includes('/books/' + id)))
+      || (/^\/api\/v1\/books\/[^/]+\/(subscription|refresh)$/.test(mutation) && query.startsWith('/api/v1/subscriptions'));
   }
   if (/^\/api\/v1\/sources(?:\/|$)/.test(mutation) || /^\/api\/v1\/plugins/.test(mutation)) {
     // Acquiring a source book changes shelf membership. Invalidate every cached

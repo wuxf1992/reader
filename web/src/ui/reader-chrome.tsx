@@ -4,6 +4,8 @@ import type { SourcePage } from '../api/sources.ts';
 import { CatalogFeedback } from './catalog-feedback.tsx';
 import { FloatingNotice } from './floating-notice.tsx';
 import { BusyIndicator } from './busy.tsx';
+import { PALETTES, MIN_BRIGHTNESS } from '../render/theme.ts';
+import { ThemePicker } from './theme-picker.tsx';
 /**
  * The reader's chrome: everything around the page.
  *
@@ -22,6 +24,7 @@ import { BusyIndicator } from './busy.tsx';
  */
 
 import type { AppSettings } from '../store/settings.ts';
+import { CHINESE_VARIANTS } from '../render/chinese.ts';
 import { DEFAULT_APP_SETTINGS, READOUT_FIELDS, READOUT_OPTIONS, type ReadoutMode } from '../store/settings.ts';
 import { ReaderIndicators } from './reader-indicators.tsx';
 import type { SpeechEngineKind } from '../render/speech.ts';
@@ -115,11 +118,13 @@ export interface ChromeState {
   lineHeight: string;
   theme: AppSettings['theme'];
   lastDayTheme?: AppSettings['lastDayTheme'];
+  lastNightTheme?: AppSettings['lastNightTheme'];
   readerSections?: AppSettings['readerSections'];
   fit: AppSettings['fit'];
   fontFamily: string;
-  pageMargin: number;
+  pageInsets?: AppSettings['pageInsets'];
   textAlign: AppSettings['textAlign'];
+  chineseVariant?: AppSettings['chineseVariant'];
   brightness: number;
   pageAnimation: AppSettings['pageAnimation'];
   tapZone: AppSettings['tapZone'];
@@ -218,12 +223,8 @@ export function ReaderChrome({ state, stage, handlers, tools }: ReaderChromeProp
   const currentPage = Math.min(totalPages, Math.max(1, state.pageInChapter));
   const pageLabel = '本章第 ' + currentPage + '/' + totalPages + ' 页';
   const tab = state.settingsTab ?? 'behavior';
-  const nightTheme = state.theme === 'dark' || state.theme.endsWith('-night');
-  const oppositeTheme: Record<AppSettings['theme'], AppSettings['theme']> = {
-    light: 'dark', sepia: 'dark', green: 'dark', dark: state.lastDayTheme ?? 'light',
-    'wechat-day': 'wechat-night', 'wechat-night': 'wechat-day',
-    'houmo-day': 'houmo-night', 'houmo-night': 'houmo-day',
-  };
+  const nightTheme = PALETTES[state.theme].scheme === 'dark';
+  const oppositeTheme = nightTheme ? state.lastDayTheme ?? 'light' : state.lastNightTheme ?? 'dark';
   return (
     <>
       {tools}
@@ -245,7 +246,7 @@ export function ReaderChrome({ state, stage, handlers, tools }: ReaderChromeProp
       <div className="reader-rail" role="toolbar" aria-label="阅读快捷操作">
         <RailButton icon={nightTheme ? 'sun' : 'moon'}
           label={nightTheme ? '日间' : '夜间'}
-          onClick={() => handlers.onSetting({ theme: oppositeTheme[state.theme] })} />
+          onClick={() => handlers.onSetting({ theme: oppositeTheme })} />
       </div>
       <div className="footer" hidden={!state.chromeVisible}>
         <div className="progress-row">
@@ -454,6 +455,19 @@ function SettingsBody({ state, handlers }: { state: ChromeState; handlers: Chrom
   return (
     <>
       {(state.settingsTab ?? 'behavior') === 'appearance' ? <>
+      <SettingsSection id="theme" title="主题" state={state} handlers={handlers}>
+      <SliderRow
+        label="页面亮度"
+        value={state.brightness}
+        min={MIN_BRIGHTNESS}
+        max={1}
+        step={0.05}
+        format={(value) => `${Math.round(value * 100)}%`}
+        onChange={(value) => handlers.onSetting({ brightness: value })}
+      />
+      <ThemePicker value={state.theme} lastDayTheme={state.lastDayTheme ?? 'light'} lastNightTheme={state.lastNightTheme ?? 'dark'}
+        onChange={theme => handlers.onSetting({ theme })} />
+      </SettingsSection>
       <SettingsSection id="readout" title="阅读信息" state={state} handlers={handlers}>
       {READOUT_FIELDS.map(({ key, label }) => (
         <SelectRow key={key} label={label} options={READOUT_OPTIONS}
@@ -461,7 +475,12 @@ function SettingsBody({ state, handlers }: { state: ChromeState; handlers: Chrom
           onChange={(value) => handlers.onSetting({ [key]: value as ReadoutMode })} />
       ))}
       </SettingsSection>
-      {state.layout !== 'fixed' ? <SettingsSection id="text" title="正文" state={state} handlers={handlers}>
+      <SettingsSection id="text" title="正文" state={state} handlers={handlers}>
+      {state.layout !== 'fixed' ? <>
+      <SegmentedRow label="繁简转换（全局）" options={[...CHINESE_VARIANTS]}
+        value={state.chineseVariant ?? 'original'}
+        onChange={value => handlers.onSetting({ chineseVariant: value as AppSettings['chineseVariant'] })} />
+      <p className="muted">应用于此设备上的所有书籍，保留原始正文。</p>
       <SliderRow
         label="字号"
         value={state.fontScale}
@@ -480,15 +499,15 @@ function SettingsBody({ state, handlers }: { state: ChromeState; handlers: Chrom
         value={state.lineHeight}
         onChange={(value) => handlers.onSetting({ lineHeight: value })}
       />
-      <SliderRow
-        label="页边距"
-        value={state.pageMargin}
-        min={0}
-        max={4}
-        step={0.25}
-        format={(value) => `${value.toFixed(2)}rem`}
-        onChange={(value) => handlers.onSetting({ pageMargin: value })}
-      />
+      </> : null}
+      <p className="muted">额外留白会同时移动正文和阅读信息；顶部模糊时可增加上边距。</p>
+      {([['top', '上边距'], ['bottom', '下边距'], ['left', '左边距'], ['right', '右边距']] as const).map(([edge, label]) => (
+        <SliderRow key={edge} label={label}
+          value={(state.pageInsets ?? DEFAULT_APP_SETTINGS.pageInsets)[edge]}
+          min={0} max={80} step={2} format={value => `${value}px`}
+          onChange={value => handlers.onSetting({ pageInsets: { ...(state.pageInsets ?? DEFAULT_APP_SETTINGS.pageInsets), [edge]: value } })} />
+      ))}
+      {state.layout !== 'fixed' ? <>
       <SegmentedRow
         label="对齐"
         options={[
@@ -555,47 +574,9 @@ function SettingsBody({ state, handlers }: { state: ChromeState; handlers: Chrom
         </>
       ) : null}
 
-      </SettingsSection> : null}
-      <SettingsSection id="theme" title="主题" state={state} handlers={handlers}>
-      <SegmentedRow
-        label="内置"
-        options={[
-          { value: 'light', label: '白' },
-          { value: 'sepia', label: '米黄' },
-          { value: 'green', label: '浅绿' },
-          { value: 'dark', label: '夜间' },
-        ]}
-        value={state.theme}
-        onChange={(value) => handlers.onSetting({ theme: value as AppSettings['theme'] })}
-      />
-      <SegmentedRow
-        label="微信阅读"
-        options={[
-          { value: 'wechat-day', label: '日间' },
-          { value: 'wechat-night', label: '夜间' },
-        ]}
-        value={state.theme}
-        onChange={(value) => handlers.onSetting({ theme: value as AppSettings['theme'] })}
-      />
-      <SegmentedRow
-        label="厚墨"
-        options={[
-          { value: 'houmo-day', label: '日间' },
-          { value: 'houmo-night', label: '夜间' },
-        ]}
-        value={state.theme}
-        onChange={(value) => handlers.onSetting({ theme: value as AppSettings['theme'] })}
-      />
-      <SliderRow
-        label="亮度"
-        value={state.brightness}
-        min={0.35}
-        max={1}
-        step={0.05}
-        format={(value) => `${Math.round(value * 100)}%`}
-        onChange={(value) => handlers.onSetting({ brightness: value })}
-      />
+      </> : null}
       </SettingsSection>
+
 
       </> : <SettingsSection id="paging" title="翻页" state={state} handlers={handlers}>
       {state.layout !== 'fixed' ?

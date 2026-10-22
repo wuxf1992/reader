@@ -117,7 +117,7 @@ export class FakeTransport {
       throw new ApiError('offline', err instanceof Error ? err.message : 'network error');
     }
 
-    if (response.status >= 200 && response.status < 300) return response;
+    if ((response.status >= 200 && response.status < 300) || (request.binary && response.status === 304)) return response;
 
     const body = response.json as { error?: { code?: string; message?: string } } | undefined;
     const code = body?.error?.code ?? '';

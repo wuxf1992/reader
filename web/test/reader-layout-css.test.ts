@@ -113,10 +113,22 @@ describe('the reading surface fills the screen', () => {
 
   it('keeps reading information in fixed top and bottom strips', () => {
     const box = rule('.reading-indicator');
-    expect(declaration(rule('.reading-indicator-top'), 'top')).toBe('0');
-    expect(declaration(rule('.reading-indicator-bottom'), 'bottom')).toBe('0');
+    expect(declaration(rule('.reading-indicator-top'), 'top')).toBe('var(--reader-inset-top, 0px)');
+    expect(declaration(rule('.reading-indicator-bottom'), 'bottom')).toBe('var(--reader-inset-bottom, 0px)');
     expect(declaration(box, 'display')).toBe('flex');
     expect(declaration(box, 'pointer-events')).toBe('none');
+  });
+
+  it('provides a solid fixed header and matching document fallback for iOS status-bar sampling', () => {
+    const header = rule('.reader-screen .topbar');
+    expect(declaration(header, 'position')).toBe('fixed');
+    expect(declaration(header, 'transition')).toBe('none');
+    expect(declaration(header, 'background')).toBe('var(--reader-surface)');
+    expect(declaration(header, 'backdrop-filter')).toBe('none');
+    expect(declaration(header, '-webkit-backdrop-filter')).toBe('none');
+    const background = rule('html[data-reader-chrome] body');
+    expect(declaration(background, 'background-color')).toBe('var(--reader-browser-paper, var(--reader-paper))');
+    expect(declaration(background, 'background-image')).toBe('none');
   });
 
   it('paints the read-aloud bar above the page it floats over', () => {

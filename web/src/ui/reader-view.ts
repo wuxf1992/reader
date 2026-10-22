@@ -1,4 +1,4 @@
-import type { ThemeMode } from '../render/theme.ts';
+import { clampBrightness, type ThemeMode } from '../render/theme.ts';
 import { applyTheme } from './settings.ts';
 import type { BookDoc, Section, StagedBook } from '../formats/types.ts';
 import type { BookContent } from '../net/api.ts';
@@ -16,8 +16,9 @@ import { bookPercentage, formatLocator, parseLocator } from './locator.ts';
 import { collectSpokenChunks, type SpokenChunk } from '../render/tts-text.ts';
 import { adoptWindow } from '../formats/windowed.ts';
 import { BOOK_RESOURCE_MARKER, chapterRefFromLink } from '../formats/book-resource.ts';
-import { anchorRange, selectedAnchor, type TextAnchor } from './text-anchor.ts';
+import { anchorRange, selectedAnchor, textNodes, type TextAnchor } from './text-anchor.ts';
 import { paginateLines, nearestTextPage, type TextPage } from './line-pages.ts';
+import { ChineseChapterText, type ChineseVariant } from '../render/chinese.ts';
 
 export interface ReaderViewOptions {
   onSelection?(anchor: TextAnchor | null, rect: DOMRect | null): void;
@@ -117,6 +118,7 @@ export interface ViewSettings {
   pageMargin: number;
   /** `inherit` keeps whatever the book asked for. */
   textAlign: TextAlign;
+  chineseVariant: ChineseVariant;
   /** Darkens the page without changing the theme; for reading in bed. */
   brightness: number;
   pageAnimation: PageAnimation;
@@ -155,6 +157,7 @@ const DEFAULT_SETTINGS: ViewSettings = {
   fontFamily: 'inherit',
   pageMargin: 1.5,
   textAlign: 'inherit',
+  chineseVariant: 'original',
   brightness: 1,
   pageAnimation: 'slide',
   tapZone: 'standard',
@@ -191,6 +194,7 @@ export class ReaderView {
   private animationRun = 0;
   private pageTurnDistance: number | null = null;
   private spokenChunks: SpokenChunk[] = [];
+  private chineseText: ChineseChapterText | null = null;
   private speechHighlight: HTMLElement | null = null;
   /**
    * The chapter-link listener, bound once to the shadow root.
@@ -244,7 +248,7 @@ export class ReaderView {
       clearTimeout(timer);
       timer = setTimeout(() => {
         const anchor = this.selectionAnchor();
-        const range = anchor ? anchorRange(this.host.flow, anchor) : null;
+        const range = anchor ? this.textAnchorRange(anchor) : null;
         this.options.onSelection?.(anchor, range && typeof range.getBoundingClientRect === 'function' ? range.getBoundingClientRect() : null);
       }, 160);
     };
@@ -417,8 +421,12 @@ export class ReaderView {
     // Measurements must describe the final layout, not an in-flight transform.
     if (next) this.animatePage('none');
     // Capture the live position before typography changes its scroll extent.
-    if (next) this.measureWithin();
+    if (next) {
+      this.measureWithin();
+      if (previous.mode === 'scroll') this.textPageAnchor = this.leadingTextRange();
+    }
     if (next) this.settings = { ...this.settings, ...next };
+    this.settings.brightness = clampBrightness(this.settings.brightness);
     if (previous.mode !== this.settings.mode) this.textPageAnchor = null;
     this.invalidateTextPages();
     applyTheme(document.documentElement, this.settings.theme);
@@ -434,7 +442,6 @@ export class ReaderView {
     this.container.style.setProperty('--reader-font-family', this.settings.fontFamily);
     this.container.style.setProperty('--reader-text-align', this.settings.textAlign);
     this.container.style.setProperty('--reader-page-margin', `${this.settings.pageMargin}rem`);
-    this.container.style.setProperty('--reader-brightness', String(this.settings.brightness));
     // Written in `em` rather than `rem` on purpose: the indent is meant to be two
     // characters wide, and a character's width scales with the reader's font size,
     // so an indent in `rem` drifts away from the text as the reader enlarges it.
@@ -619,6 +626,10 @@ export class ReaderView {
     if (!page || page.offset === 0) return;
     const line = this.textLineGeometry.find(l => l.top >= page.offset - 0.5);
     if (!line) return;
+    this.textPageAnchor = this.rangeAtLine(line);
+  }
+
+  private rangeAtLine(line: { node: Text; top: number }): Range | null {
     const range = document.createRange();
     const hostTop = this.host.getBoundingClientRect().top;
     let low = 0, high = line.node.length;
@@ -629,9 +640,22 @@ export class ReaderView {
       const bottom = rect ? rect.bottom - hostTop + this.host.scrollTop : -Infinity;
       if (bottom > line.top + 0.5) high = mid; else low = mid + 1;
     }
-    if (low >= line.node.length) return;
+    if (low >= line.node.length) return null;
     range.setStart(line.node, low); range.setEnd(line.node, low + 1);
-    this.textPageAnchor = range;
+    return range;
+  }
+
+  private leadingTextRange(): Range | null {
+    if (this.doc.layout !== 'reflowable' || this.usesColumns()) return null;
+    const box = this.host.getBoundingClientRect();
+    if (box.width <= 0 || box.height <= 0) return null;
+    for (const node of textNodes(this.host.flow)) {
+      const range = document.createRange(); range.selectNodeContents(node);
+      const rect = [...range.getClientRects()].find(r => r.width > 0 && r.height > 0 &&
+        r.bottom > box.top + 1 && r.top < box.bottom && r.right > box.left && r.left < box.right);
+      if (rect) return this.rangeAtLine({ node, top: rect.top - box.top + this.host.scrollTop });
+    }
+    return null;
   }
 
   private textPageAt(offset: number): number {
@@ -692,8 +716,47 @@ export class ReaderView {
     if (!parsed) return false;
     const index = this.doc.sections.findIndex((section) => section.id === parsed.sectionId);
     if (index === -1) return false;
+    const epoch = this.openingEpoch + 1;
     await this.open(index, parsed.offset);
+    if (epoch !== this.openingEpoch) return false;
+    if (parsed.textOffset !== undefined && this.doc.layout === 'reflowable' && !this.usesColumns()) {
+      const range = this.rangeAtTextOffset(parsed.textOffset);
+      if (range) {
+        this.textPageAnchor = range;
+        this.restoreOffset();
+        this.emitPosition();
+      }
+    }
     return true;
+  }
+
+  private sourceTextOffset(): number | undefined {
+    if (this.settings.mode === 'scroll') this.textPageAnchor = this.leadingTextRange();
+    const range = this.textPageAnchor;
+    if (!range || !this.host.flow.contains(range.startContainer)) return undefined;
+    let offset = 0;
+    for (const node of textNodes(this.host.flow)) {
+      if (node === range.startContainer) {
+        offset += range.startOffset;
+        return this.chineseText?.sourceOffset(offset) ?? offset;
+      }
+      offset += node.length;
+    }
+    return undefined;
+  }
+
+  private rangeAtTextOffset(sourceOffset: number): Range | null {
+    // shortcut: offsets assume unchanged chapter text; add quote matching for edited chapters.
+    let offset = this.chineseText?.displayOffset(sourceOffset) ?? sourceOffset;
+    for (const node of textNodes(this.host.flow)) {
+      if (offset < node.length) {
+        const range = document.createRange();
+        range.setStart(node, offset); range.setEnd(node, offset + 1);
+        return range;
+      }
+      offset -= node.length;
+    }
+    return null;
   }
 
   position(): Position {
@@ -705,7 +768,7 @@ export class ReaderView {
       sectionId: section?.id ?? '',
       within,
       percentage: bookPercentage(this.doc, this.sectionIndex, within),
-      locator: formatLocator(section?.id ?? '', within),
+      locator: formatLocator(section?.id ?? '', within, this.sourceTextOffset()),
       chapterTitle: section?.label ?? '',
       pageInChapter: pages.current,
       chapterPages: pages.total,
@@ -716,8 +779,18 @@ export class ReaderView {
   selectionAnchor(): TextAnchor | null {
     const shadow = this.host.shadow as ShadowRoot & { getSelection?: () => Selection | null };
     const sectionId = this.doc.sections[this.sectionIndex]?.id ?? '';
-    return selectedAnchor(this.host.flow, sectionId, shadow.getSelection?.() ?? null)
+    const anchor = selectedAnchor(this.host.flow, sectionId, shadow.getSelection?.() ?? null)
       ?? selectedAnchor(this.host.flow, sectionId, this.host.ownerDocument.getSelection());
+    return anchor && this.chineseText ? this.chineseText.sourceAnchor(anchor) : anchor;
+  }
+
+  private textAnchorRange(anchor: TextAnchor): Range | null {
+    const display = this.chineseText ? this.chineseText.displayAnchor(anchor) : anchor;
+    return display ? anchorRange(this.host.flow, display) : null;
+  }
+
+  displayedQuote(anchor: TextAnchor): string {
+    return this.chineseText?.displayAnchor(anchor)?.quote ?? anchor.quote;
   }
 
   revealFragment(fragment: string): boolean {
@@ -731,7 +804,7 @@ export class ReaderView {
 
   showTextAnchor(anchor: TextAnchor): boolean {
     if (this.doc.sections[this.sectionIndex]?.id !== anchor.sectionId) return false;
-    const range = anchorRange(this.host.flow, anchor);
+    const range = this.textAnchorRange(anchor);
     if (!range) return false;
     this.revealRange(range);
     this.paintRange(range, '#f5a623', 'search');
@@ -748,7 +821,7 @@ export class ReaderView {
     const sectionId = this.doc.sections[this.sectionIndex]?.id;
     for (const { id, anchor, color } of anchors) {
       if (anchor.sectionId !== sectionId) continue;
-      const range = anchorRange(this.host.flow, anchor);
+      const range = this.textAnchorRange(anchor);
       if (range) this.paintRange(range, /^#[0-9a-f]{6}$/i.test(color) ? color : '#ffd54f', 'note', id);
     }
   }
@@ -1072,6 +1145,7 @@ export class ReaderView {
       ...(this.options.signAssetUrl ? { signAssetUrl: this.options.signAssetUrl } : {}),
     });
     this.options.transformText?.(this.host.flow, section.id);
+    this.chineseText = this.settings.chineseVariant === 'original' ? null : new ChineseChapterText(this.host.flow, this.settings.chineseVariant);
     await hydrateResources(this.host.shadow, this.resolver);
     // The page's own geometry is decided here, once the text is in the DOM: the grid
     // the chapter is set on is how tall a page may be before its last line is cut, and
@@ -1210,23 +1284,23 @@ export class ReaderView {
     }
     const limit = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
     this.host.flow.scrollLeft = 0;
+    const anchor = this.textPageAnchor;
+    const rect = anchor && this.host.flow.contains(anchor.startContainer) ? rangeRect(anchor) : null;
+    const target = rect ? scroller.scrollTop + rect.top - this.host.getBoundingClientRect().top : null;
     if (this.settings.mode === 'paged') {
       const pages = this.textPages();
-      const anchor = this.textPageAnchor;
-      const rect = anchor && this.host.flow.contains(anchor.startContainer) ? rangeRect(anchor) : null;
-      const target = rect ? scroller.scrollTop + rect.top - this.host.getBoundingClientRect().top : null;
       const page = pages ? target !== null ? this.textPageAt(target)
         : nearestTextPage(pages, this.sectionOffset * pages.at(-1)!.offset)
         : Math.round(this.sectionOffset * (this.screenCount() - 1));
       this.showScreen(page, false);
-    } else scroller.scrollTop = limit * this.sectionOffset;
+    } else scroller.scrollTop = target ?? limit * this.sectionOffset;
   }
 
   private emitPosition(): void {
     const position = this.position();
     // Scroll events fire per frame; only report when the position meaningfully
     // moved, so a lazy reader does not generate a sync write every frame.
-    const key = `${position.sectionId}:${position.within.toFixed(3)}`;
+    const key = position.locator;
     if (key === this.lastEmitted) return;
     this.lastEmitted = key;
     this.options.onPositionChange?.(position);

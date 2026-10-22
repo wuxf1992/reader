@@ -27,7 +27,7 @@ import type {
   User,
 } from './types.ts';
 import type { Platform } from '../core/platform.ts';
-import type { SourceType, SourceInstance, SourcePlugin, SourceEntry, SourcePage, SourceAcquisition, ChapterSubscription } from './sources.ts';
+import type { SourceType, SourceInstance, SourcePlugin, SourceEntry, SourcePage, SourceAcquisition, ChapterSubscription, SourceChapter } from './sources.ts';
 import { affectedNavigationQuery, createReaderQueryClient, isNavigationQuery, readerQueryKey } from './query.ts';
 
 export interface SessionStore {
@@ -65,7 +65,7 @@ export interface ListQuery {
    * `title`. The list is the server's own `ListOptions.sort`, so the two cannot
    * drift.
    */
-  sort?: 'title' | 'author' | 'added' | 'updated';
+  sort?: 'title' | 'author' | 'added' | 'updated' | 'recent';
   order?: 'asc' | 'desc';
   /**
    * Restrict the list to books with a file inside this folder.
@@ -350,6 +350,10 @@ export class ReaderApi {
   }
   async sourceDetail(id: string, ref: string): Promise<SourceEntry> {
     return this.get(`/api/v1/sources/${encodeURIComponent(id)}/entries?ref=${encodeURIComponent(ref)}`);
+  }
+  async sourceChapters(id: string, ref: string, options: RequestOptions = {}): Promise<SourceChapter[]> {
+    const manifest = await this.get<{ items: Array<SourceChapter & { kind: 'chapter' | 'page' }> }>(`/api/v1/sources/${encodeURIComponent(id)}/publications/${encodeURIComponent(ref)}/manifest`, options);
+    return manifest.items.filter(item => item.kind === 'chapter').sort((a, b) => a.seq - b.seq);
   }
   async acquireSource(id: string, entryRef: string, optionId?: string): Promise<SourceAcquisition> {
     return this.call(`/api/v1/sources/${encodeURIComponent(id)}/acquire`, 'POST', { entryRef, ...(optionId ? { optionId } : {}) });
@@ -652,8 +656,47 @@ export class ReaderApi {
   }
 
   async coverBytes(coverUrl: string, options: RequestOptions = {}): Promise<Uint8Array> {
-    const response = await this.request(coverUrl, 'GET', undefined, { ...options, binary: true });
-    return response.bytes ?? new Uint8Array();
+    if (!this.session || !/^\/api\/v1\/books\/[^/?]+\/cover(?:\?|$)/.test(coverUrl)) {
+      const response = await this.request(coverUrl, 'GET', undefined, { ...options, binary: true });
+      return response.bytes ?? new Uint8Array();
+    }
+    const generation = this.sessionGeneration;
+    const assertCurrent = () => {
+      this.assertSession(generation);
+      if (options.signal?.aborted) throw new ApiError('aborted', 'request aborted');
+    };
+    const key = 'reader.cover.v1:' + encodeURIComponent(JSON.stringify([this.baseUrl, this.session.user.id, coverUrl]));
+    let etag: string | null = null;
+    let cached: Uint8Array | null = null;
+    try {
+      etag = await this.platform.kv.get(key);
+      if (etag) cached = await this.platform.blobs.get(key + ':' + etag);
+    } catch { /* A cache failure must not prevent downloading a cover. */ }
+    assertCurrent();
+    try {
+      const response = await this.request(coverUrl, 'GET', undefined, {
+        ...options, binary: true, cache: 'no-cache',
+        ...(cached && etag ? { headers: { 'if-none-match': etag } } : {}),
+      });
+      assertCurrent();
+      if (response.status === 304 && cached) return cached;
+      const bytes = response.bytes ?? new Uint8Array();
+      const nextEtag = response.headers.etag;
+      if (nextEtag && bytes.byteLength) {
+        try {
+          // Publish the validator only after its matching image is durable.
+          await this.platform.blobs.put(key + ':' + nextEtag, bytes);
+          await this.platform.kv.set(key, nextEtag);
+          if (etag && etag !== nextEtag) await this.platform.blobs.remove(key + ':' + etag);
+        } catch { /* Storage quota/private browsing may disable persistence. */ }
+      }
+      assertCurrent();
+      return bytes;
+    } catch (error) {
+      assertCurrent();
+      if (cached && error instanceof ApiError && (error.isConnectivity || error.kind === 'server')) return cached;
+      throw error;
+    }
   }
 
   // ---- sync ----
@@ -744,6 +787,7 @@ export class ReaderApi {
     const key = readerQueryKey(this.currentBaseUrl, this.session?.user.id, this.queryScope, path);
     const result = await this.queryClient.fetchQuery<T>({
       queryKey: key,
+      ...(/^\/api\/v1\/books\?/.test(path) && new URLSearchParams(path.split('?')[1]).get('sort') === 'recent' ? { staleTime: 0 } : {}),
       // Keep the caller's AbortSignal semantics intact. These class-based
       // screens already abort requests when disposed; letting fetchQuery own the
       // signal would turn normal auth/session transitions into CancelledError.
@@ -777,13 +821,13 @@ export class ReaderApi {
     path: string,
     method: string,
     body: unknown,
-    options: RequestOptions & { binary?: boolean; stream?: boolean } = {},
+    options: RequestOptions & { binary?: boolean; stream?: boolean; cache?: RequestCache; headers?: Record<string, string> } = {},
   ): Promise<import('../core/platform.ts').HttpResponse> {
     const generation = this.sessionGeneration;
     const assertCurrent = (): void => this.assertSession(generation);
     const attempt = async (token: string | null) => {
       assertCurrent();
-      const headers: Record<string, string> = { accept: options.stream ? 'text/event-stream' : options.binary ? '*/*' : 'application/json' };
+      const headers: Record<string, string> = { ...options.headers, accept: options.stream ? 'text/event-stream' : options.binary ? '*/*' : 'application/json' };
       const multipart = typeof FormData !== 'undefined' && body instanceof FormData;
       if (body !== undefined && !multipart) headers['content-type'] = 'application/json';
       if (token) headers.authorization = `Bearer ${token}`;
@@ -793,6 +837,7 @@ export class ReaderApi {
         headers,
         ...(body !== undefined ? { body: multipart ? body as FormData : JSON.stringify(body) } : {}),
         ...(options.binary ? { binary: true } : {}),
+        ...(options.cache ? { cache: options.cache } : {}),
         ...(options.stream ? { stream: true } : {}),
         ...(options.signal ? { signal: options.signal } : {}),
       });

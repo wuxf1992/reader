@@ -184,6 +184,26 @@ export class OfflineStore {
     return this.snapshot.progress[bookId];
   }
 
+  async reconcileProgress(remote: Progress): Promise<Progress> {
+    const progress = this.mergeProgress(remote);
+    await this.persist();
+    return progress;
+  }
+
+  private mergeProgress(remote: Progress): Progress {
+    const local = this.snapshot.progress[remote.bookId];
+    if (local && local.percentage > remote.percentage) {
+      // A timestamp alone must not move the reader backward; requeue the local position for repair.
+      const kept = { ...local, updatedAt: Math.max(local.updatedAt, remote.updatedAt + 1, Date.now()) };
+      this.snapshot.progress[remote.bookId] = kept;
+      this.markDirty('dirtyProgress', remote.bookId);
+      return kept;
+    }
+    if (local && local.updatedAt > remote.updatedAt) return local;
+    this.snapshot.progress[remote.bookId] = remote;
+    return remote;
+  }
+
   /**
    * Synchronous read of one book's progress.
    *
@@ -244,12 +264,10 @@ export class OfflineStore {
     return Object.values(this.snapshot.books);
   }
 
-  /** Applies a pull result, honouring last-writer-wins per record. */
+  /** Merges remote state without moving a farther local reading position backward. */
   async applyPulled(pull: SyncPull): Promise<void> {
     for (const progress of pull.progress) {
-      const existing = this.snapshot.progress[progress.bookId];
-      if (existing && existing.updatedAt > progress.updatedAt) continue;
-      this.snapshot.progress[progress.bookId] = progress;
+      this.mergeProgress(progress);
     }
     for (const note of pull.notes) {
       if (note.deleted) {

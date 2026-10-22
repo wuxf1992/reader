@@ -12,7 +12,7 @@ import type { Platform } from '../core/platform.ts';
 import { ReaderView, type Position, type ViewSettings } from './reader-view.ts';
 import { makeAssetSigner } from '../net/asset-url.ts';
 import { attachGestures } from './gestures.ts';
-import { DEFAULT_APP_SETTINGS, READOUT_FIELDS, type AppSettings } from '../store/settings.ts';
+import { DEFAULT_APP_SETTINGS, READOUT_FIELDS, withThemeMemory, type AppSettings } from '../store/settings.ts';
 import { createStagedDoc, isStagedKind, windowIndexOf } from '../formats/windowed.ts';
 import type { BookDoc } from '../formats/types.ts';
 import type { TocEntry } from '../api/types.ts';
@@ -38,6 +38,9 @@ import { newId } from '../core/id.ts';
 import { textToChapterHtml } from '../formats/segments.ts';
 import { parseLocator } from './locator.ts';
 import { shouldPrefetch } from '../render/prefetch.ts';
+import { clampBrightness } from '../render/theme.ts';
+import { applyBrowserTheme, applyTheme } from './settings.ts';
+import { chineseText, chineseSearchQueries } from '../render/chinese.ts';
 
 export interface ReaderScreenOptions {
   api: ReaderApi;
@@ -201,6 +204,7 @@ export class ReaderScreen {
   private readonly noticeId = Symbol('reader-status');
   private disposed = false;
   private pendingPosition: Position | null = null;
+  private positionReady = false;
   private readonly settings: AppSettings;
   private readonly listeners: Array<() => void> = [];
   private readonly viewListeners: Array<() => void> = [];
@@ -254,6 +258,13 @@ export class ReaderScreen {
   }
 
   private renderChrome(): void {
+    for (const [edge, value] of Object.entries(this.settings.pageInsets)) {
+      this.element.style.setProperty(`--reader-inset-${edge}`, `${value}px`);
+    }
+    this.element.style.setProperty('--reader-brightness', String(clampBrightness(this.settings.brightness)));
+    document.documentElement.dataset.readerBrightness = String(clampBrightness(this.settings.brightness));
+    document.documentElement.dataset.readerChrome = this.chromeVisible ? 'visible' : 'hidden';
+    if (document.documentElement.dataset.theme !== this.settings.theme) applyTheme(document.documentElement, this.settings.theme);
     flushSync(() => this.ui.render(
 <ReaderChrome
           tools={<>{this.annotation && <AnnotationPopover key={this.annotation.note?.id ?? encodeAnchor(this.annotation.anchor)} target={this.annotation}
@@ -263,6 +274,8 @@ export class ReaderScreen {
             sync={this.options.sync} manifest={this.manifest} selection={this.toolsSelection}
             locator={this.view?.position()?.locator ?? ''} returnLocator={this.toolsReturn}
             sections={signal => this.searchSections(signal)} navigate={target => this.navigateTool(target)}
+            searchQueries={query => chineseSearchQueries(query, this.settings.chineseVariant)}
+            displayText={text => chineseText(text, this.settings.chineseVariant)}
             overrides={this.overrides} saveOverrides={value => this.saveOverrides(value)} undoOverrides={() => this.undoOverrides()}
             previewHeadings={prefix => this.previewHeadings(prefix)}
             autoCache={this.settings.autoCache} autoCacheChapters={this.settings.autoCacheChapters} prefetchMessage={this.prefetchMessage}
@@ -316,6 +329,8 @@ export class ReaderScreen {
           }}
         />
     ));
+    document.documentElement.dataset.readerScrim = this.element.querySelector('.scrim') ? 'visible' : 'hidden';
+    applyBrowserTheme(document.documentElement, this.settings.theme);
   }
 
   private async generateAiSummary(): Promise<void> {
@@ -335,6 +350,7 @@ export class ReaderScreen {
 
   /** Opens a book: fetch bytes, parse, restore position, start reporting. */
   async open(book: Book): Promise<void> {
+    this.positionReady = false;
     this.stopPrefetch(); this.prefetchChapter = null; this.prefetchReady = false; this.prefetchMessage = '';
     this.closeAlternatives(); this.chapterRefresh?.abort(); this.chapterRefresh = null;
     const token = ++this.loadingToken;
@@ -545,6 +561,10 @@ export class ReaderScreen {
     // on top of the shelf.
     this.options.pageHost?.hide();
     this.element.remove();
+    delete document.documentElement.dataset.readerBrightness;
+    delete document.documentElement.dataset.readerChrome;
+    delete document.documentElement.dataset.readerScrim;
+    applyBrowserTheme(document.documentElement, this.settings.theme);
   }
 
   private async previewHeadings(prefix: string): Promise<string[]> {
@@ -702,6 +722,7 @@ export class ReaderScreen {
     }
   }
   private localSectionId(id: string): string {
+    if (this.view && this.view.indexOfSection(id) >= 0) return id;
     if (!this.content && this.book?.format === 'epub') return id.replace(/^xhtml:/, '');
     if (this.content && this.book?.format === 'epub' && !id.startsWith('xhtml:')) return 'xhtml:' + id;
     return id;
@@ -917,6 +938,10 @@ export class ReaderScreen {
     try {
       const content = await this.options.api.refreshPublication(book.id);
       if (token !== this.loadingToken) return;
+      if (content.revision === previousManifest.content?.revision) {
+        this.flashStatus('目录已更新，暂无新章节', 3200);
+        return;
+      }
       const toc = content.items.map((item) => ({ id: item.href, label: item.title, depth: 0, spine: item.seq }));
       const doc = createStagedDoc({
         kind: content.kind, content, toc, orderedByBook: true,
@@ -1081,14 +1106,14 @@ export class ReaderScreen {
     this.view = new ReaderView({
       onSelection: (anchor, rect) => {
         if (epoch !== this.viewEpoch || this.toolsOpen || this.annotation?.note || this.element.querySelector('dialog[open]')) return;
-        if (anchor && rect && anchor.quote.trim()) { this.annotation = { anchor, rect }; this.patch({}); }
+        if (anchor && rect && anchor.quote.trim()) { this.annotation = { anchor, rect, displayQuote: this.view?.displayedQuote(anchor) ?? anchor.quote }; this.patch({}); }
         else if (this.annotation) { this.annotation = null; this.patch({}); }
       },
       onAnnotation: (id, rect) => {
         if (epoch !== this.viewEpoch || !this.book || this.toolsOpen) return;
         const note = this.options.offline.notesFor(this.book.id).find(note => note.id === id);
         const anchor = note && decodeAnchor(note.locator);
-        if (note && anchor) { this.view?.clearSelection(); this.annotation = { anchor, rect, note }; this.patch({}); }
+        if (note && anchor) { this.view?.clearSelection(); this.annotation = { anchor, rect, note, displayQuote: this.view?.displayedQuote({ ...anchor, sectionId: this.localSectionId(anchor.sectionId) }) ?? anchor.quote }; this.patch({}); }
       },
       transformText: (root, sectionId) => { applyCorrections(root,sectionId,this.overrides); },
       container: this.stage,
@@ -1139,7 +1164,10 @@ export class ReaderScreen {
       // change is also what schedules the progress write — a reader could scroll
       // through a whole chapter and have the app believe they never moved.
       this.viewListeners.push(
-        addDebouncedListener(this.view.elementHost, 'scroll', () => this.onPosition(this.view?.position() ?? null), 250),
+        addDebouncedListener(this.view.elementHost, 'scroll', () => {
+          this.onPosition(this.view?.position() ?? null);
+          if (this.positionReady && this.settings.mode === 'scroll') void this.flushProgress().catch(() => undefined);
+        }, 250),
       );
     }
 
@@ -1182,6 +1210,7 @@ export class ReaderScreen {
       fontFamily: this.settings.fontFamily,
       pageMargin: this.settings.pageMargin,
       textAlign: this.settings.textAlign,
+      chineseVariant: this.settings.chineseVariant,
       brightness: this.settings.brightness,
       pageAnimation: this.settings.pageAnimation,
       tapZone: this.settings.tapZone,
@@ -1230,8 +1259,11 @@ export class ReaderScreen {
         this.flashStatus(direction === 'next' ? '已经是最后一页' : '已经是第一页');
         return;
       }
+      const saved = this.flushProgress();
       view.animatePage(direction);
       this.pendingSpeechAnchor = null;
+      // Commit local progress now; SyncEngine still batches network writes.
+      await saved.catch(() => undefined);
     };
     const pending = this.pageTurnQueue.then(turn, turn);
     this.pageTurnQueue = pending;
@@ -1289,11 +1321,11 @@ export class ReaderScreen {
     let latest = await this.options.offline.getProgress(book.id);
     try {
       const remote = await this.options.api.getProgress(book.id, { signal: AbortSignal.timeout(5000) });
-      // A newer offline edit wins; a stale device must not reopen its old page
-      // and immediately publish it as a new reading action.
       const local = await this.options.offline.getProgress(book.id);
+      if (token !== this.loadingToken) return;
       latest = local ?? latest;
-      if (remote?.locator && (!latest || remote.updatedAt > latest.updatedAt)) latest = remote;
+      if (remote?.locator) latest = await this.options.offline.reconcileProgress(remote);
+      if (this.options.offline.current.dirtyProgress.includes(book.id)) this.options.sync.schedule();
     } catch (err) {
       if (err instanceof ApiError && err.isAuthFailure) this.options.onSignedOut();
     }
@@ -1304,7 +1336,9 @@ export class ReaderScreen {
       const match = /^r1:([^:]+):(.+)$/.exec(this.compatibleLocator(locator));
       if (match && this.view.indexOfSection(match[2]!) < 0 && this.content) await this.goToChapterRef(match[2]!);
       const restored = await this.view.openLocator(this.compatibleLocator(locator));
+      if (token !== this.loadingToken) return;
       if (restored) {
+        this.positionReady = true;
         this.flashStatus('已恢复到上次阅读位置', 2400);
         return;
       }
@@ -1313,6 +1347,7 @@ export class ReaderScreen {
       this.flashStatus('原阅读位置已失效，从开头开始', 3200);
     }
     await this.view?.open(0, 0);
+    if (token === this.loadingToken) this.positionReady = true;
   }
 
   // ---- position and progress ----
@@ -1362,7 +1397,7 @@ export class ReaderScreen {
 
     // Debounced, and *only* the write: a scroll produces a position per frame, and
     // each one would otherwise be a write to IndexedDB plus a network round trip.
-    // 1.5s of stillness is the point at which the reader has decided where they are.
+    // Layout changes have an idle fallback; turns and paused scrolling save sooner.
     if (this.progressTimer) clearTimeout(this.progressTimer);
     this.progressTimer = setTimeout(() => { void this.flushProgress().catch(() => undefined); }, 1500);
   }
@@ -1385,11 +1420,14 @@ export class ReaderScreen {
   async flushProgress(): Promise<void> {
     if (this.progressTimer) clearTimeout(this.progressTimer);
     this.progressTimer = null;
+    if (this.positionReady && this.view && this.settings.mode === 'scroll' && !this.navigating && !this.chrome.refreshing && !this.chrome.switching && !this.view.elementHost.hasAttribute('data-animating')) {
+      this.pendingPosition = this.view.position();
+    }
     const position = this.pendingPosition;
     const book = this.book;
     if (!position || !book) return this.progressWrite;
     this.pendingPosition = null;
-    const now = Date.now();
+    const now = Math.max(Date.now(), (this.options.offline.progressFor(book.id)?.updatedAt ?? 0) + 1);
     this.progressWrite = this.options.offline
       .setProgress({
         bookId: book.id,
@@ -1804,17 +1842,21 @@ export class ReaderScreen {
   }
 
   private async updateSetting(patch: Partial<AppSettings>): Promise<void> {
-    if (patch.theme) {
-      const day = patch.theme === 'dark' || patch.theme.endsWith('-night') ? this.settings.theme : patch.theme;
-      if (day !== 'dark' && !day.endsWith('-night')) patch = { ...patch, lastDayTheme: day };
-    }
+    const textChanged = patch.chineseVariant !== undefined && patch.chineseVariant !== this.settings.chineseVariant;
+    const position = textChanged ? this.view?.position() : null;
+    if (textChanged) { this.cancelPageTurns(); this.stopSpeech(); this.annotation = null; this.toolsSelection = null; }
+    patch = withThemeMemory(this.settings, patch);
     this.options.onSettingsChange(patch);
     Object.assign(this.settings, patch);
     // Reading information changes only the chrome, never the book's pagination.
-    if (Object.keys(patch).some(key => !['autoCache', 'autoCacheChapters', 'lastDayTheme', 'readerSections'].includes(key) && !READOUT_FIELDS.some(field => field.key === key))) {
+    if (Object.keys(patch).some(key => !['autoCache', 'autoCacheChapters', 'lastDayTheme', 'lastNightTheme', 'readerSections'].includes(key) && !READOUT_FIELDS.some(field => field.key === key))) {
       this.view?.applySettings(this.viewSettings());
     }
     this.patch({});
+    if (textChanged && position) {
+      await this.view?.openLocator(position.locator);
+      this.paintNotes();
+    }
     if ('autoCache' in patch || 'autoCacheChapters' in patch) {
       this.stopPrefetch(); this.prefetchChapter = null; this.startPrefetch();
     }
@@ -2269,11 +2311,13 @@ function settingsView(
     lineHeight: settings.lineHeight,
     theme: settings.theme,
     lastDayTheme: settings.lastDayTheme,
+    lastNightTheme: settings.lastNightTheme,
     readerSections: settings.readerSections,
     fit: settings.fit,
     fontFamily: settings.fontFamily,
-    pageMargin: settings.pageMargin,
+    pageInsets: settings.pageInsets,
     textAlign: settings.textAlign,
+    chineseVariant: settings.chineseVariant,
     brightness: settings.brightness,
     pageAnimation: settings.pageAnimation,
     tapZone: settings.tapZone,

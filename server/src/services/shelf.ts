@@ -90,7 +90,7 @@ export interface ListOptions {
   series?: string;
   tag?: string;
   format?: string;
-  sort?: 'title' | 'author' | 'added' | 'updated';
+  sort?: 'title' | 'author' | 'added' | 'updated' | 'recent';
   order?: 'asc' | 'desc';
   /**
    * Restrict the list to books that have a file inside this folder.
@@ -228,6 +228,7 @@ export class ShelfService {
       author: 'b.author',
       added: 'ub.added_at',
       updated: 'b.updated_at',
+      recent: '(SELECT p.updated_at FROM reading_progress p WHERE p.book_id = b.id AND p.user_id = ub.user_id)',
     }[options.sort ?? 'added'];
     const order = options.order === 'asc' ? 'ASC' : 'DESC';
     const whereSql = where.join(' AND ');
@@ -260,7 +261,7 @@ export class ShelfService {
       `SELECT ${BOOK_COLUMNS.split(',').map((c) => `b.${c.trim()}`).join(', ')}, ub.added_at${shelfColumn}
        FROM books b ${join}
        WHERE ${whereSql}
-       ORDER BY ${orderColumn} ${order}, b.title ASC
+       ORDER BY ${orderColumn} ${order}, b.title ASC, b.id ASC
        LIMIT ? OFFSET ?`,
       ...joinParams, ...params, pageSize, (page - 1) * pageSize,
     );

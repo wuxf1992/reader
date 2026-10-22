@@ -19,6 +19,8 @@ export interface ReadingToolsProps {
   api: ReaderApi; cache: PublicationCache; offline: OfflineStore; sync: SyncEngine; manifest: Manifest;
   selection: TextAnchor | null; locator: string; returnLocator: string;
   sections(signal: AbortSignal): AsyncGenerator<SearchSection>;
+  searchQueries?(query: string): string[];
+  displayText?(text: string): string;
   navigate(target: TextAnchor | string): Promise<void>;
   overrides: ReadingOverrides;
   saveOverrides(value: ReadingOverrides): Promise<void>;
@@ -84,27 +86,42 @@ export function ReadingTools(props: ReadingToolsProps) {
     setHits([]); setScanned(0); setSearching(true); setMessage('');setMessageError(false);
     setSearchFailures([]); setSearchTotal(0); setSearchMode('服务端搜索');
     const found: SearchHit[] = []; let count = 0;
+    const queries = props.searchQueries?.(query.trim()) ?? [query.trim()];
+    const seen = new Set<string>();
+    function collect(hits: SearchHit[]) {
+      for (const hit of hits) {
+        const key = JSON.stringify([hit.anchor.sectionId, hit.anchor.start, hit.anchor.end]);
+        if (seen.has(key) || found.length >= 200) continue;
+        seen.add(key); found.push(hit);
+      }
+    }
     try {
       try {
-        let cursor: string | undefined; const failed: Array<{title: string; code: string}> = [];
-        do {
-          const page = await props.api.searchBook(bookId,query.trim(),cursor,{signal:run.signal});
-          run.signal.throwIfAborted();
-          found.push(...page.hits.slice(0,200-found.length)); failed.push(...page.failures);
-          if (alive.current) { setHits([...found]); setScanned(page.scanned); setSearchTotal(page.total); setSearchFailures([...failed]); }
-          if (page.limited || found.length >= 200) { setMessage('已显示前 200 个命中，请缩小关键词范围'); break; }
-          cursor = page.nextCursor;
-        } while (cursor);
+        const failed = new Map<string, {title: string; code: string}>();
+        for (const keyword of queries) {
+          let cursor: string | undefined;
+          do {
+            const page = await props.api.searchBook(bookId,keyword,cursor,{signal:run.signal});
+            run.signal.throwIfAborted();
+            collect(page.hits);
+            for (const failure of page.failures) failed.set(JSON.stringify(failure), failure);
+            count = Math.max(count, page.scanned);
+            if (alive.current) { setHits([...found]); setScanned(count); setSearchTotal(page.total); setSearchFailures([...failed.values()]); }
+            if (page.limited || found.length >= 200) { setMessage('已显示前 200 个命中，请缩小关键词范围'); break; }
+            cursor = page.nextCursor;
+          } while (cursor);
+          if (found.length >= 200) break;
+        }
         return;
       } catch (error) {
         run.signal.throwIfAborted();
         if (!(error instanceof ApiError) || (!error.isConnectivity && error.code !== 'SEARCH_LOCAL_LAYOUT')) throw error;
-        found.length = 0; setHits([]); setSearchFailures([]); setSearchTotal(0);
+        found.length = 0; seen.clear(); count = 0; setHits([]); setSearchFailures([]); setSearchTotal(0);
         setSearchMode(error.code === 'SEARCH_LOCAL_LAYOUT' ? '本地搜索（自定义目录）' : '离线搜索（仅已缓存内容）');
       }
       for await (const section of props.sections(run.signal)) {
         run.signal.throwIfAborted();
-        found.push(...findText(section.id, section.title, section.text, query.trim(), 200 - found.length));
+        for (const keyword of queries) collect(findText(section.id, section.title, section.text, keyword, 200 - found.length));
         if (alive.current) { setHits([...found]); setScanned(++count); }
         if (found.length >= 200) { setMessage('已显示前 200 个命中，请缩小关键词范围'); break; }
       }
@@ -141,7 +158,7 @@ export function ReadingTools(props: ReadingToolsProps) {
         <p role="status">{searchMode} · 已扫描 {scanned}{searchTotal ? ` / ${searchTotal}` : ''} 章，找到 {hits.length} 处</p>
         {!!searchFailures.length && <details className="reading-tool-advanced"><summary>{searchFailures.length} 章读取失败，搜索结果可能不完整</summary><ul>{searchFailures.map((failure,index)=><li key={index}>{failure.title} · {failure.code}</li>)}</ul></details>}
         <button className="button" disabled={!returnTo} onClick={() => void action(async () => { await props.navigate(returnTo); props.onClose(); })}>返回原阅读位置</button>
-        <ol className="reading-tool-results">{hits.map((hit, index) => <li key={index}><button className="button" onClick={() => void action(async () => { await props.navigate(hit.anchor); props.onClose(); })}><strong>{hit.title}</strong><span>{hit.excerpt}</span></button></li>)}</ol>
+        <ol className="reading-tool-results">{hits.map((hit, index) => <li key={index}><button className="button" onClick={() => void action(async () => { await props.navigate(hit.anchor); props.onClose(); })}><strong>{props.displayText?.(hit.title) ?? hit.title}</strong><span>{props.displayText?.(hit.excerpt) ?? hit.excerpt}</span></button></li>)}</ol>
       </section>}
       {tab === 'notes' && <section aria-label="笔记管理">
         <div className="reading-tool-heading"><h3>笔记与书签 <small>{notes.length}</small></h3><button className="button" aria-label={bookmarked ? '已添加当前位置书签' : '添加当前位置书签'} disabled={saving || !props.locator || bookmarked} onClick={() => void edit(() => saveNote(true))}>{bookmarked ? '已加书签' : '＋ 加书签'}</button></div>

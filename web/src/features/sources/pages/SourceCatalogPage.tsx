@@ -1,16 +1,21 @@
 import { Alert, Button, Group, Modal, Select, Stack, Text } from '@mantine/core';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { SourceEntry, SourcePage } from '../../../api/sources.ts';
 import { useRuntime } from '../../../app/providers/runtime-context.tsx';
 import { useSources } from '../hooks/sourceQueries.ts';
+import { SourceBookDetails } from '../components/SourceBookDetails.tsx';
+import { sortSourceResults, sourceChapterLabel, withChapterCount } from '../../../ui/source-results.ts';
 import { FloatingNotice } from '../../../ui/floating-notice.tsx';
 
 export function mergePages(current: SourcePage | undefined, page: SourcePage): SourcePage {
   const items = new Map((current?.items ?? []).map(item => [item.ref, item]));
-  page.items.forEach(item => items.set(item.ref, { ...items.get(item.ref), ...item }));
-  return { ...page, items: [...items.values()] };
+  page.items.forEach(item => {
+    const previous = items.get(item.ref);
+    items.set(item.ref, { ...previous, ...item, ...(previous?.metadata || item.metadata ? { metadata: { ...previous?.metadata, ...item.metadata } } : {}) });
+  });
+  return { ...page, items: sortSourceResults([...items.values()]) };
 }
 
 export function SourceCatalogPage() {
@@ -24,6 +29,8 @@ export function SourceCatalogPage() {
   const [query, setQuery] = useState(params.get('q') ?? '');
   const [page, setPage] = useState<SourcePage>();
   const [detail, setDetail] = useState<SourceEntry | null>(null);
+  const [directoryOpen, setDirectoryOpen] = useState(false);
+  const updateChapterCount = useCallback((ref: string, count: number) => setPage(previous => withChapterCount(previous, ref, count)), []);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [cursor, setCursor] = useState<string | undefined>(params.get('cursor') ?? undefined);
@@ -40,9 +47,8 @@ export function SourceCatalogPage() {
     const term = query.trim(); if (!term || !source) return;
     setBusy(true); setError(''); if (!append) { sessionId.current = crypto.randomUUID(); setPage(undefined); setCursor(undefined); } setParams(previous => { const next = new URLSearchParams(previous); next.set('q', term); if (!append) next.delete('cursor'); return next; });
     try {
-      let merged = append ? page : undefined;
       for await (const chunk of api.searchSource(source.id, { query: term, sessionId: sessionId.current ?? crypto.randomUUID(), ...(append && cursor ? { cursor } : {}), filters, resultLimit: 10000 })) {
-        merged = mergePages(merged, chunk); setPage(merged); setCursor(chunk.nextCursor); if (chunk.limitReached) break;
+        setPage(previous => mergePages(previous, chunk)); setCursor(chunk.nextCursor); if (chunk.limitReached) break;
       }
     } catch (reason) { setError(reason instanceof Error ? reason.message : '搜索失败'); }
     finally { setBusy(false); }
@@ -57,6 +63,7 @@ export function SourceCatalogPage() {
   if (!source) return <div className="sources-screen source-catalog-screen"><header className="sources-header"><Button className="button icon-button" variant="subtle" onClick={() => navigate('/sources')} aria-label="返回">←</Button><h1>选择书源</h1></header><main className="sources-body"><section className="sources-card source-picker"><h2>选择来源</h2><p className="muted">选择一个已启用的书源开始搜索或浏览。</p><Select label="书源" placeholder="选择来源" data={sources.data?.filter(item => item.enabled && item.descriptor).map(item => ({ value: item.id, label: item.name })) ?? []} onChange={value => value && navigate(`/sources/${encodeURIComponent(value)}/browse`)} /></section></main></div>;
   const supportsSearch = source.descriptor?.capabilities.includes('search');
   const supportsBrowse = source.descriptor?.capabilities.includes('browse');
+  const hasChapters = !!source.descriptor?.capabilities.includes('content.manifest');
   return <div className="sources-screen source-catalog-screen">
     <header className="sources-header"><Button className="button icon-button" variant="subtle" onClick={() => navigate('/sources')} aria-label="返回">←</Button><div><h1>{source.name}</h1><p className="muted">{source.descriptor?.label ?? '书源目录'}</p></div></header>
     <main className="sources-body">
@@ -68,17 +75,16 @@ export function SourceCatalogPage() {
     {page?.errors?.map(item => <Alert key={`${item.source}-${item.code}`} color="yellow">{item.source}: {item.message}</Alert>)}
     {!page && !busy && <Alert>输入关键词搜索，或浏览书源目录。</Alert>}
     {busy && !page && <FloatingNotice message="正在搜索…" busy />}
-    <section className="sources-card"><div className="source-results">{page?.items.map(item => { const option = item.options?.[0]; return <article className="sources-row catalog-book" key={item.ref}><div><strong>{item.title}</strong>{item.latestChapter && <small>{item.latestChapter}</small>}{item.authors?.length ? <small>{item.authors.join('、')}</small> : null}{item.description && <p className="source-description">{item.description}</p>}</div><div className="sources-actions"><Button className="button" onClick={() => setDetail(item)}>详情</Button><Button className="button primary" disabled={option?.available === false} loading={acquire.isPending} onClick={() => acquireEntry(item, option?.id)}>{option?.label ?? '加入书架'}</Button></div></article>; })}</div></section>
+    <section className="sources-card"><div className="source-results">{page?.items.map(item => { const option = item.options?.[0]; return <article className="sources-row catalog-book" key={item.ref}><div><strong>{item.title}</strong>{hasChapters && <small>{sourceChapterLabel(item)}</small>}{item.latestChapter && <small>{item.latestChapter}</small>}{item.authors?.length ? <small>{item.authors.join('、')}</small> : null}{item.description && <p className="source-description">{item.description}</p>}</div><div className="sources-actions"><Button className="button" onClick={() => setDetail(item)}>详情</Button><Button className="button primary" disabled={option?.available === false} loading={acquire.isPending} onClick={() => acquireEntry(item, option?.id)}>{option?.label ?? '加入书架'}</Button></div></article>; })}</div></section>
     {page && !busy && page.items.length === 0 && <Alert>没有找到匹配书籍。</Alert>}
-    <Modal opened={!!detail} onClose={() => setDetail(null)} title={detail?.title ?? '书籍详情'}>
+    <Modal opened={!!detail} trapFocus={!directoryOpen} closeOnEscape={!directoryOpen} closeOnClickOutside={!directoryOpen} inert={directoryOpen} onClose={() => setDetail(null)} title={detail?.title ?? '书籍详情'}>
       <Stack>
         {detailQuery.isPending && <FloatingNotice message="正在读取书籍详情…" busy />}
         {detailQuery.error && <Alert color="red">{detailQuery.error.message}</Alert>}
         {detail && <>
-          <Text>{detail.description || '暂无简介'}</Text>
-          <Text size="sm" c="dimmed">{detail.authors?.join('、') || '作者未知'}</Text>
-          {detail.options?.map(option => <Button key={option.id} disabled={option.available === false} loading={acquire.isPending} onClick={() => acquireEntry(detail, option.id)}>{option.label}</Button>)}
-          {(!detail.options || detail.options.length === 0) && <Button loading={acquire.isPending} onClick={() => acquireEntry(detail)}>加入书架</Button>}
+          <SourceBookDetails key={sourceId + ':' + detail.ref} entry={detail} sourceId={sourceId} sourceName={source?.name} inShelf={detail.shelfBookId === undefined ? undefined : !!detail.shelfBookId} canPreview={hasChapters && !detailQuery.isFetching} onChapterCount={updateChapterCount} onDirectoryOpenChange={setDirectoryOpen} />
+          {detail.options?.map(option => <Button key={option.id} disabled={!!detail.shelfBookId || option.available === false} loading={acquire.isPending} onClick={() => acquireEntry(detail, option.id)}>{detail.shelfBookId ? '已加入书架' : option.label}</Button>)}
+          {(!detail.options || detail.options.length === 0) && <Button disabled={!!detail.shelfBookId} loading={acquire.isPending} onClick={() => acquireEntry(detail)}>{detail.shelfBookId ? '已加入书架' : '加入书架'}</Button>}
         </>}
       </Stack>
     </Modal>

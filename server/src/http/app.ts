@@ -59,7 +59,8 @@ export function buildApp(ctx: AppContext,mediaRuntime?:MediaService): FastifyIns
       return;
     }
     reply.header('access-control-allow-origin', resolveCorsOrigin(ctx.config, request));
-    reply.header('access-control-allow-headers', 'authorization, content-type');
+    reply.header('access-control-allow-headers', 'authorization, content-type, if-none-match');
+    reply.header('access-control-expose-headers', 'etag');
     reply.header('access-control-allow-methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
     // `vary: origin` is required whenever the allowed origin is reflected rather
     // than fixed, otherwise a shared cache will serve one origin's response to

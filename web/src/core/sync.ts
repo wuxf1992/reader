@@ -283,6 +283,7 @@ export class SyncEngine {
       this.assertCurrent(run);
       await this.offline.applyPulled(pull);
       this.assertCurrent(run);
+      if (!isOutboxEmpty(this.offline.current)) this.schedule();
       this.rememberNoteBooks();
 
       this.backoff = RETRY_BASE_MS;

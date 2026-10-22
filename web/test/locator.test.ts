@@ -22,6 +22,22 @@ function doc(sections: Array<Partial<Section>>): BookDoc {
 }
 
 describe('locator format', () => {
+  it('round-trips a character position while retaining a legacy-readable fraction', () => {
+    const book = doc([{ id: 'chapter:test' }]);
+    const locator = formatLocator('chapter:test', 0.42, 1234);
+    expect(locator).toBe('r1:0.4200@1234:chapter:test');
+    expect(parseLocator(locator, book)).toMatchObject({ sectionId: 'chapter:test', offset: 0.42, textOffset: 1234 });
+    expect(Number.parseFloat(locator.split(':')[1]!)).toBe(0.42);
+  });
+
+  it.each(['-1', '1.5', 'nope', '9007199254740992', '', '1@2'])(
+    'ignores an invalid character position %s and keeps the saved fraction', value => {
+      const parsed = parseLocator(`r1:0.4200@${value}:chapter:test`, doc([{ id: 'chapter:test' }]));
+      expect(parsed?.offset).toBe(0.42);
+      expect(parsed?.textOffset).toBeUndefined();
+    },
+  );
+
   it('round-trips a position', () => {
     const book = doc([{ id: 'ch1' }, { id: 'ch2' }]);
     const locator = formatLocator('ch2', 0.42);

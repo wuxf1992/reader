@@ -1057,3 +1057,70 @@ test('the folder filter is not fooled by LIKE wildcards in a name', async () => 
   const titles = ((res.json() as { items: Array<{ title: string }> }).items).map((item) => item.title);
   assert.deepEqual(titles, ['百分号']);
 });
+
+test('recent shelf order uses account reading time before pagination and updates after reading', async () => {
+  const owner = await createUser('recentorder');
+  const other = await createUser('recentother');
+  for (const suffix of ['A', 'B', 'C']) await writeFile(join(booksDir, `排序回归${suffix}.epub`), await makeEpub({ id: `urn:recent:${suffix}`, title: `排序回归${suffix}`, creator: '排序作者' }));
+  await ctx.scanner.scan();
+  const all = ctx.shelf.list(owner.userId, { search: '排序回归', sort: 'title' }).items;
+  assert.equal(all.length, 3);
+  const [a, b, c] = all;
+  all.forEach((book, i) => ctx.db.run('UPDATE books SET updated_at = ? WHERE id = ?', 1000 + i, book!.id));
+  const progress = (user: string, id: string, at: number) => ctx.db.run('INSERT INTO reading_progress (user_id,book_id,locator,percentage,chapter_title,device,updated_at) VALUES (?,?,?,?,?,?,?)', user, id, 'r1:0:c0', 0.4, '第一章', 'test', at);
+  progress(owner.userId, a!.id, 200);
+  progress(owner.userId, b!.id, 100);
+  progress(other.userId, c!.id, 9999);
+  const page = async (n: number) => {
+    const response = await app.inject({ method: 'GET', url: `/api/v1/books?search=${encodeURIComponent('排序回归')}&sort=recent&pageSize=1&page=${n}`, headers: auth(owner.token) });
+    assert.equal(response.statusCode, 200, response.body);
+    return response.json();
+  };
+  assert.deepEqual([(await page(1)).items[0].id, (await page(2)).items[0].id, (await page(3)).items[0].id], [a!.id, b!.id, c!.id]);
+  const write = await app.inject({ method: 'PUT', url: `/api/v1/sync/progress/${b!.id}`, headers: auth(owner.token), payload: { locator: 'r1:0:c0', percentage: 0.5, chapterTitle: '第二章', device: 'test', updatedAt: 300 } });
+  assert.equal(write.statusCode, 200, write.body);
+  assert.equal((await page(1)).items[0].id, b!.id);
+  assert.equal((await page(1)).total, 3);
+});
+
+test('book covers use content hashes to avoid retransmitting unchanged images', async () => {
+  const user = await login('owner');
+  const book = ctx.db.get<{ id: string; cover_path: string | null }>('SELECT id, cover_path FROM books LIMIT 1')!;
+  const coverPath = 'covers/cover-cache-test.jpg';
+  const coverFile = join(ctx.config.dataDir, coverPath);
+  await mkdir(join(ctx.config.dataDir, 'covers'), { recursive: true });
+  const bytes = Buffer.from([0xff, 0xd8, 1, 2]);
+  await writeFile(coverFile, bytes);
+  ctx.db.run('UPDATE books SET cover_path = ? WHERE id = ?', coverPath, book.id);
+  const url = `/api/v1/books/${book.id}/cover`;
+  try {
+    const initial = await app.inject({ url, headers: auth(user.token) });
+    assert.equal(initial.statusCode, 200);
+    assert.deepEqual(initial.rawPayload, bytes);
+    assert.match(String(initial.headers.etag), /^"[a-f0-9]{32}"$/);
+    assert.equal(initial.headers['cache-control'], 'private, no-cache');
+    assert.match(String(initial.headers.vary), /authorization/);
+    assert.equal(initial.headers['access-control-expose-headers'], 'etag');
+    const etag = String(initial.headers.etag);
+    for (const validator of [etag, `W/${etag}`, `"other", ${etag}`, '*']) {
+      const unchanged = await app.inject({ url, headers: { ...auth(user.token), 'if-none-match': validator } });
+      assert.equal(unchanged.statusCode, 304);
+      assert.equal(unchanged.rawPayload.byteLength, 0);
+      assert.equal(unchanged.headers.etag, etag);
+    }
+    const unauthorized = await app.inject({ url, headers: { 'if-none-match': etag } });
+    assert.equal(unauthorized.statusCode, 401);
+    const changedBytes = Buffer.from([0xff, 0xd8, 3, 4]);
+    await writeFile(coverFile, changedBytes);
+    const changed = await app.inject({ url, headers: { ...auth(user.token), 'if-none-match': etag } });
+    assert.equal(changed.statusCode, 200);
+    assert.notEqual(changed.headers.etag, etag);
+    assert.deepEqual(changed.rawPayload, changedBytes);
+    const preflight = await app.inject({ method: 'OPTIONS', url, headers: { origin: 'https://client.test', 'access-control-request-headers': 'authorization,if-none-match' } });
+    assert.equal(preflight.statusCode, 204);
+    assert.match(String(preflight.headers['access-control-allow-headers']), /if-none-match/);
+  } finally {
+    ctx.db.run('UPDATE books SET cover_path = ? WHERE id = ?', book.cover_path, book.id);
+    await rm(coverFile, { force: true });
+  }
+});

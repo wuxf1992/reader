@@ -1,3 +1,7 @@
+import { rm } from 'node:fs/promises';
+import { resolveInside } from '../lib/paths.ts';
+import { saveCover } from '../indexer/metadata.ts';
+import { raster } from '../publications/rich-content.ts';
 import { SourceAccess } from './source-access.ts';
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 import type { FastifyBaseLogger } from 'fastify';
@@ -211,8 +215,28 @@ export class SourceHost {
     }, signal);
   }
   async detail(userId: string, id: string, ref: string, signal?: AbortSignal) {
-    return this.call(userId, id, (provider, ctx) => provider.detail(ctx, ref), signal);
+    return this.call(userId, id, async (provider, ctx) => {
+      const entry = await provider.detail(ctx, ref);
+      const acquired = this.db.get<{ book_id: string }>(`SELECT a.book_id FROM source_acquisitions a
+        JOIN user_books u ON u.book_id = a.book_id AND u.user_id = a.user_id AND u.hidden = 0
+        WHERE a.user_id = ? AND a.source_id = ? AND a.entry_ref = ? LIMIT 1`, userId, id, ref);
+      const isLocal = ctx.instance.pluginId === 'reader.local' && ctx.instance.sourceType === 'local';
+      const local = isLocal
+        ? this.db.get<{ book_id: string }>('SELECT book_id FROM user_books WHERE user_id = ? AND book_id = ? AND hidden = 0', userId, ref) : undefined;
+      const shelfBookId = acquired?.book_id ?? local?.book_id ?? null;
+      const coverBookId = isLocal ? ref : shelfBookId;
+      const cachedCover = coverBookId && this.db.get<{ cover_path: string | null }>('SELECT cover_path FROM books WHERE id = ?', coverBookId)?.cover_path;
+      return { ...entry, shelfBookId, ...(cachedCover ? { coverUrl: `/api/v1/books/${encodeURIComponent(coverBookId)}/cover` } : {}) };
+    }, signal);
   }
+  async cover(userId: string, id: string, entryRef: string, signal?: AbortSignal) {
+    return this.call(userId, id, async (provider, ctx) => {
+      const entry = await provider.detail(ctx, entryRef);
+      if (!entry.coverUrl || !provider.readResource) throw notFound('source has no cover', 'NO_COVER');
+      return raster(await provider.readResource(ctx, { publicationRef: entry.ref, ref: `cover:${entry.coverUrl}` }));
+    }, signal);
+  }
+
   async acquire(userId: string, id: string, entryRef: string, optionId?: string, signal?: AbortSignal) {
     return this.call(userId, id, async (provider, ctx) => {
       const acquisition = await provider.acquire(ctx, { entryRef, optionId });
@@ -232,6 +256,24 @@ export class SourceHost {
       const bookId = acquisition.kind === 'chapters'
         ? await this.chapters.acquire(provider, ctx, { entryRef, optionId }, acquisition.publicationRef, entry)
         : await this.acquisitions.acquire(provider, ctx, { entryRef, optionId }, acquisition, entry);
+      if (acquisition.kind === 'chapters' && entry.coverUrl && provider.readResource &&
+          !this.db.get<{ cover_path: string | null }>('SELECT cover_path FROM books WHERE id = ?', bookId)?.cover_path) {
+        let coverPath: string | undefined;
+        try {
+          const coverContext = { ...ctx, signal: AbortSignal.any([ctx.signal, AbortSignal.timeout(5_000)]) };
+          const image = raster(await provider.readResource(coverContext, { publicationRef: acquisition.publicationRef, ref: `cover:${entry.coverUrl}` }));
+          coverContext.signal.throwIfAborted();
+          coverPath = await saveCover(this.config.dataDir, `${bookId}-${randomBytes(8).toString('hex')}`, { data: image.bytes, contentType: image.type });
+          const result = this.db.prepare(`UPDATE books SET cover_path = ? WHERE id = ? AND cover_path IS NULL
+            AND EXISTS (SELECT 1 FROM chapter_publications WHERE book_id = ? AND user_id = ? AND source_id = ? AND publication_ref = ?)`).run(
+            coverPath, bookId, bookId, userId, id, acquisition.publicationRef);
+          if (result.changes) coverPath = undefined;
+        } catch {
+          this.log?.warn({ sourceId: id, bookId }, 'source cover unavailable');
+        } finally {
+          if (coverPath) await rm(resolveInside(this.config.dataDir, coverPath), { force: true });
+        }
+      }
       this.log?.info({ sourceId: id, bookId, kind: acquisition.kind }, 'source publication acquired');
       return { kind: 'ready' as const, publicationId: bookId };
     }, signal);

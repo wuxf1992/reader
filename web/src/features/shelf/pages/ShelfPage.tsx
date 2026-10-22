@@ -7,6 +7,7 @@ import type { Book, ContinueReadingItem } from '../../../api/types.ts';
 import { useRuntime } from '../../../app/providers/runtime-context.tsx';
 import { useAuthStore } from '../../../shared/stores/auth.store.ts';
 import { useSettingsStore } from '../../../shared/stores/settings.store.ts';
+import { useSyncStore } from '../../../shared/stores/sync.store.ts';
 import { useShelf } from '../queries/shelf.queries.ts';
 import { SHELF_SORTS, ShelfSettingsPanel } from '../../../ui/shelf-settings.tsx';
 import { OpdsAccess } from '../../../ui/opds-access.tsx';
@@ -14,21 +15,19 @@ import { SystemSettings } from '../../../ui/system-settings.tsx';
 import { DialogView, type Dialog } from '../../../ui/dialog.tsx';
 import { FloatingNotice } from '../../../ui/floating-notice.tsx';
 
-const coverCache = new WeakMap<object, Map<string, string>>();
 function useCover(api: ReturnType<typeof useRuntime>['api'], coverUrl: string | null | undefined): string | null {
   const [src, setSrc] = useState<string | null>(null);
   useEffect(() => {
-    if (!coverUrl) { setSrc(null); return; }
-    let cache = coverCache.get(api) as Map<string, string> | undefined;
-    if (!cache) { cache = new Map(); coverCache.set(api, cache); }
-    const cached = cache.get(coverUrl);
-    if (cached) { setSrc(cached); return; }
+    setSrc(null);
+    if (!coverUrl) return;
     let live = true;
+    let objectUrl: string | undefined;
     void api.coverBytes(coverUrl).then(bytes => {
-      const objectUrl = URL.createObjectURL(new Blob([bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer], { type: 'image/jpeg' }));
-      cache!.set(coverUrl, objectUrl); if (live) setSrc(objectUrl);
+      if (!live) return;
+      objectUrl = URL.createObjectURL(new Blob([new Uint8Array(bytes)]));
+      setSrc(objectUrl);
     }).catch(() => { if (live) setSrc(null); });
-    return () => { live = false; };
+    return () => { live = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [api, coverUrl]);
   return src;
 }
@@ -66,6 +65,9 @@ export function ShelfPage() {
   const [systemSettingsOpen, setSystemSettingsOpen] = useState(false);
   const [removeTarget, setRemoveTarget] = useState<Book | ContinueReadingItem | null>(null);
   const query = useShelf(page, sort, queryText);
+  useEffect(() => useSyncStore.subscribe((state, previous) => {
+    if (state.status.lastSyncAt !== previous.status.lastSyncAt) void queryClient.invalidateQueries({ queryKey: ['shelf', runtime.api.baseUrl] });
+  }), [queryClient, runtime.api.baseUrl]);
   const pages = query.data ? Math.max(1, Math.ceil(query.data.total / query.data.pageSize)) : 1;
   const cards = useMemo(() => query.data?.items ?? [], [query.data]);
   useEffect(() => { void runtime.updateSettings({ shelfSort: sort }); }, [runtime, sort]);

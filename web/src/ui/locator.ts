@@ -12,6 +12,9 @@ import type { BookDoc } from '../formats/types.ts';
  *
  *   `r1:0.4200:OEBPS/text/ch3.xhtml`
  *
+ * An optional `@1234` after the fraction records a source-text character offset.
+ * It keeps the reading point stable through reflow; older readers keep using the fraction.
+ *
  * Three things about that are deliberate and were each arrived at by getting it
  * wrong first:
  *
@@ -31,6 +34,8 @@ import type { BookDoc } from '../formats/types.ts';
 
 export interface Locator {
   sectionId: string;
+  /** Source-text character position, independent of pagination. */
+  textOffset?: number;
   /** 0..1 position within the section. */
   offset: number;
   /** 0..1 position within the whole book, for the progress bar. */
@@ -48,10 +53,14 @@ export function parseLocator(value: string, doc: BookDoc): Locator | null {
     // `r1:0.5:` with an empty section id is malformed, and so is a versioned
     // locator with no offset at all.
     if (separator === -1) return null;
-    const offset = Number.parseFloat(rest.slice(0, separator));
+    const coordinate = rest.slice(0, separator);
+    const offset = Number.parseFloat(coordinate);
     const sectionId = rest.slice(separator + 1);
     if (!sectionId) return null;
-    return resolve(sectionId, offset, doc);
+    const locator = resolve(sectionId, offset, doc);
+    const anchor = /^[-+\d.eE]+@(\d+)$/.exec(coordinate);
+    if (locator && anchor && Number.isSafeInteger(Number(anchor[1]))) locator.textOffset = Number(anchor[1]);
+    return locator;
   }
 
   // Unversioned forms, accepted so that a position written before the version
@@ -93,9 +102,11 @@ function resolve(sectionId: string, offset: number, doc: BookDoc): Locator | nul
  * exponent in a value the server stores opaquely is a bug waiting to be found
  * by whoever writes the next client.
  */
-export function formatLocator(sectionId: string, offset: number): string {
+export function formatLocator(sectionId: string, offset: number, textOffset?: number): string {
   const clamped = Math.min(1, Math.max(0, Number.isFinite(offset) ? offset : 0));
-  return `${LOCATOR_PREFIX}:${clamped.toFixed(4)}:${sectionId}`;
+  // Older readers parseFloat the coordinate and retain the fractional fallback.
+  const anchor = textOffset !== undefined && Number.isSafeInteger(textOffset) && textOffset >= 0 ? `@${textOffset}` : '';
+  return `${LOCATOR_PREFIX}:${clamped.toFixed(4)}${anchor}:${sectionId}`;
 }
 
 /**
