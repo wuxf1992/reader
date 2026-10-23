@@ -40,6 +40,8 @@ export function shelfQuery(runtime: AppRuntime, page = 1, sort: 'recent' | 'adde
         return { items: sorted.slice((page - 1) * 60, page * 60), total: books.length, page, pageSize: 60 };
       }
     },
+    placeholderData: (previousData, previousQuery) => previousQuery?.queryKey[1] === runtime.api.baseUrl
+      && previousQuery.queryKey[2] === userId && previousQuery.queryKey[3] === page ? previousData : undefined,
   });
 }
 

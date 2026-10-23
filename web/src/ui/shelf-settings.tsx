@@ -38,7 +38,7 @@ export const DENSITY_LABELS: Record<AppSettings['shelfDensity'], string> = {
  * The sort choices, shared with the shelf's own toolbar.
  *
  * Exported rather than duplicated because the two *are* one list: the sheet picks
- * the default and the chips pick this session's, and a value that exists in one
+ * the default and the shelf select picks this session's, and a value that exists in one
  * and not the other is a setting the reader can store but never select. The order
  * is the shelf's, so the two controls read the same way round.
  */

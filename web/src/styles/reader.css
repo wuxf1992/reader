@@ -775,6 +775,7 @@ book-content {
 .icon-button:focus-visible,
 .rail-button:focus-visible,
 .chip:focus-visible,
+.shelf-sort:focus-visible,
 .switch:focus-visible,
 .segmented button:focus-visible,
 .theme-swatch:focus-visible .theme-swatch-chip,
@@ -933,7 +934,7 @@ book-content {
    * `auto-fill` on a 1600px monitor otherwise produces eleven covers a row, each
    * with a twelve-character title — a wall of thumbnails that is *harder* to scan
    * than a phone's three, which is the opposite of what the extra width is for. A
-   * cap also means the search field and the sort chips stop being a metre wide,
+   * cap also means the search field and the sort control stop being a metre wide,
    * so the eye does not have to travel the full window to use them.
    *
    * `--shelf-measure` is the maximum content width, not the viewport's: the cover
@@ -1274,19 +1275,18 @@ book-content {
 }
 
 .shelf-sort {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  overflow-x: auto;
-  scrollbar-width: none;
-  flex: 1 1 auto;
+  flex: 0 0 auto;
+  min-height: 44px;
+  max-width: 10rem;
+  padding: 0.35rem 1.8rem 0.35rem 0.65rem;
+  border: 1px solid var(--reader-line);
+  border-radius: 0.6rem;
+  background: var(--reader-paper);
+  color: var(--reader-ink);
+  font: inherit;
+  font-size: 16px;
   min-width: 0;
-  /* The chips scroll from the right edge, so the row reads as "more this way". */
-  justify-content: flex-end;
-}
-
-.shelf-sort::-webkit-scrollbar {
-  display: none;
+  cursor: pointer;
 }
 
 .shelf-refresh {
@@ -1299,14 +1299,6 @@ book-content {
 .shelf-refresh[hidden] {
   display: none;
 }
-
-.shelf-status {
-  font-size: 0.78rem;
-  text-align: center;
-  color: var(--reader-muted);
-  padding: 0.75rem 0.9rem calc(0.75rem + var(--safe-bottom));
-}
-
 
 /* ---- the pager ----
  *
@@ -1458,6 +1450,10 @@ book-content {
   gap: 1.35rem 1rem;
 }
 
+.shelf-screen .book-grid { --shelf-cover-min: 7rem; gap: 0.9rem 0.55rem; }
+.shelf-screen .book-grid[data-density='compact'] { --shelf-cover-min: 6.75rem; gap: 0.75rem 0.45rem; }
+.shelf-screen .book-grid[data-density='comfortable'] { --shelf-cover-min: 8.5rem; gap: 1.1rem 0.7rem; }
+
 /*
  * Two columns at the widest, on a desktop.
  *
@@ -1492,6 +1488,12 @@ book-content {
   .book-grid[data-density='comfortable'] {
     --shelf-cover-min: 12rem;
   }
+}
+
+@media (min-width: 40rem) {
+  .shelf-screen .book-grid[data-density='compact'] { --shelf-cover-min: 8.125rem; }
+  .shelf-screen .book-grid:not([data-density='compact']):not([data-density='comfortable']) { --shelf-cover-min: 9.375rem; }
+  .shelf-screen .book-grid[data-density='comfortable'] { --shelf-cover-min: 11.25rem; }
 }
 
 /*
@@ -1563,7 +1565,6 @@ book-content {
   transition: opacity var(--motion-duration) var(--motion-ease);
 }
 
-.book-card .book-more:hover,
 .book-card .book-more:focus-visible,
 .book-card .book-more:active {
   opacity: 1;
@@ -1571,9 +1572,12 @@ book-content {
 
 /* A pointer can hover, so the glyph can afford to be invisible until it does; a
    finger cannot, so the rule is scoped to hosts that have one. */
-@media (hover: hover) {
+@media (hover: hover) and (pointer: fine) {
   .book-card .book-more {
     opacity: 0;
+  }
+  .book-card .book-more:hover {
+    opacity: 1;
   }
 }
 
@@ -2628,11 +2632,8 @@ book-content {
 /*
  * A chip: a small, pressable *choice*.
  *
- * The pressed state did not exist. `aria-pressed` was set correctly and read by
- * screen readers, and nothing drew it — so the shelf's four sort chips looked
- * identical whichever one was in force, and the only way to find out how the list
- * was ordered was to read the subtitle above it. `aria-pressed` drives the fill for
- * the same reason the switch uses it: one source of truth for "is this on".
+ * The pressed state is drawn from `aria-pressed`, which also gives assistive
+ * technology the same source of truth for "is this on".
  */
 .chip {
   appearance: none;
@@ -3914,6 +3915,11 @@ svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; verti
 }
 /* Collection pages share a quiet heading, labelled destinations and useful empty states. */
 .shelf-head { align-items: center; padding-top: calc(1.25rem + var(--safe-top)); padding-bottom: .85rem; }
+.shelf-screen .shelf-head-text { display: flex; align-items: center; justify-content: space-between; gap: .45rem; }
+.shelf-screen .shelf-title { flex: 0 0 auto; white-space: nowrap; }
+.shelf-screen .shelf-links { flex: 0 0 auto; max-width: none; gap: .3rem; margin: 0; padding: 0; }
+.shelf-screen .shelf-links .collection-link.button { flex: 0 0 auto; min-width: 0; padding-inline: .5rem; }
+.shelf-screen .shelf-links .collection-link.button > span { flex: 0 0 auto; }
 .shelf-head-actions { margin-top: 0; }
 .shelf-head .icon-button, .collection-heading .icon-button { width: 44px; height: 44px; border-radius: .8rem; }
 .shelf-subtitle { margin-top: .45rem; line-height: 1.5; }
@@ -3932,7 +3938,6 @@ svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; verti
 .collection-link > .icon:last-child { color: var(--reader-muted); font-size: .8rem; }
 .shelf-links .collection-link.button { min-height: 44px; padding: .6rem .75rem; border-radius: .65rem; box-shadow: none; }
 .shelf-links .collection-link.button > svg { flex: 0 0 auto; width: 17px; height: 17px; }
-.shelf-links .collection-link.button > span:last-child { flex: 0 0 auto; font-size: 1rem; line-height: 1; }
 .shelf-screen .shelf-search input, .library-search input { border-radius: .85rem; min-height: 48px; }
 .library-browse-screen .library-search { margin-top: .35rem; }
 .library-path { margin-top: .75rem; padding: .25rem 0 0; }
@@ -3943,6 +3948,27 @@ svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; verti
 .collection-empty p.muted { max-width: 23rem; font-size: .875rem; line-height: 1.8; text-wrap: pretty; }
 .collection-empty .empty-actions { margin-top: .6rem; gap: .65rem; }
 .collection-empty .button { min-height: 44px; font-size: .875rem; }
+.shelf-screen .shelf-filters { display: flex; align-items: center; flex-wrap: wrap; gap: .35rem; margin: .15rem 0 .55rem; }
+.shelf-screen .shelf-state-filter { display: flex; flex-wrap: wrap; gap: .25rem; min-width: 0; }
+.shelf-screen .shelf-state-filter .chip,
+.shelf-screen .shelf-group,
+.shelf-screen .shelf-group-active { min-height: 44px; padding: .35rem .6rem; font-size: .76rem; }
+.shelf-screen .shelf-group-active { display: inline-flex; align-items: center; gap: .1rem; min-width: 0; max-width: 12rem; }
+.shelf-screen .shelf-group-active > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shelf-screen .shelf-toolbar { justify-content: space-between; gap: .5rem; }
+.shelf-screen .shelf-count { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.shelf-screen .book-card .title { min-height: 2.6em; }
+.shelf-screen .book-card .author { font-size: .68rem; }
+.shelf-screen .book-meta { display: flex; align-items: center; justify-content: space-between; gap: .25rem; min-height: 44px; }
+.shelf-screen .book-state { min-width: 0; padding: .15rem .4rem; border-radius: 999px; background: color-mix(in srgb, var(--reader-accent) 10%, var(--reader-paper)); color: var(--reader-accent); font-size: .68rem; line-height: 1.4; }
+.shelf-screen .book-card .book-more { position: static; flex: 0 0 44px; width: 44px; height: 44px; margin-inline-start: auto; padding: 0; border: 0; border-radius: .65rem; background: transparent; color: var(--reader-muted); opacity: 1; backdrop-filter: none; box-shadow: none; transition: background-color var(--motion-duration) var(--motion-ease); }
+.shelf-screen .book-card .book-more:focus-visible { background: color-mix(in srgb, var(--reader-accent) 8%, transparent); }
+@media (hover: hover) and (pointer: fine) {
+  .shelf-screen .book-card .book-more:hover { background: color-mix(in srgb, var(--reader-accent) 8%, transparent); }
+}
+.shelf-screen .book-grid { transition: opacity var(--motion-duration) var(--motion-ease); }
+.shelf-screen .book-grid[aria-busy='true'] { opacity: .72; }
+@media (prefers-reduced-motion: reduce) { .shelf-screen .book-open:active .cover { transform: none; } }
 .library-browse-body > .manager-status { background: transparent; border: 0; margin: .75rem auto; }
 .file-manager-header .manager-crumbs { margin-top: .75rem; padding: .25rem 0; }
 .file-manager-header .manager-crumb { min-height: 44px; }
@@ -3968,7 +3994,7 @@ svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; verti
   .shelf-head { padding-top: 2rem; padding-bottom: 1.25rem; }
   .shelf-discovery { display: flex; align-items: center; gap: 1.5rem; max-width: var(--shelf-measure); margin: 0 auto 1rem; padding-inline: .9rem; }
   .shelf-discovery .shelf-links { flex: none; margin: 0; padding: 0; }
-  .shelf-discovery .shelf-search { flex: 1; max-width: 36rem; margin: 0 0 0 auto; }
+  .shelf-screen .shelf-discovery .shelf-search { flex: 1; width: 100%; max-width: none; margin: 0; }
   .collection-link.button { flex: none; min-width: 9rem; min-height: 44px; }
   .collection-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: .5rem 2rem; padding-top: 2rem; }
   .collection-header .collection-links { margin-top: 0; }

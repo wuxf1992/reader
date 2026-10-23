@@ -65,7 +65,7 @@ const SCENES = [
   {
     name: '10-shelf-paged',
     label: '书架 · 第二页',
-    what: '没有「继续阅读」横排；默认按最近阅读排序（第一个 chip 是填充态）；分页器在封面下方；书库与书源入口在标题下方',
+    what: '没有「继续阅读」横排；默认按最近阅读排序；分页器在封面下方；书库与书源入口在标题同排',
     openShelfAt: '#/shelf/2',
   },
   {
@@ -475,38 +475,34 @@ async function audit(cdp, origin, scenes, results) {
    *
    * Three facts, and they are three because each can be wrong on its own:
    *
-   *  - which sort is *selected* — the chips are drawn from a list, and the store's
-   *    default is a different place from the list's first entry;
-   *  - that the row is *in the order that chip says* — a label that lies is the
+   *  - which sort is *selected* — the native select reflects the shelf's default;
+   *  - that the row is *in the order the select says* — a label that lies is the
    *    failure mode a screenshot cannot show, because the covers look the same in any
    *    order;
    *  - that there is no 继续阅读 strip — the row was ten cards duplicating ten of the
    *    covers below it, and "it is gone" is only checkable as an absence.
    */
   const shelfSort = await cdp.evaluate(`(() => {
-    const chips = [...document.querySelectorAll('.chip')].map((chip) => ({
-      label: chip.textContent.trim(),
-      pressed: chip.getAttribute('aria-pressed') === 'true',
-    }));
+    const select = document.querySelector('.shelf-sort');
+    const options = [...(select?.options ?? [])].map((option) => ({ value: option.value, label: option.textContent.trim() }));
     const titles = [...document.querySelectorAll('.book-card .title')].map((node) => node.textContent.trim());
     return {
-      chips,
-      selected: chips.find((chip) => chip.pressed)?.label ?? '',
+      options,
+      selected: select?.selectedOptions[0]?.textContent.trim() ?? '',
       titles: titles.slice(0, 2),
       continueRow: document.querySelector('.continue-row') !== null,
       continueCards: document.querySelectorAll('.continue-card').length,
-      subtitle: document.querySelector('.shelf-subtitle')?.textContent ?? '',
     };
   })()`);
   check(
     '书架: 第一个排序是「最近阅读」且默认选中',
-    shelfSort.chips[0]?.label === '最近阅读' && shelfSort.selected === '最近阅读',
-    `chips=${shelfSort.chips.map((chip) => `${chip.label}${chip.pressed ? '*' : ''}`).join(' / ')}`,
+    shelfSort.options[0]?.label === '最近阅读' && shelfSort.selected === '最近阅读',
+    `选项=${shelfSort.options.map((option) => `${option.label}${option.label === shelfSort.selected ? '*' : ''}`).join(' / ')}`,
   );
   check(
     '书架: 「最近入库」仍然在排序里',
-    shelfSort.chips.some((chip) => chip.label === '最近入库'),
-    `chips=${shelfSort.chips.map((chip) => chip.label).join(' / ')}`,
+    shelfSort.options.some((option) => option.label === '最近入库'),
+    `选项=${shelfSort.options.map((option) => option.label).join(' / ')}`,
   );
   check(
     '书架: 排在最前的是最近读过的那本',

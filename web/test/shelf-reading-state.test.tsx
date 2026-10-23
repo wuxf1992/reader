@@ -9,8 +9,9 @@ import { RuntimeContext } from '../src/app/providers/runtime-context.tsx';
 /** 书架 (prototypes 2/19): 在读 / 想读 / 已读 and 分组 drive the query and the URL; ⋯ marks a book. */
 const shelfCalls: unknown[][] = [];
 const book = { id: 'b1', title: '夜航船', author: '示例作者', coverUrl: null, format: 'epub', readingState: 'reading' };
+const shelfResult: any = { data: { items: [book], total: 1, pageSize: 60 }, isPending: false, isPlaceholderData: false, error: null };
 vi.mock('../src/features/shelf/queries/shelf.queries.ts', () => ({
-  useShelf: (...args: unknown[]) => { shelfCalls.push(args); return { data: { items: [book], total: 1, pageSize: 60 }, isPending: false, error: null }; },
+  useShelf: (...args: unknown[]) => { shelfCalls.push(args); return shelfResult; },
   useShelfGroups: (enabled: boolean) => ({ data: enabled ? { authors: [], series: ['三体'], tags: ['科幻'], formats: [] } : undefined, isPending: false, error: null }),
 }));
 const { ShelfPage } = await import('../src/features/shelf/pages/ShelfPage.tsx');
@@ -35,7 +36,7 @@ const paint = (path: string) => act(() => render(
     </></QueryClientProvider>
   </RuntimeContext.Provider>, root));
 const click = (text: string) => act(() => [...root.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === text)!.click());
-afterEach(() => { act(() => render(null, root)); shelfCalls.length = 0; setReadingStatus.mockClear(); });
+afterEach(() => { act(() => render(null, root)); shelfCalls.length = 0; setReadingStatus.mockClear(); Object.assign(shelfResult, { data: { items: [book], total: 1, pageSize: 60 }, isPending: false, isPlaceholderData: false, error: null }); });
 
 it('filters by reading state and by one 分组, keeping both in the URL', async () => {
   paint('/shelf?status=want');
@@ -56,6 +57,7 @@ it('filters by reading state and by one 分组, keeping both in the URL', async 
 it('shows a card\'s state and marks it from the ⋯ menu', async () => {
   paint('/shelf');
   expect(root.querySelector('.book-state')?.textContent).toBe('在读');
+  expect(root.querySelector('.format-badge')?.textContent).toBe('epub');
   await act(() => root.querySelector<HTMLButtonElement>('.book-more')!.click());
   const options = [...root.querySelectorAll('.sheet-list button')].map(button => button.textContent);
   expect(options).toEqual(['标记为想读', '标记为已读', '清除标记', '从书架拿掉']);
@@ -64,4 +66,39 @@ it('shows a card\'s state and marks it from the ⋯ menu', async () => {
   await act(() => root.querySelector<HTMLButtonElement>('.book-more')!.click());
   await click('清除标记');
   expect(setReadingStatus).toHaveBeenLastCalledWith('b1', null);
+});
+
+it('offers every shelf sort in a native select and keeps filters in the URL', async () => {
+  paint('/shelf?status=want&series=%E4%B8%89%E4%BD%93');
+  const select = root.querySelector<HTMLSelectElement>('select[aria-label="排序方式"]')!;
+  expect([...select.options].map(option => option.value)).toEqual(['recent', 'added', 'title', 'author']);
+  await act(() => {
+    select.value = 'title';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  expect(Object.fromEntries(new URLSearchParams(location))).toEqual({ sort: 'title', page: '1', status: 'want', series: '三体' });
+  expect(shelfCalls.at(-1)?.[3]).toEqual({ status: 'want', series: '三体' });
+});
+
+it('does not show an empty result while an empty placeholder is being replaced', () => {
+  Object.assign(shelfResult, { data: { items: [], total: 0, pageSize: 60 }, isPending: false, isPlaceholderData: true });
+  paint('/shelf?q=新关键词');
+  expect(root.textContent).not.toContain('没有匹配的书');
+  expect(root.querySelector('.shelf-count')?.textContent).toBe('正在更新');
+});
+
+it('labels chapter collections as a shelf format without changing shared cards', async () => {
+  paint('/shelf');
+  const chapterBook = { ...book, id: 'chapters', format: 'chapters' };
+  const { BookCard } = await import('../src/features/shelf/pages/ShelfPage.tsx');
+  await act(() => render(
+    <RuntimeContext.Provider value={runtime}>
+      <QueryClientProvider client={new QueryClient()}><MemoryRouter><BookCard book={chapterBook as any} showAuthor={false} showProgress={false} onRemove={() => undefined} /></MemoryRouter></QueryClientProvider>
+    </RuntimeContext.Provider>, root));
+  expect(root.querySelector('.format-badge')?.textContent).toBe('连载');
+  await act(() => render(
+    <RuntimeContext.Provider value={runtime}>
+      <QueryClientProvider client={new QueryClient()}><MemoryRouter><BookCard book={chapterBook as any} showAuthor={false} showProgress={false} /></MemoryRouter></QueryClientProvider>
+    </RuntimeContext.Provider>, root));
+  expect(root.querySelector('.format-badge')?.textContent).toBe('chapters');
 });

@@ -96,7 +96,7 @@ try {
     await close.click(); assert.equal(await page.locator('.shelf-settings').isVisible(), false);
   }
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole('button', { name: '按书名排序', exact: true }).click();
+  await page.locator('.shelf-sort').selectOption('title');
   await button('书库').click(); await page.locator('.library-browse-grid .book-card').first().waitFor(); await shot('library-books');
   await page.goto(base + '/#/library/folder'); await page.locator('.library-path').waitFor(); await shot('library-folder');
   await page.getByRole('button', { name: '书库', exact: true }).click(); await page.waitForURL('**/#/library');

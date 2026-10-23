@@ -62,6 +62,13 @@ export function affectedNavigationQuery(mutation: string, query: string): boolea
   if (mutation === '/api/v1/library/browse/shelf') return query.startsWith('/api/v1/books') || query.startsWith('/api/v1/library/continue');
   if (/^\/api\/v1\/library\/browse\//.test(mutation)) return query.startsWith('/api/v1/library/browse') || query.startsWith('/api/v1/books');
   if (/^\/api\/v1\/books\//.test(mutation)) {
+    const readingStatus = mutation.match(/^\/api\/v1\/books\/([^/]+)\/reading-status$/);
+    if (readingStatus) {
+      const bookPath = `/api/v1/books/${readingStatus[1]}`;
+      return /^\/api\/v1\/books(?:\?|$)/.test(query)
+        || query === bookPath
+        || query.startsWith(`${bookPath}?`);
+    }
     const id = mutation.match(/^\/api\/v1\/books\/([^/]+)/)?.[1];
     return (query.startsWith('/api/v1/books') && (!id || query.includes('/books/' + id)))
       || (/^\/api\/v1\/books\/[^/]+\/(subscription|refresh)$/.test(mutation) && query.startsWith('/api/v1/subscriptions'));

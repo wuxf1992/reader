@@ -83,6 +83,34 @@ describe('ReaderApi navigation query cache', () => {
     expect(transport.countMatching(request => request.url.startsWith('/api/v1/books'))).toBe(2);
   });
 
+  it('refreshes every shelf sort and only the matching book detail after changing reading status', async () => {
+    const transport = new FakeTransport();
+    transport.respondWith(request => {
+      if (request.method === 'PUT') return { status: 200, headers: {}, json: {} };
+      if (request.url.startsWith('/api/v1/subscriptions')) return { status: 200, headers: {}, json: { subscriptions: [] } };
+      if (request.url === '/api/v1/books/book-1') return { status: 200, headers: {}, json: { book: { id: 'book-1' }, progress: null } };
+      if (request.url === '/api/v1/books/book-2') return { status: 200, headers: {}, json: { book: { id: 'book-2' }, progress: null } };
+      return { status: 200, headers: {}, json: { items: [], total: 0 } };
+    });
+    const api = await apiWith(transport);
+    const shelfSorts = [{ sort: 'title' as const }, { sort: 'author' as const }, { sort: 'added' as const, page: 2 }];
+    for (const sort of shelfSorts) await api.listBooks(sort);
+    await api.getBook('book-1');
+    await api.getBook('book-2');
+    await api.subscriptions();
+
+    await api.setReadingStatus('book-1', 'finished');
+
+    for (const sort of shelfSorts) await api.listBooks(sort);
+    await api.getBook('book-1');
+    await api.getBook('book-2');
+    await api.subscriptions();
+    expect(transport.countMatching(request => request.method === 'GET' && request.url.startsWith('/api/v1/books?'))).toBe(6);
+    expect(transport.countMatching(request => request.method === 'GET' && request.url === '/api/v1/books/book-1')).toBe(2);
+    expect(transport.countMatching(request => request.method === 'GET' && request.url === '/api/v1/books/book-2')).toBe(1);
+    expect(transport.countMatching(request => request.method === 'GET' && request.url === '/api/v1/subscriptions')).toBe(1);
+  });
+
   it('shows a newly acquired novel in previously visited shelf sorts without waiting for cache expiry', async () => {
     const transport = new FakeTransport();
     let acquired = false;

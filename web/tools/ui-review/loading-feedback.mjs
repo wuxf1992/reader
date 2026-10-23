@@ -125,12 +125,14 @@ try {
       await page.waitForFunction(() => !document.querySelector('.toc-list'));
       await page.evaluate(() => { location.hash = '#/shelf'; });
       await page.locator('.shelf-sort').waitFor();
-      assert.equal(await page.locator('.shelf-sort').evaluate(el => getComputedStyle(el).scrollbarWidth), 'none');
+      const sortControl = page.locator('.shelf-sort');
+      assert.deepEqual(await sortControl.locator('option').evaluateAll(options => options.map(option => option.value)), ['recent', 'added', 'title', 'author']);
+      assert.deepEqual(await sortControl.evaluate(el => ({ height: el.getBoundingClientRect().height, fontSize: getComputedStyle(el).fontSize })), { height: 44, fontSize: '16px' });
       await page.setViewportSize({ width: 1280, height: 800 });
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
       await page.screenshot({ path: `${output}/${name}-desktop.png` });
       assert.deepEqual(errors, []);
-      reports.push({ engine: name, viewports: ['390x844', '1280x800'], startupFeedback: true, stoppedSearchCleared: true, fastSearchDidNotFlash: true, stableButtonWidth: true, reducedMotion: true, tocNavigation: true, hiddenNavigationScrollbar: true, colors });
+      reports.push({ engine: name, viewports: ['390x844', '1280x800'], startupFeedback: true, stoppedSearchCleared: true, fastSearchDidNotFlash: true, stableButtonWidth: true, reducedMotion: true, tocNavigation: true, nativeShelfSort: true, colors });
     } finally { await browser.close(); }
   }
   await writeFile(`${output}/results.json`, JSON.stringify(reports, null, 2) + '\n');

@@ -38,14 +38,16 @@ export function BookCard({ book, showAuthor, showProgress, onRemove }: { book: B
     <Link className="book-open" aria-label={`${book.title} ${book.author ?? ''}`.trim()} to={`/book/${encodeURIComponent(book.id)}`}>
       <div className="cover">
         {src ? <img src={src} alt="" loading="lazy" /> : <div className="placeholder">{book.title || '无封面'}</div>}
-        <span className="format-badge">{book.format || '书籍'}</span>
+        <span className="format-badge">{book.format?.toUpperCase() === 'CHAPTERS' && onRemove ? '连载' : book.format || '书籍'}</span>
         {showProgress && progress !== undefined && progress > 0 && <div className="cover-progress"><span style={{ width: `${Math.round(Math.max(0, Math.min(1, progress)) * 100)}%` }} /></div>}
       </div>
       <div className="title">{book.title || '未命名'}</div>
       {showAuthor && <div className="author">{book.author || '未知作者'}</div>}
     </Link>
-    {'readingState' in book && book.readingState && <span className="book-state" data-state={book.readingState}>{readingLabels[book.readingState]}</span>}
-    {onRemove && <button type="button" className="book-more" aria-label={`${book.title} 的操作`} title="书籍操作" onClick={onRemove}><MoreHorizontal size={17} aria-hidden="true" /></button>}
+    {(('readingState' in book && book.readingState) || onRemove) && <div className="book-meta">
+      {'readingState' in book && book.readingState && <span className="book-state" data-state={book.readingState}>{readingLabels[book.readingState]}</span>}
+      {onRemove && <button type="button" className="book-more" aria-label={`${book.title} 的操作`} title="书籍操作" onClick={onRemove}><MoreHorizontal size={17} aria-hidden="true" /></button>}
+    </div>}
   </div>;
 }
 
@@ -113,20 +115,20 @@ export function ShelfPage() {
   ];
   const groupLabel = series ? '系列 · ' + series : tag ? '标签 · ' + tag : '';
   const remove = async (book: Book | ContinueReadingItem) => { await runtime.api.browseBatchShelf({ bookIds: [book.id] }, 'remove'); await runtime.offline.removeBooks([book.id]); await queryClient.invalidateQueries({ queryKey: ['shelf'] }); };
-  const subtitle = queryText ? (query.data?.total ? `「${queryText}」匹配 ${query.data.total} 本` : `没有匹配「${queryText}」的书`) : query.data?.total ? (sort === 'recent' ? `最近阅读 · 共 ${query.data.total} 本` : `按${SHELF_SORTS.find(item => item.value === sort)?.label ?? ''}排列 · ${query.data.total} 本`) : '收藏好书，随时接着读';
   const densityLabel = settings.shelfDensity === 'compact' ? '紧凑' : settings.shelfDensity === 'comfortable' ? '宽松' : '适中';
   return <div id="shelf-scroll" className="shelf shelf-screen">
     <header className="shelf-head">
-      <div className="shelf-head-text"><h1 className="shelf-title">{queryText ? '搜索结果' : '书架'}</h1><p className="shelf-subtitle muted">{subtitle}</p></div>
+      <div className="shelf-head-text"><h1 className="shelf-title">书架</h1>
+        <nav className="collection-links shelf-links" aria-label="发现书籍">
+          <Link className="button collection-link" to="/library"><LibraryBig size={18} /><span>书库</span></Link>
+          <Link className="button collection-link" to="/sources"><Search size={18} /><span>书源</span></Link>
+        </nav>
+      </div>
       <div className="shelf-head-actions">
         <IconButton icon="tune" label={`书架设置 · ${densityLabel}`} onClick={() => setSettingsOpen(true)} />
       </div>
     </header>
     <div className="shelf-discovery">
-      <nav className="collection-links shelf-links" aria-label="发现书籍">
-        <Link className="button collection-link" to="/library"><LibraryBig size={18} /><span>书库</span><span aria-hidden="true">›</span></Link>
-        <Link className="button collection-link" to="/sources"><Search size={18} /><span>书源</span><span aria-hidden="true">›</span></Link>
-      </nav>
       <form className="shelf-search" role="search" onSubmit={onSearch}>
         <Search className="search-glyph" size={18} aria-hidden="true" />
         <input type="search" aria-label="搜索书库" placeholder="搜索书名、作者、系列" value={search} onChange={event => setSearch(event.currentTarget.value)} />
@@ -135,21 +137,21 @@ export function ShelfPage() {
     </div>
     <section className="shelf-section" aria-label={queryText ? '搜索结果' : '全部书籍'}>
       <div className="shelf-filters">
-        <div className="shelf-status" role="group" aria-label="阅读状态">
+        <div className="shelf-state-filter" role="group" aria-label="阅读状态">
           <button type="button" className="chip" aria-pressed={!status} onClick={() => go({ status: null })}>全部</button>
           {readingStates.map(state => <button key={state} type="button" className="chip" aria-pressed={status === state} onClick={() => go({ status: state })}>{readingLabels[state]}</button>)}
         </div>
         {groupLabel
-          ? <button type="button" className="chip shelf-group-active" aria-pressed="true" aria-label={`${groupLabel}，点按取消分组`} onClick={() => go({ series: null, tag: null })}>{groupLabel}<span aria-hidden="true"> ×</span></button>
+          ? <button type="button" className="chip shelf-group-active" aria-pressed="true" aria-label={`${groupLabel}，点按取消分组`} onClick={() => go({ series: null, tag: null })}><span>{groupLabel}</span><span aria-hidden="true"> ×</span></button>
           : <button type="button" className="chip shelf-group" aria-haspopup="dialog" onClick={() => setGroupsOpen(true)}>分组</button>}
       </div>
       <FloatingNotice message={actionError} error />
-      {(!query.isPending && (cards.length > 0 || queryText || filtered)) && <div className="shelf-toolbar"><span className="shelf-count muted">{queryText ? `找到 ${query.data?.total ?? 0} 本` : `共 ${query.data?.total ?? 0} 本`}</span><div className="shelf-sort" role="group" aria-label="排序方式">{SHELF_SORTS.map(option => <button key={option.value} type="button" className="chip" aria-pressed={option.value === sort} onClick={() => onSort(option.value)}>{option.label}</button>)}</div></div>}
+      {(!query.isPending && (cards.length > 0 || queryText || filtered)) && <div className="shelf-toolbar"><span className="shelf-count muted">{query.isPlaceholderData ? '正在更新' : queryText ? `「${queryText}」 · 找到 ${query.data?.total ?? 0} 本` : `共 ${query.data?.total ?? 0} 本`}</span><select className="shelf-sort" aria-label="排序方式" value={sort} onChange={event => onSort(event.currentTarget.value)}>{SHELF_SORTS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>}
       {query.isPending && <FloatingNotice message="正在加载书架…" busy />}
       {query.error && <Callout tone="error" title="书架加载失败">{query.error.message}</Callout>}
-      {query.data && cards.length === 0 && filtered && !queryText && <div className="empty-state collection-empty"><BookOpen className="empty-glyph" aria-hidden="true" /><p>{status ? `还没有${readingLabels[status]}的书` : '这个分组里没有书'}</p><p className="muted">{status === 'want' ? '在书籍的“⋯”菜单里可以标记想读。' : '换一个分类，或查看全部书籍。'}</p><div className="empty-actions"><button type="button" className="button" onClick={clearFilters}>查看全部书籍</button></div></div>}
-      {query.data && cards.length === 0 && !(filtered && !queryText) && <div className="empty-state collection-empty"><BookOpen className="empty-glyph" aria-hidden="true" /><p>{queryText ? '没有匹配的书' : '书架还没有书'}</p><p className="muted">{queryText ? '换个关键词，或者检查一下作者名的写法' : '从书库挑选喜欢的书，或通过书源搜索，加入书架后就能开始阅读。'}</p><div className="empty-actions">{queryText ? <button type="button" className="button" onClick={clearSearch}>清除搜索</button> : <><Link className="button primary" to="/sources"><Search size={16} />去搜书</Link><Link className="button" to="/library"><LibraryBig size={16} />打开书库</Link></>}</div></div>}
-      {cards.length > 0 && <div className="book-grid" data-density={settings.shelfDensity} data-show-author={String(settings.shelfShowAuthor)} data-show-progress={String(settings.shelfShowProgress)}>{cards.map(book => <BookCard key={book.id} book={book} showAuthor={settings.shelfShowAuthor} showProgress={settings.shelfShowProgress} onRemove={() => setMenuTarget(book)} />)}</div>}
+      {query.data && !query.isPlaceholderData && cards.length === 0 && filtered && !queryText && <div className="empty-state collection-empty"><BookOpen className="empty-glyph" aria-hidden="true" /><p>{status ? `还没有${readingLabels[status]}的书` : '这个分组里没有书'}</p><p className="muted">{status === 'want' ? '在书籍的“⋯”菜单里可以标记想读。' : '换一个分类，或查看全部书籍。'}</p><div className="empty-actions"><button type="button" className="button" onClick={clearFilters}>查看全部书籍</button></div></div>}
+      {query.data && !query.isPlaceholderData && cards.length === 0 && !(filtered && !queryText) && <div className="empty-state collection-empty"><BookOpen className="empty-glyph" aria-hidden="true" /><p>{queryText ? '没有匹配的书' : '书架还没有书'}</p><p className="muted">{queryText ? '换个关键词，或者检查一下作者名的写法' : '从书库挑选喜欢的书，或通过书源搜索，加入书架后就能开始阅读。'}</p><div className="empty-actions">{queryText ? <button type="button" className="button" onClick={clearSearch}>清除搜索</button> : <><Link className="button primary" to="/sources"><Search size={16} />去搜书</Link><Link className="button" to="/library"><LibraryBig size={16} />打开书库</Link></>}</div></div>}
+      {cards.length > 0 && <div className="book-grid" aria-busy={query.isFetching || undefined} data-density={settings.shelfDensity} data-show-author={String(settings.shelfShowAuthor)} data-show-progress={String(settings.shelfShowProgress)}>{cards.map(book => <BookCard key={book.id} book={book} showAuthor={settings.shelfShowAuthor} showProgress={settings.shelfShowProgress} onRemove={() => setMenuTarget(book)} />)}</div>}
       {query.data && pages > 1 && <nav className="shelf-pager" aria-label="翻页"><button type="button" disabled={page <= 1} onClick={() => go({ page: page - 1 })}>上一页</button><span>{page} / {pages}</span><button type="button" disabled={page >= pages} onClick={() => go({ page: page + 1 })}>下一页</button></nav>}
     </section>
     {settingsOpen && <ShelfSettingsSheet settings={settings} onPatch={patch => { void runtime.updateSettings(patch); }} onClose={() => setSettingsOpen(false)} onOpenExternalReader={() => { setSettingsOpen(false); setOpdsOpen(true); }} />}

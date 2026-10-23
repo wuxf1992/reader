@@ -26,6 +26,30 @@ it('uses scoped cached books when offline and applies sorting and search', async
 it('does not mask account authorization failures with cached books', async () => {
   await expect(load(runtime(new ApiError('unauthorized', 'expired')))).rejects.toMatchObject({ kind: 'unauthorized' });
 });
+it('keeps placeholder results for the same server, account and page', () => {
+  const value = runtime();
+  const oldQuery = { queryKey: shelfQuery(value).queryKey } as any;
+  const data = { items: books, total: 2, page: 1, pageSize: 60 };
+  const placeholder = shelfQuery(value, 1, 'title').placeholderData as Function;
+  expect(placeholder(data, oldQuery)).toBe(data);
+  expect((shelfQuery(value, 2, 'title').placeholderData as Function)(data, oldQuery)).toBeUndefined();
+});
+
+it('does not keep placeholder results across account changes', () => {
+  const value = runtime();
+  const oldQuery = { queryKey: shelfQuery(value).queryKey } as any;
+  const data = { items: books, total: 2, page: 1, pageSize: 60 };
+  value.api.currentSession = () => ({ user: { id: 'two' } }) as any;
+  expect((shelfQuery(value, 1, 'title').placeholderData as Function)(data, oldQuery)).toBeUndefined();
+});
+
+it('does not keep placeholder results across server changes', () => {
+  const value = runtime();
+  const oldQuery = { queryKey: shelfQuery(value).queryKey } as any;
+  const data = { items: books, total: 2, page: 1, pageSize: 60 };
+  (value.api as any).baseUrl = 'https://other-reader.test';
+  expect((shelfQuery(value, 1, 'title').placeholderData as Function)(data, oldQuery)).toBeUndefined();
+});
 it('passes combined filters without changing the per-account recent sort', async () => {
   const value = runtime();
   const options = shelfQuery(value, 2, 'recent', '甲', { status: 'reading', series: '系列', tag: '标签' });
