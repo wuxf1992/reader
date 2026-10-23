@@ -77,6 +77,12 @@ export function applyBrowserTheme(root: HTMLElement, theme: ThemeMode, surface: 
   }
   const color = '#' + channels.map(channel => channel.toString(16).padStart(2, '0')).join('');
   root.style.setProperty('--reader-browser-paper', color);
+  // Reading paper can be dark while the app stays light (and brightness dims both bars).
+  const luminance = channels.map(channel => {
+    const value = channel / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  }).reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index]!, 0);
+  root.style.colorScheme = luminance > 0.179 ? 'light' : 'dark';
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', color);
   // The CSS document background shares this color for home-screen Safari's sampling fallback.
   try { localStorage.setItem('reader.browser-color', color); } catch { /* Storage may be disabled. */ }

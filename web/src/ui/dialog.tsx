@@ -98,14 +98,13 @@ function PromptDialog({
   const input = useRef<HTMLInputElement | null>(null);
   // Runs after the sheet has opened and focused the field, so the selection sticks.
   useLayoutEffect(() => { input.current?.select(); }, []);
-  const submit = () => onClose(input.current?.value ?? '');
   return (
     <Sheet title={title} size="compact" onClose={() => onClose(null)} initialFocus=".sheet-prompt-input"
-      footer={<>
-        <Button onClick={() => onClose(null)}>取消</Button>
-        <Button className="primary" onClick={submit}>确定</Button>
+      footer={requestClose => <>
+        <Button onClick={() => requestClose(() => onClose(null))}>取消</Button>
+        <Button className="primary" onClick={() => onClose(input.current?.value ?? '')}>确定</Button>
       </>}>
-      <form className="sheet-form" onSubmit={(event) => { event.preventDefault(); submit(); }}>
+      <form className="sheet-form" onSubmit={(event) => { event.preventDefault(); onClose(input.current?.value ?? ''); }}>
         <label className="sheet-field">
           <input
             ref={input}

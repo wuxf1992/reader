@@ -180,9 +180,9 @@ export function ActionSheet({ title, items, onDismiss }: { title: string; items:
   const actions = items.filter((item): item is MenuAction => !!item);
   return (
     <Sheet title={title} size="compact" onClose={onDismiss}>
-      <div className="sheet-list" role="menu" aria-label={title}>
-        {actions.map((action) => <MenuRow key={action.label} action={action} base="sheet-list" onPick={() => action.onSelect()} />)}
-      </div>
+      {requestClose => <div className="sheet-list" role="menu" aria-label={title}>
+        {actions.map((action) => <MenuRow key={action.label} action={action} base="sheet-list" onPick={() => requestClose(action.onSelect)} />)}
+      </div>}
     </Sheet>
   );
 }

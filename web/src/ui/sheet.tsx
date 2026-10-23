@@ -31,11 +31,13 @@ import { placeNotifications } from './notifications.ts';
 import '../styles/sheet.css';
 
 export type SheetSize = 'regular' | 'compact' | 'wide';
+export type SheetCloseRequest = (afterClose?: () => void) => void;
+type SheetContent = ReactNode | ((requestClose: SheetCloseRequest) => ReactNode);
 
 export interface SheetProps {
   title: string;
   onClose(): void;
-  children: ReactNode;
+  children: SheetContent;
   /** Disables every exit while a write is in flight. */
   busy?: boolean;
   /** A short readout beside the title, e.g. "128 章". */
@@ -43,7 +45,7 @@ export interface SheetProps {
   /** Extra header controls, placed before the close button. */
   actions?: ReactNode;
   /** A pinned action row; the body scrolls and this stays reachable. */
-  footer?: ReactNode;
+  footer?: SheetContent;
   size?: SheetSize;
   /** Content flavour only (e.g. `media-video-sheet`); geometry belongs to `.sheet`. */
   className?: string;
@@ -63,6 +65,22 @@ export function Sheet({
   const pressedOutside = useRef(false);
   const state = useRef({ busy, onClose });
   state.current = { busy, onClose };
+  const closing = useRef(false);
+  const exitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const exitAnimation = useRef<Animation | null>(null);
+
+  const cancelExit = () => {
+    if (exitTimer.current !== null) clearTimeout(exitTimer.current);
+    exitTimer.current = null;
+    exitAnimation.current?.cancel();
+    exitAnimation.current = null;
+    const dialog = ref.current;
+    if (dialog) {
+      dialog.removeAttribute('data-closing');
+      dialog.getAnimations?.().forEach(animation => animation.cancel());
+    }
+    closing.current = false;
+  };
 
   useLayoutEffect(() => {
     const dialog = ref.current!;
@@ -81,6 +99,7 @@ export function Sheet({
     place();
     if (anchor) addEventListener('resize', place);
     return () => {
+      cancelExit();
       if (anchor) removeEventListener('resize', place);
       if (typeof dialog.close === 'function' && dialog.open) dialog.close(); else dialog.removeAttribute('open');
       placeNotifications();
@@ -88,7 +107,40 @@ export function Sheet({
     };
   }, []);
 
-  const requestClose = () => { if (!state.current.busy) state.current.onClose(); };
+  useLayoutEffect(() => { if (busy && closing.current) cancelExit(); }, [busy]);
+
+  const requestClose: SheetCloseRequest = (afterClose) => {
+    if (state.current.busy || closing.current) return;
+    const dialog = ref.current;
+    if (!dialog) return;
+    if (typeof dialog.animate !== 'function') { (afterClose ?? (() => state.current.onClose()))(); return; }
+
+    closing.current = true;
+    const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const duration = reduced ? 80 : 150;
+    const style = getComputedStyle(dialog);
+    const rect = dialog.getBoundingClientRect();
+    const desktop = matchMedia(WIDE).matches;
+    const exitTransform = reduced ? style.transform : !desktop
+      ? `translateY(${Math.ceil(rect.height)}px)`
+      : dialog.dataset.size === 'compact' && dialog.hasAttribute('data-anchored') ? 'scale(.96)' : 'translateX(1rem)';
+    dialog.setAttribute('data-closing', '');
+    exitAnimation.current = dialog.animate([
+      { opacity: style.opacity, transform: style.transform },
+      { opacity: 0, transform: exitTransform },
+    ], { duration, easing: 'cubic-bezier(.4, 0, 1, 1)', fill: 'forwards' });
+    exitTimer.current = setTimeout(() => {
+      exitTimer.current = null;
+      exitAnimation.current = null;
+      (afterClose ?? (() => state.current.onClose()))();
+      queueMicrotask(() => {
+        if (ref.current !== dialog || !dialog.isConnected || !dialog.open) return;
+        dialog.removeAttribute('data-closing');
+        dialog.getAnimations?.().forEach(animation => animation.cancel());
+        closing.current = false;
+      });
+    }, duration);
+  };
   const outside = (event: { clientX: number; clientY: number; target: EventTarget; currentTarget: HTMLDialogElement }) => {
     if (event.target !== event.currentTarget) return false;
     const rect = event.currentTarget.getBoundingClientRect();
@@ -110,6 +162,7 @@ export function Sheet({
         pressedOutside.current = false;
       }}
       onKeyDown={(event) => {
+        if (closing.current) { event.preventDefault(); event.stopPropagation(); return; }
         if (event.key === 'Escape') {
           // Keep the screen behind from reading the same key (the reader closes its
           // chrome on Escape); the platform's `cancel` event does the closing.
@@ -125,10 +178,10 @@ export function Sheet({
         <h2>{title}</h2>
         {subtitle ? <span className="sheet-subtitle">{subtitle}</span> : null}
         {actions}
-        <IconButton className="sheet-close" icon="close" label="关闭" disabled={busy} onClick={requestClose} />
+        <IconButton className="sheet-close" icon="close" label="关闭" disabled={busy} onClick={() => requestClose()} />
       </header>
-      <div className="sheet-body">{children}</div>
-      {footer ? <footer className="sheet-footer">{footer}</footer> : null}
+      <div className="sheet-body">{typeof children === 'function' ? children(requestClose) : children}</div>
+      {footer ? <footer className="sheet-footer">{typeof footer === 'function' ? footer(requestClose) : footer}</footer> : null}
     </dialog>
   );
 }
@@ -204,8 +257,8 @@ export function ConfirmSheet({
 }: ConfirmSheetProps): JSX.Element {
   return (
     <Sheet title={title} size="compact" role="alertdialog" busy={busy} onClose={onCancel} initialFocus=".sheet-cancel"
-      footer={<>
-        <Button className="sheet-cancel" disabled={busy} onClick={onCancel}>{cancelText}</Button>
+      footer={requestClose => <>
+        <Button className="sheet-cancel" disabled={busy} onClick={() => requestClose(onCancel)}>{cancelText}</Button>
         <Button className={danger ? 'primary danger' : 'primary'} disabled={busy} onClick={onConfirm}>{confirmText}</Button>
       </>}>
       <p className="sheet-text">{text}</p>

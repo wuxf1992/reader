@@ -32,8 +32,10 @@
 .sheet[open] {
   display: flex;
   flex-direction: column;
-  animation: sheet-rise var(--motion-duration) var(--motion-ease);
+  animation: sheet-rise 220ms var(--motion-ease);
 }
+
+.sheet[open]::backdrop { animation: sheet-backdrop-enter 220ms ease-out both; }
 
 /* The fallback colour is for WebViews whose ::backdrop does not inherit custom properties. */
 .sheet::backdrop {
@@ -256,6 +258,11 @@
   to { opacity: 1; transform: none; }
 }
 
+@keyframes sheet-backdrop-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 @media (max-width: 700px) {
   .sheet-footer .button {
     flex: 1 1 0;
@@ -315,4 +322,16 @@
   .sheet-footer {
     padding-bottom: var(--space-2);
   }
+}
+
+.sheet[data-closing] { pointer-events: none; }
+.sheet[data-closing]::backdrop { animation: sheet-backdrop-exit 150ms ease-in forwards; }
+
+@keyframes sheet-backdrop-exit {
+  to { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet[open]::backdrop { animation-duration: 0.001s !important; }
+  .sheet[data-closing]::backdrop { animation-duration: 80ms !important; }
 }

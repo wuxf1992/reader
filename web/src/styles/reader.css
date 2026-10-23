@@ -247,11 +247,14 @@ body {
   overscroll-behavior: none;
 }
 
+html[data-theme] { background-color: var(--color-bg); }
+
 /* Home-screen Safari also samples the document background for its system bars. */
 html[data-reader-chrome] {
   --reader-scrim-color: #000000;
   --reader-scrim-opacity: 0.42;
 }
+html[data-reader-chrome],
 html[data-reader-chrome] body {
   background-color: var(--reader-browser-paper, var(--reader-paper));
   background-image: none;
@@ -3738,16 +3741,23 @@ svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; verti
   color: var(--reader-muted);
   background: var(--reader-paper);
   font-size: 0.72rem;
-  line-height: 1.2;
+  line-height: 1.5;
   z-index: var(--reader-layer-readout);
   pointer-events: none;
 }
 .reading-indicator-top { top: var(--reader-inset-top, 0px); height: calc(1.8rem + var(--safe-top)); padding-top: calc(0.5rem + var(--safe-top)); }
 .reading-indicator-bottom { bottom: var(--reader-inset-bottom, 0px); height: calc(1.8rem + var(--safe-bottom)); padding-top: 0.35rem; padding-bottom: var(--safe-bottom); }
-.reading-indicator > span { min-width: 0; flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.reading-indicator > span { min-width: 0; flex: 0 1 auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
 .indicator-left { text-align: start; }
 .indicator-right { text-align: end; }
+.reading-indicator > span[data-mode='book'],
+.reading-indicator > span[data-mode='chapter'] { flex: 1; }
+.reading-indicator > span[data-mode='time'],
+.reading-indicator > span[data-mode='progress'] { flex-shrink: 0; }
 .reading-indicator > span:empty { flex: 0; }
+/* Move only the readouts when controls open; the measured page keeps its geometry. */
+.reader-screen[data-chrome='visible'] .reading-indicator-top { top: calc(4.5rem + var(--safe-top)); padding-top: .5rem; height: 1.8rem; }
+.reader-screen[data-chrome='visible'] .reading-indicator-bottom { bottom: var(--reader-footer-height); padding-bottom: 0; height: 1.8rem; }
 .reader-screen .topbar {
   position: fixed;
   /* Keep Safari's fixed-edge tint and document fallback on the same frame. */
@@ -3770,6 +3780,8 @@ svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; verti
 .reader-heading span { font-size: 0.75rem; color: var(--reader-muted); }
 .reader-heading strong, .reader-heading span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .reader-screen .footer {
+  /* System-bar tint and both solid edge bars switch on the same frame. */
+  transition: none;
   height: var(--reader-footer-height);
   padding: 0.5rem 1rem calc(0.4rem + var(--safe-bottom));
   background: var(--reader-surface);
@@ -3966,8 +3978,6 @@ svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; verti
 @media (hover: hover) and (pointer: fine) {
   .shelf-screen .book-card .book-more:hover { background: color-mix(in srgb, var(--reader-accent) 8%, transparent); }
 }
-.shelf-screen .book-grid { transition: opacity var(--motion-duration) var(--motion-ease); }
-.shelf-screen .book-grid[aria-busy='true'] { opacity: .72; }
 @media (prefers-reduced-motion: reduce) { .shelf-screen .book-open:active .cover { transform: none; } }
 .library-browse-body > .manager-status { background: transparent; border: 0; margin: .75rem auto; }
 .file-manager-header .manager-crumbs { margin-top: .75rem; padding: .25rem 0; }
@@ -4026,6 +4036,7 @@ svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; verti
   .reader-screen .reader-actions .top-button:hover { background: color-mix(in srgb, var(--reader-accent) 10%, transparent); }
   .reader-screen .reader-actions .icon { font-size: 1.1rem; }
   .reader-screen .reader-rail { right: max(1rem, calc((100% - var(--desktop-page-width)) / 2 - 4.5rem)); bottom: 2.25rem; }
+  .reader-screen[data-chrome='visible'] .reading-indicator-bottom { bottom: 6rem; }
   .reader-screen .reading-indicator { width: var(--desktop-page-width); max-width: 100%; margin-inline: auto; padding-inline: 1.5rem; font-size: .75rem; }
   html[data-reader-chrome] { --reader-scrim-color: var(--reader-ink); --reader-scrim-opacity: 0.12; }
   .reader-screen .panel { inset: 1rem 1rem 1rem auto; width: 26rem; height: calc(100% - 2rem); max-height: none; border: 1px solid var(--reader-line); border-radius: 1rem; overflow: hidden; animation-name: shelf-settings-in; }

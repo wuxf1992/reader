@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { BookOpen, LibraryBig, MoreHorizontal, Search } from 'lucide-react';
 import type { Book, ContinueReadingItem, ReadingState } from '../../../api/types.ts';
 import { useRuntime } from '../../../app/providers/runtime-context.tsx';
@@ -12,6 +12,7 @@ import { IconButton, Callout } from '../../../ui/toolkit.tsx';
 import { OpdsAccess } from '../../../ui/opds-access.tsx';
 import { DialogView, type Dialog } from '../../../ui/dialog.tsx';
 import { FloatingNotice } from '../../../ui/floating-notice.tsx';
+import { animateShelfPositions, captureShelfPositions, resetShelfMotion, type ShelfSnapshot } from '../shelf-motion.ts';
 
 export function useCover(api: ReturnType<typeof useRuntime>['api'], coverUrl: string | null | undefined): string | null {
   const [src, setSrc] = useState<string | null>(null);
@@ -34,7 +35,7 @@ export function BookCard({ book, showAuthor, showProgress, onRemove }: { book: B
   const runtime = useRuntime();
   const src = useCover(runtime.api, book.coverUrl);
   const progress = 'percentage' in book ? book.percentage : runtime.offline?.progressFor(book.id)?.percentage;
-  return <div className="book-card">
+  return <div className="book-card" data-shelf-book-id={book.id}>
     <Link className="book-open" aria-label={`${book.title} ${book.author ?? ''}`.trim()} to={`/book/${encodeURIComponent(book.id)}`}>
       <div className="cover">
         {src ? <img src={src} alt="" loading="lazy" /> : <div className="placeholder">{book.title || '无封面'}</div>}
@@ -71,6 +72,9 @@ export function ShelfPage() {
   const [menuTarget, setMenuTarget] = useState<Book | null>(null);
   const [groupsOpen, setGroupsOpen] = useState(false);
   const [actionError, setActionError] = useState('');
+  const gridRef = useRef<HTMLDivElement>(null);
+  const motionAnimations = useRef(new Map<string, Animation>());
+  const pendingMotion = useRef<{ key: string; before: ShelfSnapshot } | null>(null);
   // 在读 / 想读 / 已读 and one 分组 (a series or a tag), all in the URL like the page and sort.
   const status = isReadingState(params.get('status')) ? params.get('status') as ReadingState : undefined;
   const series = params.get('series') || undefined, tag = series ? undefined : params.get('tag') || undefined;
@@ -78,6 +82,32 @@ export function ShelfPage() {
   const filtered = !!(status || series || tag);
   const groups = useShelfGroups(groupsOpen);
   const query = useShelf(page, sort, queryText, filters);
+  const identity = (view: { page: number; sort: string; search: string; status?: ReadingState | undefined; series?: string | undefined; tag?: string | undefined }) => JSON.stringify([
+    runtime.api.baseUrl, runtime.api.currentSession()?.user.id, view.page, view.sort, view.search.trim(), view.status ?? '', view.series ?? '', view.tag ?? '',
+  ]);
+  const currentIdentity = identity({ page, sort, search: queryText, status, series, tag });
+  useLayoutEffect(() => {
+    const grid = gridRef.current;
+    const pending = pendingMotion.current;
+    if (!grid) {
+      if (pending && (pending.key !== currentIdentity || query.error && !query.isFetching || query.data && !query.isPlaceholderData)) pendingMotion.current = null;
+      return;
+    }
+    if (pending && pending.key !== currentIdentity) {
+      pendingMotion.current = null;
+      resetShelfMotion(grid, motionAnimations.current);
+    } else if (pending && query.error && !query.isFetching) {
+      pendingMotion.current = null;
+      resetShelfMotion(grid, motionAnimations.current);
+    } else if (pending && pending.key === currentIdentity && query.data && !query.isPlaceholderData) {
+      pendingMotion.current = null;
+      animateShelfPositions(grid, pending.before, motionAnimations.current, matchMedia('(prefers-reduced-motion: reduce)').matches);
+    }
+  }, [currentIdentity, query.data, query.error, query.isPlaceholderData]);
+  useEffect(() => () => {
+    for (const animation of motionAnimations.current.values()) animation.cancel();
+    motionAnimations.current.clear();
+  }, []);
   useEffect(() => useSyncStore.subscribe((state, previous) => {
     if (state.status.lastSyncAt !== previous.status.lastSyncAt) void queryClient.invalidateQueries({ queryKey: ['shelf', runtime.api.baseUrl] });
   }), [queryClient, runtime.api.baseUrl]);
@@ -85,15 +115,34 @@ export function ShelfPage() {
   const cards = useMemo(() => query.data?.items ?? [], [query.data]);
   useEffect(() => { void runtime.updateSettings({ shelfSort: sort }); }, [runtime, sort]);
   // Every navigation keeps what it does not change; a new filter or query starts at page 1.
-  const go = (next: { q?: string; sort?: typeof sort; page?: number; status?: ReadingState | null; series?: string | null; tag?: string | null }) => {
+  const go = (next: { q?: string; sort?: typeof sort; page?: number; status?: ReadingState | null; series?: string | null; tag?: string | null }, animate = false) => {
     const q = next.q ?? queryText, nextStatus = next.status === undefined ? status : next.status ?? undefined;
     const nextSeries = next.series === undefined ? series : next.series ?? undefined, nextTag = next.tag === undefined ? tag : next.tag ?? undefined;
-    setParams({ ...(q ? { q } : {}), sort: next.sort ?? sort, page: String(next.page ?? 1), ...(nextStatus ? { status: nextStatus } : {}), ...(nextSeries ? { series: nextSeries } : nextTag ? { tag: nextTag } : {}) });
+    const nextPage = next.page ?? 1, nextSort = next.sort ?? sort;
+    const targetIdentity = identity({ page: nextPage, sort: nextSort, search: q, status: nextStatus, series: nextSeries, tag: nextSeries ? undefined : nextTag });
+    if (targetIdentity !== currentIdentity) {
+      const grid = gridRef.current;
+      if (animate) {
+        const scroller = grid?.closest<HTMLElement>('.shelf') ?? document.querySelector<HTMLElement>('.shelf-screen');
+        const before = grid ? captureShelfPositions(grid, motionAnimations.current) : {
+          positions: new Map<string, { left: number; top: number; opacity: number }>(),
+          scrollLeft: scroller?.scrollLeft ?? 0,
+          scrollTop: scroller?.scrollTop ?? 0,
+        };
+        pendingMotion.current = { key: targetIdentity, before };
+      } else {
+        pendingMotion.current = null;
+        if (grid) {
+          resetShelfMotion(grid, motionAnimations.current);
+        }
+      }
+    }
+    setParams({ ...(q ? { q } : {}), sort: nextSort, page: String(nextPage), ...(nextStatus ? { status: nextStatus } : {}), ...(nextSeries ? { series: nextSeries } : nextTag ? { tag: nextTag } : {}) });
   };
-  const onSort = (value: string) => { const next = value as typeof sort; setSort(next); go({ sort: next }); };
+  const onSort = (value: string) => { const next = value as typeof sort; setSort(next); go({ sort: next }, true); };
   const onSearch = (event: FormEvent) => { event.preventDefault(); setQueryText(search.trim()); go({ q: search.trim() }); };
   const clearSearch = () => { setSearch(''); setQueryText(''); go({ q: '' }); };
-  const clearFilters = () => go({ status: null, series: null, tag: null });
+  const clearFilters = () => go({ status: null, series: null, tag: null }, true);
   const act = async (book: Book, action: BookAction) => {
     if (action === 'remove') { setRemoveTarget(book); return; }
     setActionError('');
@@ -138,20 +187,20 @@ export function ShelfPage() {
     <section className="shelf-section" aria-label={queryText ? '搜索结果' : '全部书籍'}>
       <div className="shelf-filters">
         <div className="shelf-state-filter" role="group" aria-label="阅读状态">
-          <button type="button" className="chip" aria-pressed={!status} onClick={() => go({ status: null })}>全部</button>
-          {readingStates.map(state => <button key={state} type="button" className="chip" aria-pressed={status === state} onClick={() => go({ status: state })}>{readingLabels[state]}</button>)}
+          <button type="button" className="chip" aria-pressed={!status} onClick={() => go({ status: null }, true)}>全部</button>
+          {readingStates.map(state => <button key={state} type="button" className="chip" aria-pressed={status === state} onClick={() => go({ status: state }, true)}>{readingLabels[state]}</button>)}
         </div>
         {groupLabel
-          ? <button type="button" className="chip shelf-group-active" aria-pressed="true" aria-label={`${groupLabel}，点按取消分组`} onClick={() => go({ series: null, tag: null })}><span>{groupLabel}</span><span aria-hidden="true"> ×</span></button>
+          ? <button type="button" className="chip shelf-group-active" aria-pressed="true" aria-label={`${groupLabel}，点按取消分组`} onClick={() => go({ series: null, tag: null }, true)}><span>{groupLabel}</span><span aria-hidden="true"> ×</span></button>
           : <button type="button" className="chip shelf-group" aria-haspopup="dialog" onClick={() => setGroupsOpen(true)}>分组</button>}
       </div>
       <FloatingNotice message={actionError} error />
-      {(!query.isPending && (cards.length > 0 || queryText || filtered)) && <div className="shelf-toolbar"><span className="shelf-count muted">{query.isPlaceholderData ? '正在更新' : queryText ? `「${queryText}」 · 找到 ${query.data?.total ?? 0} 本` : `共 ${query.data?.total ?? 0} 本`}</span><select className="shelf-sort" aria-label="排序方式" value={sort} onChange={event => onSort(event.currentTarget.value)}>{SHELF_SORTS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>}
+      {(!query.isPending && (cards.length > 0 || queryText || filtered)) && <div className="shelf-toolbar"><span className="shelf-count muted" role="status" aria-live="polite" aria-atomic="true">{query.isPlaceholderData ? '正在更新' : queryText ? `「${queryText}」 · 找到 ${query.data?.total ?? 0} 本` : `共 ${query.data?.total ?? 0} 本`}</span><select className="shelf-sort" aria-label="排序方式" value={sort} onChange={event => onSort(event.currentTarget.value)}>{SHELF_SORTS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>}
       {query.isPending && <FloatingNotice message="正在加载书架…" busy />}
       {query.error && <Callout tone="error" title="书架加载失败">{query.error.message}</Callout>}
       {query.data && !query.isPlaceholderData && cards.length === 0 && filtered && !queryText && <div className="empty-state collection-empty"><BookOpen className="empty-glyph" aria-hidden="true" /><p>{status ? `还没有${readingLabels[status]}的书` : '这个分组里没有书'}</p><p className="muted">{status === 'want' ? '在书籍的“⋯”菜单里可以标记想读。' : '换一个分类，或查看全部书籍。'}</p><div className="empty-actions"><button type="button" className="button" onClick={clearFilters}>查看全部书籍</button></div></div>}
       {query.data && !query.isPlaceholderData && cards.length === 0 && !(filtered && !queryText) && <div className="empty-state collection-empty"><BookOpen className="empty-glyph" aria-hidden="true" /><p>{queryText ? '没有匹配的书' : '书架还没有书'}</p><p className="muted">{queryText ? '换个关键词，或者检查一下作者名的写法' : '从书库挑选喜欢的书，或通过书源搜索，加入书架后就能开始阅读。'}</p><div className="empty-actions">{queryText ? <button type="button" className="button" onClick={clearSearch}>清除搜索</button> : <><Link className="button primary" to="/sources"><Search size={16} />去搜书</Link><Link className="button" to="/library"><LibraryBig size={16} />打开书库</Link></>}</div></div>}
-      {cards.length > 0 && <div className="book-grid" aria-busy={query.isFetching || undefined} data-density={settings.shelfDensity} data-show-author={String(settings.shelfShowAuthor)} data-show-progress={String(settings.shelfShowProgress)}>{cards.map(book => <BookCard key={book.id} book={book} showAuthor={settings.shelfShowAuthor} showProgress={settings.shelfShowProgress} onRemove={() => setMenuTarget(book)} />)}</div>}
+      {cards.length > 0 && <div ref={gridRef} className="book-grid" aria-busy={query.isFetching || undefined} data-density={settings.shelfDensity} data-show-author={String(settings.shelfShowAuthor)} data-show-progress={String(settings.shelfShowProgress)}>{cards.map(book => <BookCard key={book.id} book={book} showAuthor={settings.shelfShowAuthor} showProgress={settings.shelfShowProgress} onRemove={() => setMenuTarget(book)} />)}</div>}
       {query.data && pages > 1 && <nav className="shelf-pager" aria-label="翻页"><button type="button" disabled={page <= 1} onClick={() => go({ page: page - 1 })}>上一页</button><span>{page} / {pages}</span><button type="button" disabled={page >= pages} onClick={() => go({ page: page + 1 })}>下一页</button></nav>}
     </section>
     {settingsOpen && <ShelfSettingsSheet settings={settings} onPatch={patch => { void runtime.updateSettings(patch); }} onClose={() => setSettingsOpen(false)} onOpenExternalReader={() => { setSettingsOpen(false); setOpdsOpen(true); }} />}
@@ -160,9 +209,9 @@ export function ShelfPage() {
     {groupsOpen && <DialogView dialog={{ kind: 'pick', title: groups.isPending ? '分组 · 正在读取…' : groups.error ? '分组 · 读取失败' : '分组', options: groupOptions, resolve: (_value: string | null) => undefined } satisfies Dialog} destructive="" onClose={answer => {
       setGroupsOpen(false);
       if (typeof answer !== 'string') return;
-      if (answer === '') go({ series: null, tag: null });
-      else if (answer.startsWith('series:')) go({ series: answer.slice(7), tag: null });
-      else if (answer.startsWith('tag:')) go({ tag: answer.slice(4), series: null });
+      if (answer === '') go({ series: null, tag: null }, true);
+      else if (answer.startsWith('series:')) go({ series: answer.slice(7), tag: null }, true);
+      else if (answer.startsWith('tag:')) go({ tag: answer.slice(4), series: null }, true);
     }} />}
     {removeTarget && <DialogView dialog={{ kind: 'confirm', title: '移出书架', body: `确定要将《${removeTarget.title}》移出书架吗？`, resolve: (_answer: boolean) => undefined } satisfies Dialog} destructive="移出书架" onClose={answer => { const target = removeTarget; setRemoveTarget(null); if (answer === true) void remove(target); }} />}
   </div>;

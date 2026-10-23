@@ -607,7 +607,10 @@ export class ReaderScreen {
     delete document.documentElement.dataset.readerChrome;
     delete document.documentElement.dataset.readerScrim;
     document.documentElement.style.removeProperty('--reader-browser-paper');
-    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', themeTokens(resolveAppTheme(readThemePreference(this.themeScope()), systemPrefersDark())).bg);
+    document.documentElement.style.removeProperty('color-scheme');
+    const appBackground = themeTokens(resolveAppTheme(readThemePreference(this.themeScope()), systemPrefersDark())).bg;
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', appBackground);
+    try { localStorage.setItem('reader.browser-color', appBackground); } catch { /* Storage may be disabled. */ }
   }
 
   private async previewHeadings(prefix: string): Promise<string[]> {

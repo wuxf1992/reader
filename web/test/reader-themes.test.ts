@@ -196,3 +196,20 @@ it('migrates an existing day theme and rejects invalid remembered settings', asy
     set: async () => {}, remove: async () => {} });
   expect((await invalid.load()).lastDayTheme).toBe('light');
 });
+
+it('matches system-bar foreground to the reading surface even when the app uses the other mode', () => {
+  const root = document.documentElement;
+  const surface = document.createElement('div');
+  document.body.append(surface);
+  root.dataset.readerChrome = 'visible';
+  surface.style.setProperty('--reader-surface', '#1a1a1a');
+  surface.style.setProperty('--reader-paper', '#ffffff');
+  applyBrowserTheme(root, 'light', surface);
+  expect(root.style.colorScheme).toBe('dark');
+  expect(root.style.getPropertyValue('--reader-browser-paper')).toBe('#1a1a1a');
+  root.dataset.readerChrome = 'hidden';
+  applyBrowserTheme(root, 'dark', surface);
+  expect(root.style.colorScheme).toBe('light');
+  expect(root.style.getPropertyValue('--reader-browser-paper')).toBe('#ffffff');
+  surface.remove();
+});
