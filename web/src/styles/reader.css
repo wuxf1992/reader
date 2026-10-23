@@ -3732,7 +3732,8 @@ svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; verti
 }
 .reading-indicator {
   position: absolute;
-  inset-inline: var(--reader-inset-left, 0px) var(--reader-inset-right, 0px);
+  /* Screen information follows the safe area, independently of body margins. */
+  inset-inline: 0;
   padding-inline: max(1.25rem, var(--safe-left)) max(1.25rem, var(--safe-right));
   display: flex;
   align-items: flex-start;
@@ -3745,8 +3746,8 @@ svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; verti
   z-index: var(--reader-layer-readout);
   pointer-events: none;
 }
-.reading-indicator-top { top: var(--reader-inset-top, 0px); height: calc(1.8rem + var(--safe-top)); padding-top: calc(0.5rem + var(--safe-top)); }
-.reading-indicator-bottom { bottom: var(--reader-inset-bottom, 0px); height: calc(1.8rem + var(--safe-bottom)); padding-top: 0.35rem; padding-bottom: var(--safe-bottom); }
+.reading-indicator-top { top: 0; height: calc(1.8rem + var(--safe-top)); padding-top: calc(0.5rem + var(--safe-top)); }
+.reading-indicator-bottom { bottom: 0; height: calc(1.8rem + var(--safe-bottom)); padding-top: 0.35rem; padding-bottom: var(--safe-bottom); }
 .reading-indicator > span { min-width: 0; flex: 0 1 auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
 .indicator-left { text-align: start; }
 .indicator-right { text-align: end; }

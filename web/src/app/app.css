@@ -1,2 +1,2 @@
 .media-page { max-width: 1440px; margin-inline: auto; padding-bottom: 7rem; }
-.reader-route-host { display: flex; flex-direction: column; height: 100dvh; min-height: 100vh; overflow: hidden; }
+.reader-route-host { display: flex; flex-direction: column; height: 100vh; height: 100dvh; min-height: 0; overflow: hidden; }

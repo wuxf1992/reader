@@ -113,8 +113,9 @@ describe('the reading surface fills the screen', () => {
 
   it('keeps reading information in fixed top and bottom strips', () => {
     const box = rule('.reading-indicator');
-    expect(declaration(rule('.reading-indicator-top'), 'top')).toBe('var(--reader-inset-top, 0px)');
-    expect(declaration(rule('.reading-indicator-bottom'), 'bottom')).toBe('var(--reader-inset-bottom, 0px)');
+    expect(declaration(rule('.reading-indicator-top'), 'top')).toBe('0');
+    expect(declaration(rule('.reading-indicator-bottom'), 'bottom')).toBe('0');
+    expect(declaration(box, 'inset-inline')).toBe('0');
     expect(declaration(box, 'display')).toBe('flex');
     expect(declaration(box, 'pointer-events')).toBe('none');
   });
