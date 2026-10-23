@@ -3726,6 +3726,14 @@ svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; verti
 .reader-screen .stage-host {
   inset: var(--reader-inset-top, 0px) var(--reader-inset-right, 0px) var(--reader-inset-bottom, 0px) var(--reader-inset-left, 0px);
 }
+/* Intercept body gestures without resizing its scroll container or page columns. */
+.reader-screen[data-chrome='visible'] .stage { touch-action: none; }
+.reader-screen[data-chrome='visible'] .stage::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: calc(var(--reader-layer-page) + 1);
+}
 .reader-screen .book-host {
   inset-block-start: calc(1.8rem + var(--safe-top));
   inset-block-end: calc(1.8rem + var(--safe-bottom) + var(--reader-page-trim, 0px));
@@ -3757,8 +3765,8 @@ svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; verti
 .reading-indicator > span[data-mode='time'],
 .reading-indicator > span[data-mode='progress'] { flex-shrink: 0; }
 .reading-indicator > span:empty { flex: 0; }
-/* Move only the readouts when controls open; the measured page keeps its geometry. */
-.reader-screen[data-chrome='visible'] .reading-indicator-top { top: calc(4.5rem + var(--safe-top)); padding-top: .5rem; height: 1.8rem; }
+/* Keep the same fixed element at top:0 across toggles; move only its contents. */
+.reader-screen[data-chrome='visible'] .reading-indicator-top { padding-top: calc(5rem + var(--safe-top)); height: calc(6.3rem + var(--safe-top)); background: var(--reader-surface); }
 .reader-screen[data-chrome='visible'] .reading-indicator-bottom { bottom: var(--reader-footer-height); padding-bottom: 0; height: 1.8rem; }
 .reader-screen .topbar {
   position: fixed;

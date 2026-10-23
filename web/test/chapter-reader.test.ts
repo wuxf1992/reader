@@ -829,6 +829,37 @@ it('matches the saved page theme and system tint before the first content loads'
   } finally { meta.remove(); }
 });
 
+it('blocks body tap, swipe and keyboard paging while controls are visible and restores them after closing', async () => {
+  const env = await setup(undefined, undefined, 'u1', 'http://one.test', { mode: 'paged' });
+  serve(env.transport, content(['a', 'b'])); await env.screen.open(book);
+  const reader = env.screen as unknown as { turnPage(direction: 'next' | 'previous'): Promise<void>; onTapZone(zone: 'previous' | 'next' | 'toggle-chrome'): void };
+  const turn = vi.spyOn(reader, 'turnPage').mockResolvedValue();
+  const stage = env.screen.element.querySelector<HTMLElement>('.stage')!;
+  stage.getBoundingClientRect = () => ({ x: 0, y: 0, left: 0, top: 0, right: 300, bottom: 600, width: 300, height: 600, toJSON() {} });
+  const swipe = () => {
+    for (const [type, x] of [['pointerdown', 250], ['pointerup', 50]] as const) {
+      const event = new Event(type, { bubbles: true });
+      Object.assign(event, { clientX: x, clientY: 300, pointerType: 'touch', button: 0 });
+      stage.dispatchEvent(event);
+    }
+  };
+  const pageKey = () => {
+    const event = new KeyboardEvent('keydown', { key: 'PageDown', bubbles: true, cancelable: true });
+    stage.dispatchEvent(event);
+    return event;
+  };
+  reader.onTapZone('next'); reader.onTapZone('previous'); swipe();
+  expect(pageKey().defaultPrevented).toBe(true);
+  expect(turn).not.toHaveBeenCalled();
+  reader.onTapZone('toggle-chrome');
+  expect(env.screen.element.dataset.chrome).toBe('hidden');
+  reader.onTapZone('next'); swipe(); pageKey();
+  expect(turn).toHaveBeenCalledTimes(3);
+  reader.onTapZone('toggle-chrome'); turn.mockClear();
+  reader.onTapZone('next'); swipe(); pageKey();
+  expect(turn).not.toHaveBeenCalled();
+});
+
 it('updates system tint as controls open and close, including theme and brightness changes and leaving the reader', async () => {
   const meta = document.createElement('meta'); meta.name = 'theme-color'; document.head.append(meta);
   const env = await setup(undefined, undefined, 'u1', 'http://one.test', { theme: 'green', brightness: 0.5 });

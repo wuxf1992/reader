@@ -1220,6 +1220,7 @@ export class ReaderScreen {
     this.detachGestures = attachGestures(this.stage, {
       onTapZone: (zone) => this.onTapZone(zone),
       onSwipe: (direction) => {
+        if (this.chromeVisible) return;
         // Swiping is only a page turn in fixed layout or paged mode. In scroll
         // mode a horizontal swipe has no meaning and hijacking it would fight
         // the reader's own scrolling.
@@ -1329,7 +1330,7 @@ export class ReaderScreen {
    *      The gesture layer cannot enforce this — it sees the stage, and the panel
    *      is a sibling — so it is enforced here.
    *   2. **The middle third toggles the chrome**, in both directions.
-   *   3. **The outer thirds turn the page**, and *only* that.
+   *   3. **The outer thirds turn the page only while controls are hidden.**
    *
    * The third rule is the one that changed, and the report behind it is the whole
    * of it: "在点击左右两边时只需要翻页、不需要显示工具栏，只有在中间点击时才需要切换
@@ -1353,6 +1354,7 @@ export class ReaderScreen {
       this.setChromeVisible(!this.chromeVisible);
       return;
     }
+    if (this.chromeVisible) return;
 
     // The page turn, and nothing else: the chrome's visibility is the middle
     // third's business alone (see the doc comment above). `tapZone` decides which
@@ -2446,6 +2448,10 @@ function bindKeys(target: HTMLElement, handler: (key: string) => void): () => vo
     // A panel that is open owns the keyboard: the arrow keys are how a range
     // input is adjusted, and the settings panel is a column of range inputs.
     if (target.querySelector('.panel:not([hidden]), dialog[open]')) return;
+    if (target.dataset.chrome === 'visible' && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'].includes(event.key)) {
+      event.preventDefault();
+      return;
+    }
     handler(event.key);
   };
   target.addEventListener('keydown', onKeyDown);
