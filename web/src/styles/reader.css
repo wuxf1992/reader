@@ -3746,7 +3746,8 @@ svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; verti
   z-index: var(--reader-layer-readout);
   pointer-events: none;
 }
-.reading-indicator-top { top: 0; height: calc(1.8rem + var(--safe-top)); padding-top: calc(0.5rem + var(--safe-top)); }
+/* Keep an opaque viewport-fixed edge for WebKit sampling when the toolbar hides. */
+.reading-indicator-top { position: fixed; top: 0; height: calc(1.8rem + var(--safe-top)); padding-top: calc(0.5rem + var(--safe-top)); }
 .reading-indicator-bottom { bottom: 0; height: calc(1.8rem + var(--safe-bottom)); padding-top: 0.35rem; padding-bottom: var(--safe-bottom); }
 .reading-indicator > span { min-width: 0; flex: 0 1 auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
 .indicator-left { text-align: start; }

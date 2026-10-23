@@ -121,6 +121,8 @@ describe('the reading surface fills the screen', () => {
   });
 
   it('provides a solid fixed header and matching document fallback for iOS status-bar sampling', () => {
+    expect(declaration(rule('.reading-indicator-top'), 'position')).toBe('fixed');
+    expect(declaration(rule('.reading-indicator'), 'background')).toBe('var(--reader-paper)');
     const header = rule('.reader-screen .topbar');
     expect(declaration(header, 'position')).toBe('fixed');
     expect(declaration(header, 'transition')).toBe('none');

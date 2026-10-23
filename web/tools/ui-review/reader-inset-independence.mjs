@@ -42,7 +42,9 @@ try {
               const result = await page.evaluate(({ safeBottom, inset }) => {
                 const rect = selector => document.querySelector(selector).getBoundingClientRect().toJSON();
                 const bars = ['.topbar', '.footer'].map(selector => ({ ...rect(selector), visible: getComputedStyle(document.querySelector(selector)).visibility === 'visible' }));
+                const top = getComputedStyle(document.querySelector('.reading-indicator-top'));
                 return { height: innerHeight, host: rect('.reader-route-host'), stage: rect('.stage-host'),
+                  topEdge: { position: top.position, background: top.backgroundColor, filter: top.filter, backdropFilter: top.backdropFilter || top.webkitBackdropFilter, opacity: top.opacity, visibility: top.visibility },
                   strips: ['.reading-indicator-top', '.reading-indicator-bottom'].map(rect),
                   readouts: [...document.querySelectorAll('.reading-indicator span')].map(el => {
                     const r = el.getBoundingClientRect(), range = document.createRange(); range.selectNodeContents(el);
@@ -53,6 +55,12 @@ try {
                   }) };
               }, { safeBottom, inset });
               assert.equal(result.host.height, 844);
+              assert.equal(result.topEdge.position, 'fixed');
+              assert.equal(result.topEdge.filter, 'none');
+              assert.equal(result.topEdge.backdropFilter, 'none');
+              assert.equal(result.topEdge.opacity, '1');
+              assert.equal(result.topEdge.visibility, 'visible');
+              assert.match(result.topEdge.background, /^rgb\(/, 'the fixed edge must have a fully opaque background');
               assert.equal(result.stage.bottom, result.host.bottom - inset);
               assert.ok(result.readouts.length === 4 && result.readouts.every(r => r.inViewport && r.fits && r.outsideBars), JSON.stringify(result));
               if (inset === 0) baseline[state] = result.strips;
