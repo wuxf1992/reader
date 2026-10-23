@@ -26,7 +26,7 @@ try {
       await page.locator('input[autocomplete=username]').fill('review');
       await page.locator('input[type=password]').fill('password12');
       await page.locator('button[type=submit]').click();
-      await page.locator('.book-card:not(.skeleton)').first().waitFor();
+      await page.locator('.app-shell').waitFor();
       await page.evaluate(book => { location.hash = '#/book/' + book; }, BOOK_ID);
       await page.getByRole('button', { name: '工具', exact: true }).waitFor();
       await page.locator('.book-host').waitFor();
@@ -34,7 +34,7 @@ try {
         window.sheetFrames = [];
         let sampled = false;
         new MutationObserver(() => {
-          const dialog = document.querySelector('.reading-tools-modal[open]');
+          const dialog = document.querySelector('.sheet[aria-label="阅读工具"][open]');
           if (!dialog || sampled) return;
           sampled = true;
           const sample = () => {
@@ -68,7 +68,7 @@ try {
       const landscape = await bottom(dialog);
       assert.ok(Math.abs(landscape.bottom - 390) < 1 && landscape.height <= 390 * .78 + 1);
       assert.ok(await dialog.locator('.reading-tool-panel').evaluate(el => el.scrollHeight > el.clientHeight), 'long bookmarks must scroll inside the panel');
-      assert.equal(await dialog.getByRole('button', { name: '关闭弹窗' }).isVisible(), true);
+      assert.equal(await dialog.getByRole('button', { name: '关闭' }).isVisible(), true);
       await page.keyboard.press('Escape'); await dialog.waitFor({ state: 'detached' });
       await page.setViewportSize({ width: 390, height: 844 });
       await page.emulateMedia({ reducedMotion: 'reduce' });

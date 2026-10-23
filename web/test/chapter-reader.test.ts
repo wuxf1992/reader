@@ -81,7 +81,7 @@ async function setup(kv = new MemoryKv(), blobs = new MemoryBlobs(), userId = 'u
     schedule: vi.fn(),
   } as unknown as SyncEngine;
   const onSettingsChange = vi.fn();
-  const screen = new ReaderScreen({ api, offline, sync, platform, settings: { ...DEFAULT_APP_SETTINGS, autoCache: false, ...settings },
+  const screen = new ReaderScreen({ api, offline, sync, platform, settings: { ...DEFAULT_APP_SETTINGS, autoCache: false, ...settings, ...(settings.theme && !settings.paper ? { paper: `local-${settings.theme}` as const, paperFollowsDark: false } : {}) },
     onBack() {}, onSettingsChange, onSignedOut });
   screens.push(screen);
   document.body.append(screen.element);
@@ -114,7 +114,7 @@ it('applies the global text choice immediately, preserves the chapter, TTS and r
   await env.screen.open(book);
   const reader = env.screen as unknown as { view: ReaderView; goToSection(index: number): Promise<void> };
   await reader.goToSection(1);
-  await act(() => click(env.screen, '界面'));
+  await act(() => click(env.screen, '外观'));
   await act(() => click(env.screen, '繁体'));
   await vi.waitFor(() => expect(body(env.screen)?.querySelector('.book-flow')?.textContent).toContain('頭髮發展，乾淨幹活，皇后後來。'));
   expect(reader.view.position().sectionId).toBe('chapter:b');
@@ -130,7 +130,7 @@ it('applies the global text choice immediately, preserves the chapter, TTS and r
   const restored = await setup(kv, blobs, 'u1', 'http://one.test', await new SettingsStore(kv).load());
   restored.transport.failWith(new Error('offline')); await restored.screen.open(book);
   expect(body(restored.screen)?.querySelector('.book-flow')?.textContent).toContain('頭髮發展');
-  await act(() => click(restored.screen, '界面'));
+  await act(() => click(restored.screen, '外观'));
   await act(() => click(restored.screen, '原文'));
   await vi.waitFor(() => expect(body(restored.screen)?.querySelector('.book-flow')?.textContent).toContain(raw));
 });
@@ -292,7 +292,7 @@ describe('chapter publication reading', () => {
     await vi.waitFor(() => expect(env.screen.element.textContent).toContain('100 字符'));
     expect(body(env.screen)?.textContent).toContain('resource:r1:a');
     select.dispatchEvent(new Event('change', { bubbles: true }));
-    expect(env.screen.element.querySelector('dialog')?.textContent).not.toContain('100 字符');
+    expect(env.screen.element.querySelector('dialog[aria-label="选择阅读章节"]')?.textContent).not.toContain('100 字符');
     let finish!: (value: {chapterId:string;title:string;latestChapter:string;characters:number;images:number;bytes:number;elapsedMs:number}) => void;
     quality.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
     await click(env.screen, '检测所选章节 / 重试');
@@ -300,7 +300,7 @@ describe('chapter publication reading', () => {
     expect(quality.mock.calls.at(-1)?.[3]?.signal?.aborted).toBe(true);
     finish({chapterId:'x',title:'迟到结果',latestChapter:'末章',characters:999,images:0,bytes:999,elapsedMs:1});
     await new Promise(resolve => setTimeout(resolve, 0));
-    expect(env.screen.element.querySelector('dialog')?.textContent).not.toContain('999 字符');
+    expect(env.screen.element.querySelector('dialog[aria-label="选择阅读章节"]')?.textContent).not.toContain('999 字符');
     await click(env.screen, '确认换源并阅读');
     await vi.waitFor(() => expect(noticeText()).toContain('正文获取失败'));
     expect(body(env.screen)?.textContent).toContain('resource:r1:a');
@@ -565,10 +565,10 @@ it('opens tools, searches the whole book, navigates and returns, and persists a 
  await vi.waitFor(()=>expect(env.screen.element.querySelector('.reading-note-editor')).toBeNull());
  await act(() => click(env.screen,'删除笔记'));
  expect(env.offline.notesFor(book.id)).toHaveLength(1);
- await act(() => document.querySelector<HTMLButtonElement>('.swal2-cancel')!.click());
- await vi.waitFor(()=>expect(document.querySelector('.confirmation-host')).toBeNull());
+ await act(() => document.querySelector<HTMLButtonElement>('dialog[role=alertdialog] .sheet-cancel')!.click());
+ await vi.waitFor(()=>expect(document.querySelector('dialog[role=alertdialog]')).toBeNull());
  expect(env.offline.notesFor(book.id)).toHaveLength(1);
- await act(() => click(env.screen,'删除笔记'));await act(() => document.querySelector<HTMLButtonElement>('.swal2-confirm')!.click());
+ await act(() => click(env.screen,'删除笔记'));await act(() => document.querySelector<HTMLButtonElement>('dialog[role=alertdialog] .sheet-footer .primary')!.click());
  await vi.waitFor(()=>expect(env.offline.notesFor(book.id)).toHaveLength(0));
 });
 
@@ -679,7 +679,7 @@ describe('automatic chapter caching', () => {
     const toggle = () => env.screen.element.querySelector<HTMLInputElement>('.reading-cache-auto input')!;
     await act(() => toggle().click());
     await vi.waitFor(() => expect(asset).toHaveBeenCalledOnce());
-    await click(env.screen, '关闭弹窗');
+    await click(env.screen, '关闭');
     finish(new Blob(['chapter b']));
     await vi.waitFor(() => expect(asset).toHaveBeenCalledTimes(2));
     expect(await cache.resource(book.id, 'resource:r1:b')).toBeTruthy();
@@ -726,7 +726,7 @@ describe('automatic chapter caching', () => {
     await vi.waitFor(() => expect(env.screen.element.textContent).toContain('预缓存暂停：quota full'));
     expect(env.transport.countMatching(request => request.url.includes('/assets?'))).toBe(2);
     expect(body(env.screen)?.textContent).toContain('resource:r1:a');
-    await click(env.screen, '关闭弹窗'); await click(env.screen, '目录');
+    await click(env.screen, '关闭'); await click(env.screen, '目录');
     await vi.waitFor(() => expect(env.screen.element.querySelectorAll('.toc-cached')).toHaveLength(1));
   });
 
@@ -800,7 +800,7 @@ it('applies brightness to the whole reading screen on load and slider updates', 
   serve(env.transport, content(['a'])); await env.screen.open(book);
   expect(env.screen.element.style.getPropertyValue('--reader-brightness')).toBe('0.5');
   expect(document.documentElement.dataset.readerBrightness).toBe('0.5');
-  await click(env.screen, '界面');
+  await click(env.screen, '外观');
   const slider = env.screen.element.querySelector<HTMLInputElement>('[aria-label="页面亮度"]')!;
   await act(() => { slider.value = '0.75'; slider.dispatchEvent(new Event('input', { bubbles: true })); });
   expect(env.screen.element.style.getPropertyValue('--reader-brightness')).toBe('0.75');
@@ -809,7 +809,7 @@ it('applies brightness to the whole reading screen on load and slider updates', 
   env.screen.dispose();
   screens.splice(screens.indexOf(env.screen), 1);
   expect(document.documentElement.dataset.readerBrightness).toBeUndefined();
-  expect(document.documentElement.style.getPropertyValue('--reader-browser-paper')).toBe('#fbfaf7');
+  expect(document.documentElement.style.getPropertyValue('--reader-browser-paper')).toBe('');
 });
 
 it('matches the saved page theme and system tint before the first content loads', async () => {
@@ -818,12 +818,13 @@ it('matches the saved page theme and system tint before the first content loads'
   applyTheme(root, 'light');
   const env = await setup(undefined, undefined, 'u1', 'http://one.test', { theme: 'dark', brightness: 0.5 });
   try {
-    expect(root.style.getPropertyValue('--reader-surface')).toBe('#1e2024');
-    expect(root.dataset.theme).toBe('dark');
+    expect(env.screen.element.style.getPropertyValue('--reader-surface')).toBe('#1e2024');
+    expect(env.screen.element.dataset.paper).toBe('local-dark');
+    expect(root.dataset.theme).toBe('light');
     expect(meta.content).toBe('#0f1012');
     const reader = env.screen as unknown as { updateSetting(patch: Partial<AppSettings>): Promise<void> };
     await reader.updateSetting({ theme: 'green' });
-    expect(root.style.getPropertyValue('--reader-surface')).toBe('#e8f2e8');
+    expect(env.screen.element.style.getPropertyValue('--reader-surface')).toBe('#e8f2e8');
     expect(meta.content).toBe('#747974');
   } finally { meta.remove(); }
 });
@@ -845,7 +846,7 @@ it('updates system tint as controls open and close, including theme and brightne
     expect(meta.content).toBe('#1e2024');
     env.screen.dispose(); screens.splice(screens.indexOf(env.screen), 1);
     expect(document.documentElement.dataset.readerChrome).toBeUndefined();
-    expect(meta.content).toBe('#16171a');
+    expect(meta.content).toBe('#FDF9F6');
   } finally { meta.remove(); }
 });
 
@@ -853,14 +854,14 @@ it.each(['sepia', 'green'] as const)('restores %s after a night toggle and reope
   const env = await setup(undefined, undefined, 'u1', 'http://one.test', { theme });
   serve(env.transport, content(['a'])); await env.screen.open(book);
   await click(env.screen, '夜间');
-  expect(env.onSettingsChange).toHaveBeenLastCalledWith({ theme: 'dark', lastDayTheme: theme, lastNightTheme: 'dark' });
+  expect(env.onSettingsChange).toHaveBeenLastCalledWith({ theme: 'dark', paper: 'local-dark', paperFollowsDark: false, lastDayTheme: theme, lastNightTheme: 'dark' });
   const kv = new MemoryKv(), store = new SettingsStore(kv);
   await store.load(); await store.update(env.onSettingsChange.mock.calls.at(-1)![0]);
   const restored = await new SettingsStore(kv).load();
   const next = await setup(undefined, undefined, 'u1', 'http://one.test', restored);
   serve(next.transport, content(['a'])); await next.screen.open(book);
   await click(next.screen, '日间');
-  expect(next.onSettingsChange).toHaveBeenLastCalledWith({ theme, lastDayTheme: theme, lastNightTheme: 'dark' });
+  expect(next.onSettingsChange).toHaveBeenLastCalledWith({ theme, paper: `local-${theme}`, paperFollowsDark: false, lastDayTheme: theme, lastNightTheme: 'dark' });
 });
 
 it('keeps automatic sync quiet while preserving failures and offline feedback', async () => {
@@ -878,24 +879,24 @@ it('keeps automatic sync quiet while preserving failures and offline feedback', 
 
 it('remembers each settings section independently across reopening and reload', async () => {
   const env = await setup(); serve(env.transport, content(['a'])); await env.screen.open(book);
-  await click(env.screen, '界面');
+  await click(env.screen, '外观');
   const section = [...env.screen.element.querySelectorAll<HTMLDetailsElement>('details')]
-    .find(details => details.querySelector('summary')?.textContent === '阅读信息')!;
+    .find(details => details.querySelector('summary')?.textContent === '页眉页脚顶部与底部显示的信息')!;
   section.open = false;
   section.dispatchEvent(new Event('toggle'));
   await vi.waitFor(() => expect(env.onSettingsChange).toHaveBeenCalled());
   const saved = env.onSettingsChange.mock.calls.at(-1)![0];
   expect(saved.readerSections).toEqual({ readout: false, text: true, theme: true, paging: true });
-  await click(env.screen, '界面'); await click(env.screen, '界面');
+  await click(env.screen, '外观'); await click(env.screen, '外观');
   expect([...env.screen.element.querySelectorAll<HTMLDetailsElement>('details')]
-    .find(details => details.querySelector('summary')?.textContent === '阅读信息')?.open).toBe(false);
+    .find(details => details.querySelector('summary')?.textContent === '页眉页脚顶部与底部显示的信息')?.open).toBe(false);
   const kv = new MemoryKv(), store = new SettingsStore(kv);
   await store.load(); await store.update(saved);
   const next = await setup(undefined, undefined, 'u1', 'http://one.test', await new SettingsStore(kv).load());
-  serve(next.transport, content(['a'])); await next.screen.open(book); await click(next.screen, '界面');
+  serve(next.transport, content(['a'])); await next.screen.open(book); await click(next.screen, '外观');
   const details = [...next.screen.element.querySelectorAll<HTMLDetailsElement>('details')];
-  expect(details.map(item => item.querySelector('summary')?.textContent)).toEqual(['主题', '阅读信息', '正文']);
-  expect(details.map(item => item.open)).toEqual([true, false, true]);
-  const readout = details[1]!; readout.open = true; readout.dispatchEvent(new Event('toggle'));
+  expect(details.map(item => item.querySelector('summary')?.textContent)).toEqual(['阅读配色', '更多排版页边距 · 对齐 · 字体', '页眉页脚顶部与底部显示的信息']);
+  expect(details.map(item => item.open)).toEqual([true, true, false]);
+  const readout = details[2]!; readout.open = true; readout.dispatchEvent(new Event('toggle'));
   await vi.waitFor(() => expect(next.onSettingsChange).toHaveBeenCalledWith({ readerSections: { readout: true, text: true, theme: true, paging: true } }));
 });

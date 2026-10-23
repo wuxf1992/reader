@@ -1,3 +1,6 @@
+import { vi } from 'vitest';
+import { act } from 'react';
+import { PALETTES, type ThemeMode } from '../src/render/theme.ts';
 import { render } from '../src/shared/ui/render-root.ts';
 // @vitest-environment jsdom
 /**
@@ -12,15 +15,17 @@ import { render } from '../src/shared/ui/render-root.ts';
  *    of them — stop — was pushed off the right edge and the reader could not stop
  *    the voice at all (没法停止).
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, createElement as h } from 'react';
-import { ReaderChrome, type ChromeState, type ChromeHandlers } from '../src/ui/reader-chrome.tsx';
-import { PALETTES, type ThemeMode } from '../src/render/theme.ts';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { createElement as h } from 'react';
+import { ReaderChrome, type ChromeState, type ChromeHandlers, type ReaderThemeState } from '../src/ui/reader-chrome.tsx';
+import { defaultThemePreference, type ThemePreference } from '../src/shared/theme/theme.ts';
 
-afterEach(async () => {
-  await act(async () => { for (const element of [...document.body.children]) render(null, element); });
-  document.body.replaceChildren();
-});
+const themeState = (preference: Partial<ThemePreference> = {}, dark = false): ReaderThemeState => {
+  const merged = { ...defaultThemePreference, ...preference };
+  const mode: 'dark' | 'light' = dark ? 'dark' : 'light';
+  const reading = { theme: merged.reading === 'gray' ? 'gray' as const : 'warm' as const, mode };
+  return { preference: merged, app: { theme: 'warm', mode }, reading, surface: { ...reading, paper: null } };
+};
 
 function chromeState(overrides: Partial<ChromeState> = {}): ChromeState {
   return {
@@ -58,6 +63,7 @@ function chromeState(overrides: Partial<ChromeState> = {}): ChromeState {
     theme: 'light',
     fit: 'contain',
     fontFamily: 'inherit',
+    pageMargin: 1.5,
     textAlign: 'inherit',
     brightness: 1,
     pageAnimation: 'slide',
@@ -66,6 +72,8 @@ function chromeState(overrides: Partial<ChromeState> = {}): ChromeState {
     txtIndent: 2,
     txtParagraphGap: 0.55,
     comicDirection: 'ltr',
+    paper: 'theme',
+    paperFollowsDark: true,
     ttsRate: 1,
     ttsPitch: 1,
     ttsVolume: 1,
@@ -87,13 +95,15 @@ function chromeState(overrides: Partial<ChromeState> = {}): ChromeState {
 }
 
 /** Every handler is a no-op: this file asserts the tree, not the behaviour. */
-function handlers(): ChromeHandlers {
+function handlers(theme: ReaderThemeState = themeState(), onTheme: ChromeHandlers['onTheme'] = () => undefined): ChromeHandlers {
   const noop = (): void => undefined;
   return {
     onBack: noop,
     toggleToc: noop,
     toggleSettings: noop,
     onSetting: noop,
+    theme: () => theme,
+    onTheme,
     onSpeechSetting: noop,
     onVoice: noop,
     onSpeakFromHere: noop,
@@ -117,6 +127,8 @@ describe('ReaderChrome', () => {
     container = document.createElement('div');
     document.body.append(container);
   });
+
+  afterEach(() => { act(() => render(null, container)); container.remove(); });
 
   function paint(state: Partial<ChromeState>): HTMLElement {
     const stage = document.createElement('div');
@@ -148,10 +160,10 @@ describe('ReaderChrome', () => {
     const original = HTMLElement.prototype.scrollIntoView;
     HTMLElement.prototype.scrollIntoView = scrollIntoView;
     const heights = vi.spyOn(Element.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) {
-      return this.classList.contains('panel-body') ? 320 : 40;
+      return this.classList.contains('sheet-body') ? 320 : 40;
     });
     const rects = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
-      const body = this.closest('.panel-body');
+      const body = this.closest('.sheet-body');
       const index = this.matches('.toc-list button') ? this.querySelector('.toc-index')?.textContent : null;
       return { top: 1000 + (index ? (Number(index) - 1) * 40 - body!.scrollTop : 0) } as DOMRect;
     });
@@ -159,13 +171,13 @@ describe('ReaderChrome', () => {
       const toc = Array.from({ length: 50 }, (_, i) => ({ id: 'ch' + i, label: '第 ' + (i + 1) + ' 章', depth: 0, spine: i }));
       paint({ tocOpen: false, toc, currentSectionId: 'ch41' });
       let tree = paint({ tocOpen: true, toc, currentSectionId: 'ch41' });
-      expect(tree.querySelector('.panel-body')?.scrollTop).toBe(1500);
+      expect(tree.querySelector('.sheet-body')?.scrollTop).toBe(1500);
       expect(tree.querySelector('[aria-current="true"] .toc-label')?.textContent).toBe('第 42 章');
       tree = paint({ tocOpen: true, toc, currentSectionId: 'ch30' });
-      expect(tree.querySelector('.panel-body')?.scrollTop).toBe(1060);
+      expect(tree.querySelector('.sheet-body')?.scrollTop).toBe(1060);
       paint({ tocOpen: false, toc, currentSectionId: 'ch41' });
       tree = paint({ tocOpen: true, toc, currentSectionId: 'ch41' });
-      expect(tree.querySelector('.panel-body')?.scrollTop).toBe(1500);
+      expect(tree.querySelector('.sheet-body')?.scrollTop).toBe(1500);
       expect(scrollIntoView).not.toHaveBeenCalled();
     } finally {
       HTMLElement.prototype.scrollIntoView = original;
@@ -213,7 +225,7 @@ describe('ReaderChrome', () => {
     const callbacks = { ...handlers(), onSetting: vi.fn() };
     const stage = document.createElement('div');
     render(h(ReaderChrome, { state: chromeState({ theme, settingsOpen: true, settingsTab: 'appearance',
-      lastDayTheme: 'rose-pine-dawn-day', lastNightTheme: 'nord-night' }), stage, handlers: callbacks }), container);
+      lastDayTheme: 'rose-pine-dawn-day', lastNightTheme: 'nord-night', paper: `local-${theme}` }), stage, handlers: callbacks }), container);
     const palette = PALETTES[theme];
     const group = container.querySelector(`[aria-label="${palette.scheme === 'light' ? '日间主题' : '夜间主题'}"]`)!;
     const selected = group.querySelector<HTMLButtonElement>(`[aria-label="${palette.label}"]`)!;
@@ -222,15 +234,15 @@ describe('ReaderChrome', () => {
     expect(selected.textContent).toContain(palette.name);
     expect(group.querySelectorAll('button')).toHaveLength(palette.scheme === 'light' ? 12 : 9);
     selected.click();
-    expect(callbacks.onSetting).toHaveBeenLastCalledWith({ theme });
+    expect(callbacks.onSetting).toHaveBeenLastCalledWith({ theme, paper: `local-${theme}`, paperFollowsDark: false });
     const opposite = palette.scheme === 'light' ? 'nord-night' : 'rose-pine-dawn-day';
     const modes = container.querySelectorAll<HTMLButtonElement>('.theme-modes button');
     modes[palette.scheme === 'light' ? 1 : 0]!.click();
-    expect(callbacks.onSetting).toHaveBeenLastCalledWith({ theme: opposite });
+    expect(callbacks.onSetting).toHaveBeenLastCalledWith({ theme: opposite, paper: `local-${opposite}`, paperFollowsDark: false });
     const rail = container.querySelector<HTMLButtonElement>('.reader-rail .rail-button')!;
     expect(rail.getAttribute('aria-label')).toBe(palette.scheme === 'light' ? '夜间' : '日间');
     rail.click();
-    expect(callbacks.onSetting).toHaveBeenLastCalledWith({ theme: opposite });
+    expect(callbacks.onSetting).toHaveBeenLastCalledWith({ theme: opposite, paper: `local-${opposite}`, paperFollowsDark: false });
   });
 
   it('offers refresh only in the chapter publication contents panel and disables it while busy', () => {
@@ -258,9 +270,9 @@ describe('ReaderChrome', () => {
       handlers: { ...handlers(), onSetting } }), container));
     for (const label of ['上边距', '下边距', '左边距', '右边距']) {
       const slider = container.querySelector(`input[aria-label="${label}"]`);
-      expect(slider?.closest('details')?.querySelector('summary')?.textContent).toBe('正文');
+      expect(slider?.closest('details')?.querySelector('summary')?.textContent).toContain('更多排版');
     }
-    expect(container.querySelector('input[aria-label="页边距"]')).toBeNull();
+    expect(container.querySelector('input[aria-label="页边距"]')).not.toBeNull();
     const slider = container.querySelector<HTMLInputElement>('input[aria-label="上边距"]')!;
     act(() => { slider.value = '24'; slider.dispatchEvent(new Event('input', { bubbles: true })); });
     expect(onSetting).toHaveBeenCalledWith({ pageInsets: { top: 24, bottom: 8, left: 4, right: 6 } });
@@ -268,14 +280,101 @@ describe('ReaderChrome', () => {
 
   it('separates appearance and behavior settings and omits text controls for comics', () => {
     let tree = paint({ settingsOpen: true, settingsTab: 'appearance' });
-    expect(tree.querySelector('.panel')?.textContent).toContain('浅绿');
-    expect(tree.querySelector('.panel')?.textContent).not.toContain('点击区域');
+    expect(tree.querySelector('.sheet')?.textContent).toContain('黑白灰');
+    expect(tree.querySelector('.sheet')?.textContent).not.toContain('点击区域');
     tree = paint({ settingsOpen: true, settingsTab: 'behavior' });
-    expect(tree.querySelector('.panel')?.textContent).toContain('点击区域');
-    expect(tree.querySelector('.panel')?.textContent).not.toContain('字号');
+    expect(tree.querySelector('.sheet')?.textContent).toContain('点击区域');
+    expect(tree.querySelector('.sheet')?.textContent).not.toContain('字号');
     tree = paint({ settingsOpen: true, settingsTab: 'appearance', layout: 'fixed' });
-    expect(tree.querySelector('.panel')?.textContent).not.toContain('字号');
-    expect(tree.querySelector('input[aria-label="上边距"]')?.closest('details')?.querySelector('summary')?.textContent).toBe('正文');
+    expect(tree.querySelector('.sheet')?.textContent).not.toContain('字号');
+  });
+
+  it('puts the most-used appearance rows first and folds the rarely changed ones', () => {
+    const tree = paint({ settingsOpen: true, settingsTab: 'appearance' });
+    const body = tree.querySelector('.sheet-body')!;
+    const order = [...body.children].map((element) =>
+      element.matches('details.panel-fold')
+        ? `fold:${element.querySelector('.panel-fold-title')?.textContent}`
+        : (element.querySelector('label')?.textContent ?? '').split(' ')[0],
+    );
+    // Size, spacing, theme and brightness fill the first screen; the readouts that
+    // used to come first are behind a fold, closed by default.
+    expect(order).toEqual(['fold:阅读配色', '字号', '行距', '主题', '明暗', '页面亮度', 'fold:更多排版', 'fold:页眉页脚']);
+    for (const fold of body.querySelectorAll<HTMLDetailsElement>('details.panel-fold')) expect(fold.open).toBe(true);
+    expect(body.querySelector('details.panel-fold input[aria-label="页边距"]')).not.toBeNull();
+    expect(body.querySelector('details.panel-fold select[aria-label="顶部左侧"]')).not.toBeNull();
+  });
+
+  it('offers the reading themes as swatches, follow-app or 黑白灰, and marks the current one', () => {
+    const tree = paint({ settingsOpen: true, settingsTab: 'appearance' });
+    const swatches = [...tree.querySelectorAll<HTMLButtonElement>('[aria-label="主题"] .theme-swatch')];
+    expect(swatches.map((button) => button.querySelector('.theme-swatch-label')?.textContent)).toEqual(['跟随应用', '黑白灰']);
+    expect(swatches.filter((button) => button.getAttribute('aria-pressed') === 'true').map((button) => button.querySelector('.theme-swatch-label')?.textContent)).toEqual(['跟随应用']);
+    // Each chip is drawn in that theme's own background (light mode here): 黑白灰 #F5F5F5.
+    const chip = swatches[1]!.querySelector<HTMLElement>('.theme-swatch-chip')!;
+    expect(chip.style.background).toContain('rgb(245, 245, 245)');
+    const modes = [...tree.querySelectorAll<HTMLButtonElement>('[aria-label="明暗"] button')];
+    expect(modes.map((button) => button.textContent)).toEqual(['跟随系统', '浅色', '深色']);
+    expect(modes.find((button) => button.getAttribute('aria-pressed') === 'true')?.textContent).toBe('跟随系统');
+  });
+
+  it('saves reading-theme and day/night choices as theme preference patches', () => {
+    const patches: Array<Partial<ThemePreference>> = [];
+    render(h(ReaderChrome, { state: chromeState({ settingsOpen: true, settingsTab: 'appearance' }), stage: document.createElement('div'), handlers: handlers(themeState({}, true), (patch) => patches.push(patch)) }), container);
+    const tree = container;
+    [...tree.querySelectorAll<HTMLButtonElement>('[aria-label="主题"] .theme-swatch')][1]!.click();
+    [...tree.querySelectorAll<HTMLButtonElement>('[aria-label="明暗"] button')][1]!.click();
+    // The rail's day/night button: dark now, so it offers day and leaves follow-system.
+    const rail = tree.querySelector<HTMLButtonElement>('.reader-rail button')!;
+    expect(rail.getAttribute('aria-label')).toBe('日间');
+    rail.click();
+    expect(patches).toEqual([{ reading: 'gray' }, { mode: 'light', theme: 'warm' }, { mode: 'light', theme: 'warm' }]);
+  });
+
+  it('offers the reading papers as a page setting, and the follow-dark switch only for a light paper', () => {
+    const settings: Array<Record<string, unknown>> = [];
+    const paint2 = (state: Partial<ChromeState>) => {
+      const h2 = handlers();
+      (h2 as { onSetting: ChromeHandlers['onSetting'] }).onSetting = (patch) => settings.push(patch);
+      render(h(ReaderChrome, { state: chromeState({ settingsOpen: true, settingsTab: 'appearance', ...state }), stage: document.createElement('div'), handlers: h2 }), container);
+      return container;
+    };
+    let tree = paint2({});
+    const papers = [...tree.querySelectorAll<HTMLButtonElement>('[aria-label="纸色"] .theme-swatch')];
+    expect(papers.map((button) => button.querySelector('.theme-swatch-label')?.textContent)).toEqual(['跟随主题', '白纸', '暖黄', '浅绿', '灰调', '夜间']);
+    expect(papers[0]!.getAttribute('aria-pressed')).toBe('true');
+    // 暖黄 is drawn in its own paper: #F4ECD8.
+    expect(papers[2]!.querySelector<HTMLElement>('.theme-swatch-chip')!.style.background).toContain('rgb(244, 236, 216)');
+    expect(tree.textContent).not.toContain('跟随系统深色模式');
+    papers[2]!.click();
+    expect(settings).toEqual([{ paper: 'warm' }]);
+    tree = paint2({ paper: 'warm' });
+    expect(tree.textContent).toContain('跟随系统深色模式');
+    tree.querySelector<HTMLButtonElement>('.switch')!.click();
+    expect(settings).toEqual([{ paper: 'warm' }, { paperFollowsDark: false }]);
+    tree = paint2({ paper: 'night' });
+    expect(tree.textContent).not.toContain('跟随系统深色模式');
+  });
+
+  it('keeps typography folded away for fixed layouts and offers only the readouts', () => {
+    const tree = paint({ settingsOpen: true, settingsTab: 'appearance', layout: 'fixed' });
+    const folds = [...tree.querySelectorAll('details.panel-fold .panel-fold-title')].map((element) => element.textContent);
+    expect(folds).toEqual(['阅读配色', '页眉页脚']);
+    expect(tree.querySelector('.sheet')?.textContent).not.toContain('字号');
+    expect(tree.querySelector('.sheet')?.textContent).toContain('黑白灰');
+  });
+
+  it('puts the start action first in the read-aloud sheet and folds pitch and volume', () => {
+    const tree = paint({ settingsOpen: true, settingsTab: 'speech', ttsRate: 1.2, showPitchRow: true });
+    const body = tree.querySelector('.sheet-body')!;
+    // The action the sheet exists for is not buried under five sliders.
+    expect(body.firstElementChild?.textContent).toBe('从当前位置朗读');
+    expect(body.firstElementChild?.classList.contains('primary')).toBe(true);
+    const presets = [...body.querySelectorAll('[aria-label="常用"] button')];
+    expect(presets.map((button) => button.textContent)).toEqual(['0.8×', '1.0×', '1.2×', '1.5×', '2.0×']);
+    expect(presets.filter((button) => button.getAttribute('aria-pressed') === 'true').map((button) => button.textContent)).toEqual(['1.2×']);
+    expect(body.querySelector('details.panel-fold input[aria-label="音量"]')).not.toBeNull();
+    expect(body.querySelector('details.panel-fold input[aria-label="音调"]')).not.toBeNull();
   });
 
   it('draws every read-aloud control, including stop, in their own row', () => {

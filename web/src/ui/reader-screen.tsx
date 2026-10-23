@@ -1,3 +1,4 @@
+import { localPaper, themeTokens, readThemePreference, resolveAppTheme, resolveReaderSurface, resolveReadingTheme, saveThemePreference, subscribeTheme, systemPrefersDark } from '../shared/theme/theme.ts';
 import { applyCorrections, emptyOverrides, type ReadingOverrides } from './reading-overrides.ts';
 import { loadTxt } from '../formats/txt.ts';
 import { ApiError } from '../api/errors.ts';
@@ -38,11 +39,13 @@ import { newId } from '../core/id.ts';
 import { textToChapterHtml } from '../formats/segments.ts';
 import { parseLocator } from './locator.ts';
 import { shouldPrefetch } from '../render/prefetch.ts';
-import { clampBrightness } from '../render/theme.ts';
+import { PALETTES, clampBrightness } from '../render/theme.ts';
 import { applyBrowserTheme, applyTheme } from './settings.ts';
 import { chineseText, chineseSearchQueries } from '../render/chinese.ts';
 
 export interface ReaderScreenOptions {
+  /** Where the shared app theme is stored (see the media theme service). */
+  themeScope?: string;
   api: ReaderApi;
   offline: OfflineStore;
   sync: SyncEngine;
@@ -203,6 +206,7 @@ export class ReaderScreen {
   private pageTurnEpoch = 0;
   private readonly noticeId = Symbol('reader-status');
   private disposed = false;
+  private themeOff?: () => void;
   private pendingPosition: Position | null = null;
   private positionReady = false;
   private readonly settings: AppSettings;
@@ -240,12 +244,16 @@ export class ReaderScreen {
 
     this.element = document.createElement('div');
     this.element.className = 'reader-screen';
+    this.element.style.cssText = 'flex:1 1 auto;min-height:0;display:flex;flex-direction:column;position:relative;';
     // Whether the chrome is on screen, as an attribute rather than a class per band.
     // The topbar and the footer are one state (see the stylesheet), and one attribute
     // is what makes "cannot be half-hidden" true by construction rather than by two
     // rules that have to be kept in agreement.
     this.element.dataset['chrome'] = 'visible';
-    this.element.style.cssText = 'flex:1 1 auto;min-height:0;display:flex;flex-direction:column;position:relative;';
+    // The reading theme (the app's, or 黑白灰) and the reading paper, on this
+    // container only; see resolveReaderSurface.
+    this.applyReadingTheme();
+    this.themeOff = subscribeTheme(this.themeScope(), () => { this.applyReadingTheme(); if (!this.disposed) this.patch({}); });
     this.ui = createRoot(this.element);
     this.renderChrome();
 
@@ -257,6 +265,34 @@ export class ReaderScreen {
     }));
   }
 
+  private themeScope(): string { return this.options.themeScope ?? 'default'; }
+
+  private readerSurface() {
+    return resolveReaderSurface(readThemePreference(this.themeScope()), systemPrefersDark(), this.settings.paper ?? 'theme', this.settings.paperFollowsDark ?? true);
+  }
+
+  private applyReadingTheme(): void {
+    const surface = this.readerSurface();
+    this.element.dataset['theme'] = surface.theme;
+    this.element.dataset['mode'] = surface.mode;
+    if (surface.paper) this.element.dataset['paper'] = surface.paper; else delete this.element.dataset['paper'];
+    for (const key of ['ink', 'paper', 'surface', 'muted', 'line', 'accent', 'on-accent']) this.element.style.removeProperty(`--reader-${key}`);
+    for (const key of ['bg', 'surface', 'surface-2', 'ink', 'muted', 'line', 'brand', 'brand-text', 'on-brand', 'scrim']) this.element.style.removeProperty(`--color-${key}`);
+    this.element.style.removeProperty('--reader-fill');
+    this.element.style.removeProperty('--reader-on-fill');
+    this.element.style.removeProperty('color-scheme');
+    const palette = surface.paper && localPaper(surface.paper);
+    if (palette) {
+      applyTheme(this.element, palette);
+      this.element.dataset['theme'] = surface.theme;
+      const p = PALETTES[palette];
+      for (const [key, value] of Object.entries({ bg: p.background, surface: p.surface, 'surface-2': p.surface,
+        ink: p.text, muted: p.muted, line: p.line, brand: p.accent, 'brand-text': p.accent, 'on-brand': p.onAccent, scrim: 'rgba(0,0,0,.42)' })) this.element.style.setProperty(`--color-${key}`, value);
+      this.element.style.setProperty('--reader-fill', p.accent);
+      this.element.style.setProperty('--reader-on-fill', p.onAccent);
+    }
+  }
+
   private renderChrome(): void {
     for (const [edge, value] of Object.entries(this.settings.pageInsets)) {
       this.element.style.setProperty(`--reader-inset-${edge}`, `${value}px`);
@@ -264,7 +300,6 @@ export class ReaderScreen {
     this.element.style.setProperty('--reader-brightness', String(clampBrightness(this.settings.brightness)));
     document.documentElement.dataset.readerBrightness = String(clampBrightness(this.settings.brightness));
     document.documentElement.dataset.readerChrome = this.chromeVisible ? 'visible' : 'hidden';
-    if (document.documentElement.dataset.theme !== this.settings.theme) applyTheme(document.documentElement, this.settings.theme);
     flushSync(() => this.ui.render(
 <ReaderChrome
           tools={<>{this.annotation && <AnnotationPopover key={this.annotation.note?.id ?? encodeAnchor(this.annotation.anchor)} target={this.annotation}
@@ -302,6 +337,12 @@ export class ReaderScreen {
             toggleToc: () => this.toggleToc(),
             toggleSettings: (tab) => this.toggleSettings(tab),
             onSetting: (patch) => void this.updateSetting(patch),
+            theme: () => {
+              const preference = readThemePreference(this.themeScope());
+              const systemDark = systemPrefersDark();
+              return { preference, app: resolveAppTheme(preference, systemDark), reading: resolveReadingTheme(preference, systemDark), surface: this.readerSurface() };
+            },
+            onTheme: (patch) => { try { saveThemePreference(this.themeScope(), patch); } catch { /* the device refused storage; the choice simply does not stick */ } this.patch({}); },
             onSpeechSetting: (patch) => this.updateSpeechSetting(patch),
             onVoice: (voice) => this.updateSpeechSetting({ ttsVoice: voice }),
             onSpeakFromHere: () => void this.speakFromReaderPosition(),
@@ -329,8 +370,8 @@ export class ReaderScreen {
           }}
         />
     ));
-    document.documentElement.dataset.readerScrim = this.element.querySelector('.scrim') ? 'visible' : 'hidden';
-    applyBrowserTheme(document.documentElement, this.settings.theme);
+    document.documentElement.dataset.readerScrim = this.element.querySelector('dialog[open]') ? 'visible' : 'hidden';
+    applyBrowserTheme(document.documentElement, this.settings.theme, this.element);
   }
 
   private async generateAiSummary(): Promise<void> {
@@ -534,6 +575,7 @@ export class ReaderScreen {
 
   dispose(): void {
     this.stopPrefetch(); this.prefetchReady = false;
+    this.themeOff?.();
     this.closeAlternatives(); this.chapterRefresh?.abort();
     this.stopPreview();
     this.disposed = true;
@@ -564,7 +606,8 @@ export class ReaderScreen {
     delete document.documentElement.dataset.readerBrightness;
     delete document.documentElement.dataset.readerChrome;
     delete document.documentElement.dataset.readerScrim;
-    applyBrowserTheme(document.documentElement, this.settings.theme);
+    document.documentElement.style.removeProperty('--reader-browser-paper');
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', themeTokens(resolveAppTheme(readThemePreference(this.themeScope()), systemPrefersDark())).bg);
   }
 
   private async previewHeadings(prefix: string): Promise<string[]> {
@@ -1848,6 +1891,7 @@ export class ReaderScreen {
     patch = withThemeMemory(this.settings, patch);
     this.options.onSettingsChange(patch);
     Object.assign(this.settings, patch);
+    if ('paper' in patch || 'paperFollowsDark' in patch) this.applyReadingTheme();
     // Reading information changes only the chrome, never the book's pagination.
     if (Object.keys(patch).some(key => !['autoCache', 'autoCacheChapters', 'lastDayTheme', 'lastNightTheme', 'readerSections'].includes(key) && !READOUT_FIELDS.some(field => field.key === key))) {
       this.view?.applySettings(this.viewSettings());
@@ -2228,6 +2272,7 @@ export class ReaderScreen {
    * row from showing a value the reader has already changed.
    */
   private patch(patch: Partial<ChromeState>): void {
+    if (this.disposed) return;
     this.chrome = {
       ...this.chrome,
       ...patch,
@@ -2316,6 +2361,7 @@ function settingsView(
     fit: settings.fit,
     fontFamily: settings.fontFamily,
     pageInsets: settings.pageInsets,
+    pageMargin: settings.pageMargin,
     textAlign: settings.textAlign,
     chineseVariant: settings.chineseVariant,
     brightness: settings.brightness,
@@ -2325,6 +2371,8 @@ function settingsView(
     txtIndent: settings.txtIndent,
     txtParagraphGap: settings.txtParagraphGap,
     comicDirection: settings.comicDirection,
+    paper: settings.paper,
+    paperFollowsDark: settings.paperFollowsDark,
     ttsRate: settings.ttsRate,
     ttsPitch: settings.ttsPitch,
     ttsVolume: settings.ttsVolume,

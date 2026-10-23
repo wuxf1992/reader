@@ -5,7 +5,7 @@ import { PALETTES } from '../../src/render/theme.ts';
 import { createReviewServer, BOOK_ID } from './server.mjs';
 
 const output = '/tmp/reader-themes-review';
-const server = createReviewServer({ port: 5205 });
+const server = createReviewServer({ port: 0 });
 const origin = await server.listen();
 const reports = [];
 await mkdir(output, { recursive: true });
@@ -27,20 +27,20 @@ try {
       await page.locator('input[autocomplete=username]').fill('review');
       await page.locator('input[type=password]').fill('password12');
       await page.locator('button[type=submit]').click();
-      await page.locator('.book-card:not(.skeleton)').first().waitFor();
+      await page.locator('.app-shell').waitFor();
       await page.evaluate(book => { location.hash = '#/book/' + book; }, BOOK_ID);
       await page.locator('.book-host').waitFor();
       const remembered = { light: 'light', dark: 'dark' };
       for (const width of [320, 390, 1280]) {
         await page.setViewportSize({ width, height: width === 1280 ? 800 : 844 });
         for (const [id, palette] of Object.entries(PALETTES)) {
-          await page.getByRole('button', { name: '界面', exact: true }).click();
-          const panel = page.locator('.panel');
+          await page.getByRole('button', { name: '外观', exact: true }).click();
+          const panel = page.locator('.sheet');
           await panel.evaluate(async node => { await Promise.all(node.getAnimations().map(animation => animation.finished.catch(() => undefined))); });
           if (id === 'light') {
-            assert.ok(await page.locator('.panel-body .section-title').evaluateAll(headings => headings.every(heading => getComputedStyle(heading).position === 'static')));
-            assert.ok(await page.locator('.panel-body').evaluate(async body => {
-              const title = body.querySelector('.section-title');
+            assert.ok(await page.locator('.sheet-body .panel-fold-title').evaluateAll(headings => headings.every(heading => getComputedStyle(heading).position === 'static')));
+            assert.ok(await page.locator('.sheet-body').evaluate(async body => {
+              const title = body.querySelector('.panel-fold-title');
               body.scrollTop = 0;
               const top = title.getBoundingClientRect().top;
               body.scrollTop = 100;
@@ -55,18 +55,18 @@ try {
           const option = group.getByRole('button', { name: palette.label, exact: true });
           await option.click();
           remembered[palette.scheme] = id;
-          await page.waitForFunction(id => document.documentElement.dataset.theme === id, id);
+          await page.waitForFunction(id => document.querySelector('.reader-screen')?.dataset.paper === 'local-' + id, id);
           assert.equal(await option.getAttribute('aria-pressed'), 'true');
           assert.equal(await group.locator('[aria-pressed=true]').count(), 1);
           const colors = await page.evaluate(() => {
-            const css = getComputedStyle(document.documentElement);
-            const panel = document.querySelector('.panel');
+            const css = getComputedStyle(document.querySelector('.reader-screen'));
+            const panel = document.querySelector('.sheet');
             return { paper: css.getPropertyValue('--reader-paper').trim(), surface: css.getPropertyValue('--reader-surface').trim(), accent: css.getPropertyValue('--reader-accent').trim(), scheme: css.colorScheme,
-              meta: document.querySelector('meta[name="theme-color"]').content, mantineBody: css.getPropertyValue('--mantine-color-body').trim(),
+              meta: document.querySelector('meta[name="theme-color"]').content,
               pageOverflow: document.documentElement.scrollWidth > innerWidth + 1,
               panelOverflow: panel.scrollWidth > panel.clientWidth + 1 };
           });
-          assert.deepEqual(colors, { paper: palette.background, surface: palette.surface, accent: palette.accent, scheme: palette.scheme, meta: palette.background, mantineBody: palette.background, pageOverflow: false, panelOverflow: false });
+          assert.deepEqual(colors, { paper: palette.background, surface: palette.surface, accent: palette.accent, scheme: palette.scheme, meta: '#' + palette.surface.slice(1).match(/../g).map(channel => Math.round(parseInt(channel, 16) * .58).toString(16).padStart(2, '0')).join(''), pageOverflow: false, panelOverflow: false });
           const modeStyle = await page.locator('.theme-modes [aria-pressed=true]').evaluate(button => {
             const css = getComputedStyle(button);
             return { background: css.backgroundColor, color: css.color, checked: button.querySelectorAll('.icon').length };
@@ -108,7 +108,7 @@ try {
             const brightness = page.getByRole('slider', { name: '页面亮度', exact: true });
             await brightness.focus(); await page.keyboard.press('Home');
             assert.equal(await page.locator('.reader-screen').evaluate(screen => getComputedStyle(screen, '::after').opacity), '0.5');
-            const dimmed = '#' + palette.background.slice(1).match(/../g).map(channel => Math.round(parseInt(channel, 16) * .5).toString(16).padStart(2, '0')).join('');
+            const dimmed = '#' + palette.surface.slice(1).match(/../g).map(channel => Math.round(Math.round(parseInt(channel, 16) * .5) * .58).toString(16).padStart(2, '0')).join('');
             assert.equal(await page.locator('meta[name="theme-color"]').getAttribute('content'), dimmed);
             assert.equal(await page.locator('html').evaluate(node => getComputedStyle(node).backgroundColor), rgb(dimmed));
             await page.keyboard.press('End');
@@ -119,7 +119,7 @@ try {
           })), `${width}: theme names fit and controls remain touchable`);
           if (width !== 320 && (width === 390 || id === 'kraft-day' || id === 'parchment-day' || id === 'wechat-night' || id === 'rose-pine-dawn-day' || id === 'nord-night')) {
             await page.locator('.global-notice .notyf__dismiss-btn').evaluateAll(buttons => buttons.forEach(button => button.click()));
-            await page.locator('.panel-body').evaluate(body => { body.scrollTop = 0; });
+            await page.locator('.sheet-body').evaluate(body => { body.scrollTop = 0; });
             await page.screenshot({ path: `${output}/${engineName}-${width}-${id}.png` });
           }
           await page.evaluate(async () => { await window.__readerFlush?.(); });
@@ -127,7 +127,7 @@ try {
           await page.reload();
           await page.locator('.book-host').waitFor();
           reloading = false;
-          assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), id);
+          assert.equal(await page.evaluate(() => document.querySelector('.reader-screen')?.dataset.paper), 'local-' + id);
           if (['kraft-day', 'parchment-day', 'wechat-night'].includes(id) && width !== 320) {
             await page.locator('.global-notice .notyf__dismiss-btn').evaluateAll(buttons => buttons.forEach(button => button.click()));
             await page.screenshot({ path: `${output}/${engineName}-${width}-${id}-reading.png`, animations: 'disabled' });
@@ -137,9 +137,9 @@ try {
           assert.equal(await rail.getAttribute('aria-label'), palette.scheme === 'dark' ? '日间' : '夜间');
           await rail.click();
           const opposite = remembered[palette.scheme === 'dark' ? 'light' : 'dark'];
-          await page.waitForFunction(id => document.documentElement.dataset.theme === id, opposite);
+          await page.waitForFunction(id => document.querySelector('.reader-screen')?.dataset.paper === 'local-' + id, opposite);
           await rail.click();
-          await page.waitForFunction(id => document.documentElement.dataset.theme === id, id);
+          await page.waitForFunction(id => document.querySelector('.reader-screen')?.dataset.paper === 'local-' + id, id);
           reports.push({ engine: engineName, width, theme: id, restored: true, rememberedToggle: true, colors });
         }
         console.log(engineName, width, 'passed');
@@ -151,19 +151,24 @@ try {
       await page.getByRole('button', { name: '夜间模式', exact: true }).click();
       await page.getByRole('button', { name: '北境极夜', exact: true }).click();
       await page.getByRole('button', { name: '日间模式', exact: true }).click();
-      await page.waitForFunction(() => document.documentElement.dataset.theme === 'rose-pine-dawn-day');
+      assert.equal((await page.evaluate(() => window.readerApp.settingsSnapshot())).theme, 'rose-pine-dawn-day');
       const mode = page.getByRole('button', { name: '夜间模式', exact: true });
       await mode.focus(); await page.keyboard.press('Enter');
-      await page.waitForFunction(() => document.documentElement.dataset.theme === 'nord-night');
-      assert.equal(await page.locator('html').getAttribute('data-mantine-color-scheme'), 'dark');
+      assert.equal((await page.evaluate(() => window.readerApp.settingsSnapshot())).theme, 'nord-night');
+      await page.getByRole('dialog', { name: '书架设置', exact: true }).getByRole('button', { name: '关闭', exact: true }).click();
+      await page.evaluate(book => { location.hash = '#/book/' + book; }, BOOK_ID);
+      await page.waitForFunction(() => document.querySelector('.reader-screen')?.dataset.paper === 'local-nord-night');
+      assert.equal(await page.locator('.reader-screen').getAttribute('data-mode'), 'dark');
+      assert.equal(await page.locator('html').getAttribute('data-theme'), 'warm', 'reading palettes do not replace the app theme');
       await page.screenshot({ path: `${output}/${engineName}-settings.png` });
       const resizeWarnings = errors.filter(error => error === 'ResizeObserver loop completed with undelivered notifications.');
       assert.ok(resizeWarnings.length <= 1);
       assert.deepEqual(errors.filter(error => !resizeWarnings.includes(error)), []);
       // Hold the bundle to inspect the real startup screen before React mounts.
+      const startupTint = await page.locator('html').evaluate(node => getComputedStyle(node).backgroundColor);
       await page.route('**/assets/client.js*', route => route.abort());
       await page.reload({ waitUntil: 'domcontentloaded' });
-      assert.equal(await page.locator('#app-startup').evaluate(node => getComputedStyle(node).backgroundColor), 'rgb(46, 52, 64)');
+      assert.equal(await page.locator('#app-startup').evaluate(node => getComputedStyle(node).backgroundColor), startupTint, 'startup restores the visible browser tint');
       assert.equal(await page.locator('html').evaluate(node => getComputedStyle(node).colorScheme), 'dark');
     } finally { await browser.close(); }
   }

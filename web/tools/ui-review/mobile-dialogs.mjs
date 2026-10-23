@@ -35,7 +35,7 @@ try {
       await page.locator('input[autocomplete=username]').fill('review');
       await page.locator('input[type=password]').fill('password12');
       await page.locator('button[type=submit]').click();
-      await page.locator('.book-card:not(.skeleton)').first().waitFor();
+      await page.locator('.app-shell').waitFor();
 
       async function check(label, panel, close, scroller) {
         await panel.waitFor();
@@ -73,14 +73,14 @@ try {
         await page.setViewportSize({ width: 390, height: 844 });
       }
       const modal = title => page.getByRole('dialog', { name: title, exact: true });
-      async function checkModal(label, title, scroller = '.source-modal-content') {
+      async function checkModal(label, title, scroller = '.sheet-body') {
         const panel = modal(title);
-        await check(label, panel, panel.getByRole('button', { name: '关闭弹窗', exact: true }), panel.locator(scroller));
-        await panel.getByRole('button', { name: '关闭弹窗', exact: true }).click();
+        await check(label, panel, panel.getByRole('button', { name: '关闭', exact: true }), panel.locator(scroller));
+        await panel.getByRole('button', { name: '关闭', exact: true }).click();
       }
       await page.getByRole('button', { name: /^书架设置/ }).click();
       const shelf = modal('书架设置');
-      await check('shelf-settings', shelf, shelf.getByRole('button', { name: '关闭', exact: true }), shelf.locator('.panel-body'));
+      await check('shelf-settings', shelf, shelf.getByRole('button', { name: '关闭', exact: true }), shelf.locator('.sheet-body'));
       await button('连接外部阅读器').click();
       await checkModal('opds', '连接外部阅读器');
       await modal('书架设置').getByRole('button', { name: '关闭', exact: true }).click();
@@ -125,7 +125,7 @@ try {
       for (const [trigger, title] of [['设置', '阅读设置'], ['界面', '界面'], ['朗读', '朗读']]) {
         await button(trigger).click();
         const panel = page.getByRole('group', { name: title, exact: true });
-        await check('reader-' + trigger, panel, panel.getByRole('button', { name: '关闭', exact: true }), panel.locator('.panel-body'));
+        await check('reader-' + trigger, panel, panel.getByRole('button', { name: '关闭', exact: true }), panel.locator('.sheet-body'));
         await panel.getByRole('button', { name: '关闭', exact: true }).click();
       }
       await button('工具').click();

@@ -2,14 +2,14 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { render } from '../src/shared/ui/render-root.ts';
 import { act } from 'react';
-import { Modal } from '../src/ui/modal.tsx';
+import { Sheet } from '../src/ui/sheet.tsx';
 
 const root = document.createElement('div');
 afterEach(() => { act(() => render(null, root)); root.remove(); });
 it('dismisses a tools-style modal only for an outside tap, and protects busy edits', async () => {
   document.body.append(root);
   const close = vi.fn();
-  const mount = (busy = false) => act(() => render(<Modal title="阅读工具" busy={busy} dismissOnBackdrop onClose={close}><button>内容</button></Modal>, root));
+  const mount = (busy = false) => act(() => render(<Sheet title="阅读工具" busy={busy} onClose={close}><button>内容</button></Sheet>, root));
   await mount();
   const dialog = root.querySelector('dialog')!;
   vi.spyOn(dialog, 'getBoundingClientRect').mockReturnValue({ left: 10, right: 90, top: 40, bottom: 100 } as DOMRect);

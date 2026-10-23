@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 import { act } from 'react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { MantineProvider } from '@mantine/core';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { RuntimeContext } from '../src/app/providers/runtime-context.tsx';
@@ -10,7 +9,7 @@ import { SourcesPage } from '../src/features/sources/pages/SourcesPage.tsx';
 import { notify } from '../src/ui/notifications.ts';
 import type { SourcePage } from '../src/api/sources.ts';
 
-vi.mock('../src/ui/notifications.ts', () => ({ notify: vi.fn() }));
+vi.mock('../src/ui/notifications.ts', () => ({ notify: vi.fn(), placeNotifications: vi.fn() }));
 vi.mock('../src/ui/floating-notice.tsx', () => ({ FloatingNotice: ({ message }: { message: string }) => <span role="status">{message}</span> }));
 
 const root = document.createElement('div');
@@ -28,9 +27,9 @@ beforeEach(() => {
 afterEach(() => { act(() => render(null, root)); client?.clear(); vi.clearAllMocks(); vi.unstubAllGlobals(); });
 const settle = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
 const button = (scope: ParentNode, text: string) => [...scope.querySelectorAll('button')].find(item => (item.textContent === text || item.getAttribute('aria-label') === text))!;
-const detailDialog = () => [...document.querySelectorAll('[role="dialog"]')].find(dialog => document.getElementById(dialog.getAttribute('aria-labelledby') ?? '')?.textContent === '测试小说')!;
-const directoryDialog = () => document.querySelector<HTMLElement>('.source-directory-modal [role="dialog"]')!;
-const closeDirectory = async () => { await act(async () => button(directoryDialog(), '关闭目录').click()); await settle(); };
+const detailDialog = () => [...document.querySelectorAll('[role="dialog"]')].find(dialog => dialog.getAttribute('aria-label') === '测试小说')!;
+const directoryDialog = () => document.querySelector<HTMLElement>('.source-directory-modal')!;
+const closeDirectory = async () => { await act(async () => button(directoryDialog(), '关闭').click()); await settle(); };
 
 async function mount(capabilities = ['search', 'browse', 'content.manifest']) {
   let subscription = { bookId: 'book/id', title: '测试小说', enabled: false, intervalMinutes: 60, newChapters: 0, nextCheckAt: 1000, lastSuccessAt: null };
@@ -49,7 +48,7 @@ async function mount(capabilities = ['search', 'browse', 'content.manifest']) {
     refreshPublication: vi.fn(async () => { subscription = { ...subscription, newChapters: 3 }; }),
   };
   client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  await act(async () => render(<RuntimeContext value={{ api } as any}><QueryClientProvider client={client}><MantineProvider><MemoryRouter initialEntries={['/sources']}><Routes><Route path="/sources" element={<SourcesPage />} /><Route path="/book/:id" element={<p>书籍页面</p>} /></Routes></MemoryRouter></MantineProvider></QueryClientProvider></RuntimeContext>, root));
+  await act(async () => render(<RuntimeContext value={{ api } as any}><QueryClientProvider client={client}><MemoryRouter initialEntries={['/sources']}><Routes><Route path="/sources" element={<SourcesPage />} /><Route path="/book/:id" element={<p>书籍页面</p>} /></Routes></MemoryRouter></QueryClientProvider></RuntimeContext>, root));
   await settle();
   await settle();
   return api;
@@ -196,7 +195,7 @@ it('keeps the source list after acquisition and uses the official reading button
   expect(button(root, '阅读《测试小说》')).toBeDefined();
   expect(invalidate).toHaveBeenCalledWith({ queryKey: ['shelf'] });
   expect(notify).toHaveBeenCalledWith('《测试小说》已加入书架', { kind: 'success' });
-  await act(async () => dialog.querySelector<HTMLButtonElement>('.mantine-Modal-close')!.click());
+  await act(async () => dialog.querySelector<HTMLButtonElement>('.sheet-close')!.click());
   await settle();
   await act(async () => button(root, '阅读《测试小说》').click());
   expect(root.querySelector('p')?.textContent).toBe('书籍页面');
@@ -211,9 +210,9 @@ it('keeps both dialogs after acquiring in details and reads after returning to t
   expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(2);
   expect(dialog.isConnected).toBe(true);
   expect(dialog.querySelectorAll('.catalog-source-item')).toHaveLength(2);
-  expect(dialog.closest('[inert]')).not.toBeNull();
+  expect(detailDialog().isConnected).toBe(true);
   let detail = detailDialog();
-  await act(async () => detail.querySelector<HTMLButtonElement>('.mantine-Modal-close')!.click());
+  await act(async () => detail.querySelector<HTMLButtonElement>('.sheet-close')!.click());
   await settle();
   expect(dialog.isConnected).toBe(true);
   expect(dialog.closest('[inert]')).toBeNull();
@@ -227,9 +226,9 @@ it('keeps both dialogs after acquiring in details and reads after returning to t
   expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(2);
   expect(detail.textContent).not.toContain('阅读《测试小说》');
   expect(notify).toHaveBeenCalledWith('《测试小说》已加入书架', { kind: 'success' });
-  await act(async () => detail.querySelector<HTMLButtonElement>('.mantine-Modal-close')!.click());
+  await act(async () => detail.querySelector<HTMLButtonElement>('.sheet-close')!.click());
   await settle();
-  await act(async () => dialog.querySelector<HTMLButtonElement>('.mantine-Modal-close')!.click());
+  await act(async () => dialog.querySelector<HTMLButtonElement>('.sheet-close')!.click());
   await settle();
   await act(async () => button(root, '阅读《测试小说》').click());
   expect(root.querySelector('p')?.textContent).toBe('书籍页面');
@@ -270,7 +269,7 @@ it('shows source details, expands the full description and reflects an existing 
   const image = detail.querySelector('img')!;
   expect(image.alt).toBe('测试小说封面'); expect(image.src).toBe('blob:detail-cover');
   expect(api.coverBytes).toHaveBeenCalledWith('/api/v1/sources/demo/cover?ref=ref-0', expect.objectContaining({ signal: expect.any(AbortSignal) }));
-  await act(async () => detail.querySelector<HTMLButtonElement>('.mantine-Modal-close')!.click());
+  await act(async () => detail.querySelector<HTMLButtonElement>('.sheet-close')!.click());
   await settle();
   expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:detail-cover');
   expect(api.acquireSource).not.toHaveBeenCalled();
@@ -314,7 +313,7 @@ it('renders each result batch while slower sources are still searching', async (
   const detail = detailDialog();
   await act(async () => button(detail, '查看目录').click()); await settle();
   await closeDirectory();
-  await act(async () => detail.querySelector<HTMLButtonElement>('.mantine-Modal-close')!.click()); await settle();
+  await act(async () => detail.querySelector<HTMLButtonElement>('.sheet-close')!.click()); await settle();
   expect(group.textContent).toContain('共 205 章');
   await act(async () => finish()); await settle();
   expect(group.querySelectorAll('.catalog-source-item')).toHaveLength(2);
@@ -356,8 +355,8 @@ it('opens a separate scrollable directory on demand and returns to the retained 
   await act(async () => button(detail, '查看目录').click()); await settle(); await settle();
   const directory = directoryDialog();
   expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(3);
-  expect(detail.closest('[inert]')).not.toBeNull();
-  expect(group.closest('[inert]')).not.toBeNull();
+  expect(directoryDialog().isConnected).toBe(true);
+  expect(group.isConnected).toBe(true);
   expect(directory.closest('[inert]')).toBeNull();
   expect(api.sourceChapters).toHaveBeenCalledExactlyOnceWith('demo', 'ref-0', expect.objectContaining({ signal: expect.any(AbortSignal) }));
   expect(api.acquireSource).not.toHaveBeenCalled();
@@ -366,25 +365,25 @@ it('opens a separate scrollable directory on demand and returns to the retained 
   expect(directory.textContent).toContain('共 205 章');
   expect(directory.querySelector('li:first-child')?.textContent).toBe('第205章 内容');
   expect(directory.querySelector('li:last-child')?.textContent).toBe('第1章 内容');
-  expect(directory.querySelector<HTMLInputElement>('input[value="desc"]')?.checked).toBe(true);
-  await act(async () => directory.querySelector<HTMLLabelElement>('label[for$="-asc"]')!.click()); await settle();
+  expect(button(directory, '倒序').getAttribute('aria-pressed')).toBe('true');
+  await act(async () => button(directory, '正序').click()); await settle();
   expect(directory.querySelector('li:first-child')?.textContent).toBe('第1章 内容');
   expect(directory.querySelector('li:last-child')?.textContent).toBe('第205章 内容');
-  await act(async () => directory.querySelector<HTMLLabelElement>('label[for$="-desc"]')!.click()); await settle();
+  await act(async () => button(directory, '倒序').click()); await settle();
   expect(directory.querySelector('li:first-child')?.textContent).toBe('第205章 内容');
   expect(api.sourceChapters).toHaveBeenCalledTimes(1);
   expect(client.getQueryData<Array<{ title: string }>>(['source-chapters', api.baseUrl, 'demo', 'ref-0'])?.[0]?.title).toBe('第1章 内容');
   expect(directory.querySelector('ol')?.getAttribute('tabindex')).toBe('0');
-  await act(async () => directory.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+  await act(async () => directory.dispatchEvent(new Event('cancel', { cancelable: true })));
   await act(async () => { await new Promise(resolve => setTimeout(resolve, 250)); });
   expect(directoryDialog()).toBeNull();
   expect(detail.isConnected).toBe(true);
   expect(detail.closest('[inert]')).toBeNull();
-  expect(group.closest('[inert]')).not.toBeNull();
+  expect(group.isConnected).toBe(true);
   await act(async () => button(detail, '查看目录').click()); await settle();
   expect(api.sourceChapters).toHaveBeenCalledTimes(1);
   await closeDirectory();
-  await act(async () => detail.querySelector<HTMLButtonElement>('.mantine-Modal-close')!.click()); await settle();
+  await act(async () => detail.querySelector<HTMLButtonElement>('.sheet-close')!.click()); await settle();
   expect(group.closest('[inert]')).toBeNull();
   expect(group.querySelectorAll('.catalog-source-item')[0]!.textContent).toContain('共 205 章');
   expect(group.querySelectorAll('.catalog-source-item')[1]!.textContent).toContain('章数待获取');
@@ -402,7 +401,7 @@ it('reports directory failures, retries, and cancels outstanding loading when on
   await act(async () => button(directoryDialog(), '重试加载目录').click()); await settle(); await settle();
   expect(directoryDialog().textContent).toContain('共 205 章');
   await closeDirectory();
-  await act(async () => detail.querySelector<HTMLButtonElement>('.mantine-Modal-close')!.click()); await settle();
+  await act(async () => detail.querySelector<HTMLButtonElement>('.sheet-close')!.click()); await settle();
   let aborted = false;
   api.sourceChapters.mockImplementationOnce((_id, _ref, { signal }: any) => new Promise((_, reject) => signal.addEventListener('abort', () => { aborted = true; reject(signal.reason); }, { once: true })));
   await act(async () => button(group.querySelectorAll('.catalog-source-item')[1]!, '详情').click()); await settle();

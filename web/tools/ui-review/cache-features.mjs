@@ -44,7 +44,7 @@ try {
         await page.locator('input[autocomplete=username]').fill('review');
         await page.locator('input[type=password]').fill('password12');
         await page.locator('button[type=submit]').click();
-        await page.locator('.book-card:not(.skeleton)').first().waitFor();
+        await page.locator('.app-shell').waitFor();
         await page.evaluate(id => { location.hash = '#/book/' + id; }, BOOK_ID);
         await page.getByRole('button', { name: '工具', exact: true }).waitFor();
         await page.getByRole('button', { name: '工具', exact: true }).click();
@@ -62,7 +62,7 @@ try {
         await dialog.waitFor({ state: 'detached' });
         // A pending chapter must survive dismissal; it finishes while the directory is visible.
         await page.getByRole('button', { name: '目录', exact: true }).click();
-        const panel = page.getByRole('group', { name: '目录', exact: true });
+        const panel = page.getByRole('dialog', { name: '目录', exact: true });
         await panel.locator('.toc-cached').first().waitFor();
         assert.equal(await panel.locator('.toc-cached').count(), 1);
         release();
@@ -82,7 +82,7 @@ try {
         await page.getByRole('button', { name: '离线缓存', exact: true }).click();
         assert.equal(await toggle.isChecked(), false); assert.equal(await count.inputValue(), '5');
         assert.ok(await dialog.evaluate(el => {
-          const b = el.getBoundingClientRect(), header = el.querySelector('.source-modal-header').getBoundingClientRect();
+          const b = el.getBoundingClientRect(), header = el.querySelector('.sheet-header').getBoundingClientRect();
           return b.width <= innerWidth && b.bottom <= innerHeight + 1 && header.top >= 0 && document.documentElement.scrollWidth <= innerWidth;
         }), 'tools keep their header visible and fit the viewport');
         await page.mouse.click(2, 2); await dialog.waitFor({ state: 'detached' });

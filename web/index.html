@@ -22,7 +22,7 @@
       covered by the same rule: nothing here reaches the network.
     -->
     <meta name="color-scheme" content="light dark" />
-    <meta name="theme-color" content="#fbfaf7" />
+    <meta name="theme-color" content="#fdf9f6" />
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" type="image/svg+xml" href="./icons/reader.svg" />
     <link rel="alternate icon" type="image/png" href="./icons/icon-192.png" />
@@ -87,9 +87,13 @@
       body {
         margin: 0;
         height: 100%;
-        background: var(--reader-browser-paper, var(--reader-paper, #fbfaf7));
+        background: #fdf9f6;
       }
-      .app-startup { position: fixed; inset: 0; display: grid; place-items: center; background: var(--reader-browser-paper, var(--reader-paper, #fbfaf7)); z-index: 9999; }
+      .app-startup { position: fixed; inset: 0; display: grid; place-items: center; background: var(--reader-browser-paper, var(--reader-paper, #fdf9f6)); z-index: 9999; }
+      /* 暖陶 is the default theme; its dark half until the stored choice is applied. */
+      @media (prefers-color-scheme: dark) {
+        html, body, .app-startup { background: #1f1713; }
+      }
       .app-startup img { width: 96px; height: 96px; }
       .app-startup-loading { position: absolute; top: calc(50% + 64px); color: CanvasText; display: flex; align-items: center; gap: 8px; font: 14px sans-serif; opacity: 0; animation: startup-reveal 1ms 100ms forwards; }
       .app-startup-loading::before { content: ''; width: 14px; height: 14px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: startup-spin 700ms linear infinite; }

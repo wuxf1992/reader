@@ -7,11 +7,14 @@ const base = 'http://127.0.0.1:' + server.server.address().port;
 const browser = await chromium.launch({ headless: true, ...(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {}) });
 try {
   const page = await browser.newPage({ viewport: { width: 1366, height: 768 } });
+  await page.route('https://wuxf.top/**', route => route.abort());
   await page.goto(base);
+  await page.getByText('更换服务地址', { exact: true }).click();
+  await page.locator('input[type=url]').fill(base);
   await page.locator('input[autocomplete=username]').fill('review');
   await page.locator('input[type=password]').fill('password12');
   await page.locator('button[type=submit]').click();
-  await page.locator('.shelf-screen').waitFor();
+  await page.locator('.app-shell').waitFor();
   for (const width of [1366, 390]) {
     await page.setViewportSize({width,height:768});
     await page.goto(base + '/#/shelf');

@@ -26,3 +26,31 @@ it('uses scoped cached books when offline and applies sorting and search', async
 it('does not mask account authorization failures with cached books', async () => {
   await expect(load(runtime(new ApiError('unauthorized', 'expired')))).rejects.toMatchObject({ kind: 'unauthorized' });
 });
+it('passes combined filters without changing the per-account recent sort', async () => {
+  const value = runtime();
+  const options = shelfQuery(value, 2, 'recent', '甲', { status: 'reading', series: '系列', tag: '标签' });
+  await (options.queryFn as Function)({ signal: new AbortController().signal });
+  expect(value.api.listBooks).toHaveBeenCalledWith(expect.objectContaining({ page: 2, sort: 'recent', search: '甲', status: 'reading', series: '系列', tag: '标签' }), expect.anything());
+  expect(options.queryKey).toContain('one');
+});
+it('applies reading status, series and tags to the offline shelf and returns an empty matching page', async () => {
+  const value = runtime(new ApiError('offline', 'offline'));
+  value.offline.books = () => [
+    { ...books[0], readingState: 'reading', series: '系列', tags: ['标签'] },
+    { ...books[1], readingState: 'want', series: '其他', tags: [] },
+  ] as Book[];
+  const loadFiltered = async (status: 'reading' | 'finished') => {
+    const options = shelfQuery(value, 1, 'recent', '', { status, series: '系列', tag: '标签' });
+    return (options.queryFn as Function)({ signal: new AbortController().signal });
+  };
+  expect((await loadFiltered('reading')).items.map((book: Book) => book.id)).toEqual(['a']);
+  expect(await loadFiltered('finished')).toMatchObject({ items: [], total: 0 });
+});
+it('does not expose a cached shelf when the account changes during the request', async () => {
+  const value = runtime();
+  let user = 'one';
+  value.api.currentSession = () => ({ user: { id: user } }) as any;
+  value.api.listBooks = vi.fn(async () => { user = 'two'; throw new ApiError('offline', 'offline'); });
+  await expect(load(value)).rejects.toMatchObject({ kind: 'offline' });
+  expect(value.offline.replaceBooks).not.toHaveBeenCalled();
+});

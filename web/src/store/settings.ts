@@ -2,6 +2,7 @@ import { PALETTES, clampBrightness, type ThemeMode } from '../render/theme.ts';
 import type { KeyValueStore } from '../core/platform.ts';
 import type { ViewSettings } from '../ui/reader-view.ts';
 import { CHINESE_VARIANTS } from '../render/chinese.ts';
+import { validReaderPaper, type ReaderPaper } from '../shared/theme/theme.ts';
 
 /**
  * Reader preferences, persisted per device.
@@ -61,6 +62,13 @@ export interface AppSettings extends ViewSettings {
   autoCacheChapters: number;
   /** Only meaningful for fixed-layout books. */
   comicDirection: 'ltr' | 'rtl';
+  /**
+   * The page's own colours (阅读纸色): 白纸, 暖黄, 浅绿, 灰调, 夜间, or `theme` for the
+   * reading theme's. Per device, like the font size; the chrome keeps its theme.
+   */
+  paper: ReaderPaper;
+  /** A light paper gives way to the theme's dark values while the app is dark. */
+  paperFollowsDark: boolean;
   /** Read-aloud preferences. The voice itself is per device, like the rest. */
   ttsRate: number;
   ttsPitch: number;
@@ -126,6 +134,8 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   autoCache: true,
   autoCacheChapters: 3,
   comicDirection: 'ltr',
+  paper: 'theme',
+  paperFollowsDark: true,
   ttsRate: 1,
   ttsPitch: 1,
   ttsVolume: 1,
@@ -191,6 +201,17 @@ export class SettingsStore {
          * `title` and `author` are untouched: they still mean what they meant.
          */
         if (this.settings.shelfSort === ('updated' as string)) this.settings.shelfSort = 'added';
+        /*
+         * The reading paper is the reader's old page theme coming back as its own
+         * setting: a device that had chosen sepia, green or dark before V3 gets the
+         * matching paper the first time, instead of silently losing it.
+         */
+        if (parsed.paper === undefined) {
+          this.settings.paper = typeof parsed.theme === 'string' && Object.hasOwn(PALETTES, parsed.theme) ? `local-${this.settings.theme}` : 'theme';
+          if (this.settings.paper !== 'theme') this.settings.paperFollowsDark = false;
+        }
+        this.settings.paper = validReaderPaper(this.settings.paper);
+        if (typeof this.settings.paperFollowsDark !== 'boolean') this.settings.paperFollowsDark = true;
         if (!['recent', 'added', 'title', 'author'].includes(this.settings.shelfSort)) {
           this.settings.shelfSort = DEFAULT_APP_SETTINGS.shelfSort;
         }
@@ -236,5 +257,5 @@ function normalizePageInsets(value: AppSettings['pageInsets'] | undefined): AppS
 export function withThemeMemory(settings: AppSettings, patch: Partial<AppSettings>): Partial<AppSettings> {
   if (!patch.theme) return patch;
   const memoryKey = (theme: ThemeMode) => PALETTES[theme].scheme === 'dark' ? 'lastNightTheme' : 'lastDayTheme';
-  return { [memoryKey(settings.theme)]: settings.theme, ...patch, [memoryKey(patch.theme)]: patch.theme };
+  return { [memoryKey(settings.theme)]: settings.theme, paper: `local-${patch.theme}`, paperFollowsDark: false, ...patch, [memoryKey(patch.theme)]: patch.theme };
 }

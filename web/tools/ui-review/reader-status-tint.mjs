@@ -51,7 +51,7 @@ try {
         await page.locator('input[autocomplete=username]').fill('review');
         await page.locator('input[type=password]').fill('password12');
         await page.locator('button[type=submit]').click();
-        await page.locator('.shelf-screen').waitFor();
+        await page.locator('.app-shell').waitFor();
         await page.evaluate(() => document.querySelector('meta[name="theme-color"]')?.remove());
         if (width === 390) await page.addStyleTag({ content: ':root { --safe-top: 47px; --safe-bottom: 34px; }' });
         for (const theme of ['green', 'dark', 'kraft-day', 'parchment-day']) {
@@ -59,11 +59,11 @@ try {
           await page.evaluate(book => { location.hash = '#/book/' + book; }, BOOK_ID);
           await page.locator('book-content .book-flow p').first().waitFor();
           for (const brightness of [1, 0.75, 0.5]) {
-            await page.getByRole('button', { name: '界面', exact: true }).click();
+            await page.getByRole('button', { name: '外观', exact: true }).click();
             await page.getByRole('slider', { name: '页面亮度', exact: true }).evaluate((slider, value) => {
               slider.value = String(value); slider.dispatchEvent(new Event('input', { bubbles: true }));
             }, brightness);
-            await page.locator('.panel').getByRole('button', { name: '关闭', exact: true }).click();
+            await page.locator('.sheet').getByRole('button', { name: '关闭', exact: true }).click();
             for (const state of ['visible', 'hidden']) {
               if (state === 'hidden') await toggleChrome(page, width, state, theme === 'green' && brightness === 1);
               await page.waitForFunction(state => document.documentElement.dataset.readerChrome === state && document.querySelector('.reader-screen')?.dataset.chrome === state, state);
@@ -108,7 +108,7 @@ try {
             await toggleChrome(page, width, 'visible', theme === 'green' && brightness === 1);
           }
           await page.evaluate(() => { location.hash = '#/shelf'; });
-          await page.locator('.shelf-screen').waitFor();
+          await page.locator('.app-shell').waitFor();
           await page.waitForFunction(() => document.documentElement.dataset.readerChrome === undefined);
           assert.equal(await page.evaluate(() => document.documentElement.dataset.readerChrome), undefined);
         }

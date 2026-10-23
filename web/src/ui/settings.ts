@@ -58,18 +58,21 @@ export function applyTheme(root: HTMLElement, theme: ThemeMode): void {
   } catch { /* The theme still works when browser storage is unavailable. */ }
 }
 
-export function applyBrowserTheme(root: HTMLElement, theme: ThemeMode): void {
+export function applyBrowserTheme(root: HTMLElement, theme: ThemeMode, surface: HTMLElement = root): void {
   const palette = PALETTES[theme];
   const brightness = clampBrightness(Number(root.dataset.readerBrightness ?? 1));
-  const background = root.dataset.readerChrome === 'visible' ? palette.surface : palette.background;
+  const property = root.dataset.readerChrome === 'visible' ? '--reader-surface' : '--reader-paper';
+  const sampled = surface === root ? '' : getComputedStyle(surface).getPropertyValue(property).trim();
+  const background = /^#[\da-f]{6}$/i.test(sampled) ? sampled : root.dataset.readerChrome === 'visible' ? palette.surface : palette.background;
   let channels = background.slice(1).match(/../g)!.map(channel => Math.round(parseInt(channel, 16) * brightness));
   if (root.dataset.readerScrim === 'visible') {
     const style = getComputedStyle(root);
+    const nativeScrim = surface === root ? null : getComputedStyle(surface).getPropertyValue('--color-scrim').trim().match(/^rgba\(\s*(\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)$/);
     const storedColor = style.getPropertyValue('--reader-scrim-color').trim();
     const color = /^#[\da-f]{6}$/i.test(storedColor) ? storedColor : '#000000';
-    const storedOpacity = Number.parseFloat(style.getPropertyValue('--reader-scrim-opacity'));
+    const storedOpacity = nativeScrim ? Number(nativeScrim[4]) : Number.parseFloat(style.getPropertyValue('--reader-scrim-opacity'));
     const opacity = Number.isFinite(storedOpacity) ? Math.max(0, Math.min(1, storedOpacity)) : 0.42;
-    const overlay = color.slice(1).match(/../g)!.map(channel => parseInt(channel, 16));
+    const overlay = nativeScrim ? nativeScrim.slice(1, 4).map(Number) : color.slice(1).match(/../g)!.map(channel => parseInt(channel, 16));
     channels = channels.map((channel, index) => Math.round(channel * (1 - opacity) + overlay[index]! * opacity));
   }
   const color = '#' + channels.map(channel => channel.toString(16).padStart(2, '0')).join('');

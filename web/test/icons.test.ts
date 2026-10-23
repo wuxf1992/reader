@@ -391,6 +391,7 @@ describe('the stylesheet', () => {
       'toolkit.tsx',
       'reader-chrome.tsx',
       'shelf-settings.tsx',
+      'sheet.tsx',
       'dialog.tsx',
       'pager.tsx',
     ];

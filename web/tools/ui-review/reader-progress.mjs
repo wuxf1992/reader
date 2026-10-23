@@ -28,12 +28,12 @@ try {
         await page.locator('input[autocomplete=username]').fill('review');
         await page.locator('input[type=password]').fill('password12');
         await page.locator('button[type=submit]').click();
-        await page.locator('.book-card:not(.skeleton)').first().waitFor();
+        await page.locator('.app-shell').waitFor();
         await page.evaluate(book => { location.hash = '#/book/' + book; }, BOOK_ID);
         await page.locator('.book-host').waitFor();
         await page.getByRole('button', { name: '设置', exact: true }).click();
         await page.getByRole('group', { name: '翻页方式', exact: true }).getByRole('button', { name: '翻页', exact: true }).click();
-        await page.locator('.panel').getByRole('button', { name: '关闭', exact: true }).click();
+        await page.locator('.sheet').getByRole('button', { name: '关闭', exact: true }).click();
         async function seek(pageNumber) {
           await page.locator('.progress-scrubber').evaluate((slider, value) => {
             slider.value = String(value); slider.dispatchEvent(new Event('input', { bubbles: true }));

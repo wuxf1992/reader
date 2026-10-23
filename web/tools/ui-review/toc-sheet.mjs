@@ -46,14 +46,14 @@ try {
         await page.locator('input[autocomplete=username]').fill('review');
         await page.locator('input[type=password]').fill('password12');
         await page.locator('button[type=submit]').click();
-        await page.locator('.book-card:not(.skeleton)').first().waitFor();
+        await page.locator('.app-shell').waitFor();
         await page.evaluate(id => { location.hash = '#/book/' + id; }, BOOK_ID);
         await page.getByRole('button', { name: '目录', exact: true }).waitFor();
         await page.waitForFunction(() => document.querySelector('book-content')?.shadowRoot?.textContent.includes('目录动画测试正文'));
         await page.evaluate(() => {
           window.tocFrames = [];
           new MutationObserver(() => {
-            const panel = document.querySelector('.panel[data-placement="start"]');
+            const panel = document.querySelector('.sheet[aria-label="目录"]');
             if (!panel || window.tocFrames.length) return;
             const sample = () => {
               const rect = panel.getBoundingClientRect(), css = getComputedStyle(panel);
@@ -64,7 +64,7 @@ try {
             sample();
           }).observe(document.body, { childList: true, subtree: true });
         });
-        const panel = page.getByRole('group', { name: '目录', exact: true });
+        const panel = page.getByRole('dialog', { name: '目录', exact: true });
         for (const chapter of [1, 42]) {
           await page.evaluate(() => { window.tocFrames = []; });
           await page.getByRole('button', { name: '目录', exact: true }).click();
@@ -93,7 +93,7 @@ try {
 
           if (chapter === 42) {
             const centred = await current.evaluate(el => {
-              const body = el.closest('.panel-body'), a = el.getBoundingClientRect(), b = body.getBoundingClientRect();
+              const body = el.closest('.sheet-body'), a = el.getBoundingClientRect(), b = body.getBoundingClientRect();
               return Math.abs(a.top + el.clientHeight / 2 - b.top - body.clientHeight / 2) < 2;
             });
             assert.ok(centred, 'the later chapter must be centred within the list');

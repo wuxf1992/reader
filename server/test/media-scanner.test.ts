@@ -232,3 +232,20 @@ test('explicit cancellation preserves published resources and cannot cancel a la
   assert.equal(scanner.job(admin,next.id).state,'running');
   scanner.cancel(admin,next.id);await scanner.wait(lib.id);
 });
+
+test('upgrades an existing scan history with nullable totals and can reopen it', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'scan-upgrade-')), db = new Db(':memory:');
+  try {
+    const libraries = new MediaLibraries(db), actor = { id: 'admin', role: 'admin' } as const;
+    const library = await libraries.create(actor, { name: 'Old library', kind: 'video', root, access: 'all' });
+    db.run(`CREATE TABLE media_scan_jobs (id TEXT PRIMARY KEY, library_id TEXT NOT NULL REFERENCES media_libraries(id) ON DELETE CASCADE,
+      state TEXT NOT NULL, inspected INTEGER NOT NULL DEFAULT 0, error TEXT, started_at INTEGER NOT NULL, finished_at INTEGER)`);
+    db.run("INSERT INTO media_scan_jobs(id,library_id,state,inspected,started_at,finished_at) VALUES('old',?,'complete',12,1,2)", library.id);
+    const scanner = new MediaScanner(db, libraries);
+    assert.deepEqual({ total: scanner.job(actor, 'old').total, inspected: scanner.job(actor, 'old').inspected }, { total: null, inspected: 12 });
+    await scanner.close();
+    const reopened = new MediaScanner(db, libraries);
+    assert.equal(reopened.job(actor, 'old').state, 'complete');
+    await reopened.close();
+  } finally { db.close(); await rm(root, { recursive: true, force: true }); }
+});

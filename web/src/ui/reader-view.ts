@@ -1,5 +1,4 @@
 import { clampBrightness, type ThemeMode } from '../render/theme.ts';
-import { applyTheme } from './settings.ts';
 import type { BookDoc, Section, StagedBook } from '../formats/types.ts';
 import type { BookContent } from '../net/api.ts';
 import type { NativePageHost } from './native-page.ts';
@@ -429,7 +428,6 @@ export class ReaderView {
     this.settings.brightness = clampBrightness(this.settings.brightness);
     if (previous.mode !== this.settings.mode) this.textPageAnchor = null;
     this.invalidateTextPages();
-    applyTheme(document.documentElement, this.settings.theme);
     this.syncPaginationLayout();
     this.container.style.setProperty('--reader-font-scale', String(this.settings.fontScale));
     // `inherit` is what keeps the author's line-height; only an explicit user

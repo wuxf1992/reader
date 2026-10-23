@@ -22,12 +22,12 @@ try {
       await page.locator('input[autocomplete=username]').fill('review');
       await page.locator('input[type=password]').fill('password12');
       await page.locator('button[type=submit]').click();
-      await page.locator('.book-card:not(.skeleton)').first().waitFor();
+      await page.locator('.app-shell').waitFor();
       await page.evaluate(book => { location.hash = '#/book/' + book; }, BOOK_ID);
       await page.locator('.book-host').waitFor();
 
-      const openSettings = () => page.getByRole('button', { name: '界面', exact: true }).click();
-      const closeSettings = () => page.locator('.panel').getByRole('button', { name: '关闭', exact: true }).click();
+      const openSettings = () => page.getByRole('button', { name: '外观', exact: true }).click();
+      const closeSettings = () => page.locator('.sheet').getByRole('button', { name: '关闭', exact: true }).click();
       async function brightness(value) {
         await openSettings();
         const slider = page.getByRole('slider', { name: '页面亮度', exact: true });
@@ -35,7 +35,7 @@ try {
         await slider.evaluate((node, value) => { node.value = String(value); node.dispatchEvent(new Event('input', { bubbles: true })); }, value);
         assert.equal(await slider.getAttribute('aria-valuetext'), `${value * 100}%`);
         await closeSettings();
-        await page.locator('.panel').waitFor({ state: 'detached' });
+        await page.locator('.sheet').waitFor({ state: 'detached' });
       }
       async function samples() {
         const points = await page.locator('.book-host').evaluate(host => {
