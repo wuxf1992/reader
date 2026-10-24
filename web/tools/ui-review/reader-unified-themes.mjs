@@ -37,6 +37,7 @@ try {
         await page.locator('input[type=password]').fill('password12');
         await page.locator('button[type=submit]').click();
         await page.locator('.app-shell').waitFor();
+        await page.waitForLoadState('networkidle');
         await page.evaluate(async () => {
           await window.readerApp.platform.kv.set('reader.settings.v1', JSON.stringify({ theme: 'kraft-day', paper: 'local-kraft-day', paperFollowsDark: false,
             lastDayTheme: 'kraft-day', lastNightTheme: 'wechat-night', brightness: .65, fontScale: 1.15, pageInsets: { bottom: 18 } }));
