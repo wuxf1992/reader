@@ -1,9 +1,8 @@
 import { BusyIndicator } from './busy.tsx';
-import { PALETTES, MIN_BRIGHTNESS } from '../render/theme.ts';
-import { ThemePicker } from './theme-picker.tsx';
+import { MIN_BRIGHTNESS } from '../render/theme.ts';
 import { CHINESE_VARIANTS } from '../render/chinese.ts';
 import type { CSSProperties } from 'react';
-import { localPaper, paperColors, paperIds, readerPapers, themes, type AppThemeId, type ModePreference, type ReaderPaper, type ReaderSurface, type ResolvedTheme, type ThemeMode, type ThemePreference } from '../shared/theme/theme.ts';
+import { readingThemeOptions, resolveReadingTheme, themeTokens, type AppThemeId, type ReaderPaper, type ReaderSurface, type ResolvedTheme, type ThemeMode, type ThemePreference } from '../shared/theme/theme.ts';
 import type { ChapterQuality } from '../api/sources.ts';
 import { Sheet } from './sheet.tsx';
 import type { SourcePage } from '../api/sources.ts';
@@ -31,7 +30,7 @@ import { DEFAULT_APP_SETTINGS, READOUT_FIELDS, READOUT_OPTIONS, type ReadoutMode
 import { ReaderIndicators } from './reader-indicators.tsx';
 import type { SpeechEngineKind } from '../render/speech.ts';
 import { type ReactNode, type JSX, useLayoutEffect, useRef, useState } from 'react';
-import { Button, IconButton, SectionTitle, SwitchRow } from './toolkit.tsx';
+import { Button, IconButton, SectionTitle } from './toolkit.tsx';
 import { Icon, type IconName } from './icon.tsx';
 
 /**
@@ -232,24 +231,10 @@ export function ReaderChrome({ state, stage, handlers, tools }: ReaderChromeProp
   const pageLabel = '本章第 ' + currentPage + '/' + totalPages + ' 页';
   const tab = state.settingsTab ?? 'behavior';
   const theme = handlers.theme();
-  const dark = localPaper(state.paper ?? 'theme') ? PALETTES[state.theme].scheme === 'dark' : theme.surface.mode === 'dark';
-  const paper = state.paper ?? 'theme';
-  const lightPaper = paper !== 'theme' && !paperColors(paper).dark;
-  // Day/night is about what the page looks like now, paper included.
+  const dark = theme.surface.mode === 'dark';
   const toggleNight = () => {
-    if (localPaper(paper)) {
-      const next = PALETTES[state.theme].scheme === 'dark' ? state.lastDayTheme ?? 'light' : state.lastNightTheme ?? 'dark';
-      handlers.onSetting({ theme: next, paper: `local-${next}`, paperFollowsDark: false });
-      return;
-    }
-    if (dark) {
-      if (paper !== 'theme' && paperColors(paper).dark) handlers.onSetting({ paper: 'theme' });
-      if (theme.app.mode === 'dark') handlers.onTheme({ mode: 'light', theme: theme.app.theme });
-    } else if (lightPaper && !(state.paperFollowsDark ?? true)) {
-      handlers.onSetting({ paper: 'night' });
-    } else {
-      handlers.onTheme({ mode: 'dark', theme: theme.app.theme });
-    }
+    const next = dark ? state.lastDayTheme ?? 'light' : state.lastNightTheme ?? 'dark';
+    handlers.onTheme({ reading: `local-${next}` });
   };
   return (
     <>
@@ -270,7 +255,7 @@ export function ReaderChrome({ state, stage, handlers, tools }: ReaderChromeProp
       <StageHost stage={stage} />
       <ReaderIndicators state={state} />
       <div className="reader-rail" role="toolbar" aria-label="阅读快捷操作">
-        {/* Day/night picks the mode explicitly (leaving 跟随系统), keeping the theme on screen. */}
+        {/* Switch reading presets without changing the app appearance. */}
         <RailButton icon={dark ? 'sun' : 'moon'}
           label={dark ? '日间' : '夜间'}
           onClick={toggleNight} />
@@ -408,14 +393,8 @@ function SettingsBody({ state, handlers }: { state: ChromeState; handlers: Chrom
       {/* Most-used first. Size, spacing, theme and brightness are what a reader opens
           this sheet to change, so they fill its first screen; the rows that are set once
           and left alone are folded underneath instead of pushing these below the fold. */}
-      <FoldSection state={state} handlers={handlers} section="theme" title="阅读配色">
-      <ThemePicker value={state.theme} lastDayTheme={state.lastDayTheme ?? 'light'} lastNightTheme={state.lastNightTheme ?? 'dark'}
-        onChange={theme => handlers.onSetting({ theme, paper: `local-${theme}`, paperFollowsDark: false })} />
-      <PaperRow state={state} surface={handlers.theme().surface} onChange={(paper) => handlers.onSetting({ paper })} />
-      {state.paper !== undefined && state.paper !== 'theme' && !paperColors(state.paper).dark ? (
-        <SwitchRow label="跟随系统深色模式" hint="应用为深色时，纸色换成主题的深色"
-          checked={state.paperFollowsDark ?? true} onChange={(value) => handlers.onSetting({ paperFollowsDark: value })} />
-      ) : null}
+      <FoldSection state={state} handlers={handlers} section="theme" title="主题">
+        <ReadingThemeRow label="主题" state={handlers.theme()} onChange={reading => handlers.onTheme({ reading })} />
       </FoldSection>
       {state.layout !== 'fixed' ? <>
       <SliderRow
@@ -437,20 +416,6 @@ function SettingsBody({ state, handlers }: { state: ChromeState; handlers: Chrom
         onChange={(value) => handlers.onSetting({ lineHeight: value })}
       />
       </> : null}
-      <ReadingThemeRow
-        label="主题"
-        state={handlers.theme()}
-        onChange={(reading) => handlers.onTheme({ reading })}
-      />
-      <SegmentedRow
-        label="明暗"
-        options={MODE_OPTIONS}
-        value={handlers.theme().preference.mode}
-        onChange={(value) => {
-          const mode = value as ModePreference;
-          handlers.onTheme(mode === 'system' ? { mode } : { mode, theme: handlers.theme().app.theme });
-        }}
-      />
       <SliderRow
         label="页面亮度"
         value={state.brightness}
@@ -565,8 +530,8 @@ function SettingsBody({ state, handlers }: { state: ChromeState; handlers: Chrom
         onChange={(value) => handlers.onSetting({ mode: value as AppSettings['mode'] })}
       />
       : null}
-      <Button onClick={() => { handlers.onSetting({ pageAnimation: 'none', mode: 'paged', paper: 'theme' }); handlers.onTheme({ reading: 'gray', mode: 'light', theme: handlers.theme().app.theme }); }}>应用电纸书预设</Button>
-      <p className="muted">黑白灰浅色、分页、无翻页动画；仅保存到当前设备，可继续单独调整。屏幕刷新由设备控制。</p>
+      <Button onClick={() => { handlers.onSetting({ pageAnimation: 'none', mode: 'paged', paper: 'theme' }); handlers.onTheme({ reading: 'paper-white' }); }}>应用电纸书预设</Button>
+      <p className="muted">白纸主题、分页、无翻页动画；仅保存到当前设备，可继续单独调整。屏幕刷新由设备控制。</p>
       <SegmentedRow
         label="点击区域"
         options={[
@@ -821,57 +786,15 @@ export interface ReaderThemeState {
   surface: ReaderSurface;
 }
 
-/**
- * The reading paper (阅读纸色), drawn in each paper's own colours: 跟随主题 is the
- * reading theme's page, then 白纸, 暖黄, 浅绿, 灰调, 夜间. A reader setting, per device.
- */
-function PaperRow({ state, surface, onChange }: { state: ChromeState; surface: ReaderSurface; onChange(paper: ReaderPaper): void }): JSX.Element {
-  const current = state.paper ?? 'theme';
-  const themed = themes[surface.theme][surface.paper ? (paperColors(surface.paper).dark ? 'dark' : 'light') : surface.mode];
-  const options: Array<{ value: ReaderPaper; label: string; bg: string; ink: string; line: string }> = [
-    { value: 'theme', label: '跟随主题', bg: themed.bg, ink: themed.ink, line: themed.line },
-    ...paperIds.map((id) => ({ value: id, label: readerPapers[id].name, bg: readerPapers[id].bg, ink: readerPapers[id].ink, line: readerPapers[id].line })),
-  ];
-  return (
-    <div className="field is-stacked">
-      <label>纸色</label>
-      <div className="theme-swatches paper-swatches" role="group" aria-label="纸色">
-        {options.map((option) => (
-          <button type="button" key={option.value} className="theme-swatch" aria-pressed={current === option.value} onClick={() => onChange(option.value)}>
-            <span className="theme-swatch-chip" aria-hidden="true"
-              style={{ background: option.bg, color: option.ink, '--chip-line': option.line } as CSSProperties}>Aa</span>
-            <span className="theme-swatch-label">{option.label}</span>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-const MODE_OPTIONS = [
-  { value: 'system', label: '跟随系统' },
-  { value: 'light', label: '浅色' },
-  { value: 'dark', label: '深色' },
-];
-
-/**
- * The reading theme, drawn as swatches in each theme's own paper and ink for the
- * current light/dark mode, so the choice is seen, not decoded from a name: 跟随应用 wears the app
- * theme, 黑白灰 is the reading-only theme. The app theme itself is chosen in 外观与主题.
- */
+/** Complete reading presets share the V3 semantic tokens. */
 function ReadingThemeRow({ label, state, onChange }: { label: string; state: ReaderThemeState; onChange(reading: ThemePreference['reading']): void }): JSX.Element {
-  const options = [
-    { value: 'app' as const, label: '跟随应用', id: state.app.theme },
-    { value: 'gray' as const, label: themes.gray.name, id: 'gray' as const },
-  ];
   return (
     <div className="field is-stacked">
-      <label>{label}</label>
       <div className="theme-swatches" role="group" aria-label={label}>
-        {options.map((option) => {
-          const current = themes[option.id][state.reading.mode];
+        {readingThemeOptions.map((option) => {
+          const current = themeTokens(resolveReadingTheme({ ...state.preference, reading: option.value }, state.app.mode === 'dark'));
           return (
-            <button type="button" key={option.value} className="theme-swatch" aria-pressed={state.preference.reading === option.value} onClick={() => onChange(option.value)}>
+            <button type="button" key={option.value} className="theme-swatch" data-reading-theme-option={option.value} aria-label={option.label} aria-pressed={state.preference.reading === option.value} onClick={() => onChange(option.value)}>
               <span className="theme-swatch-chip" aria-hidden="true"
                 style={{ background: current.bg, color: current.ink, '--chip-line': current.line } as CSSProperties}>Aa</span>
               <span className="theme-swatch-label">{option.label}</span>

@@ -18,12 +18,12 @@ import { render } from '../src/shared/ui/render-root.ts';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createElement as h } from 'react';
 import { ReaderChrome, type ChromeState, type ChromeHandlers, type ReaderThemeState } from '../src/ui/reader-chrome.tsx';
-import { defaultThemePreference, type ThemePreference } from '../src/shared/theme/theme.ts';
+import { defaultThemePreference, resolveReadingTheme, readingThemeOptions, type ThemePreference } from '../src/shared/theme/theme.ts';
 
 const themeState = (preference: Partial<ThemePreference> = {}, dark = false): ReaderThemeState => {
   const merged = { ...defaultThemePreference, ...preference };
   const mode: 'dark' | 'light' = dark ? 'dark' : 'light';
-  const reading = { theme: merged.reading === 'gray' ? 'gray' as const : 'warm' as const, mode };
+  const reading = resolveReadingTheme({ ...merged, mode }, dark);
   return { preference: merged, app: { theme: 'warm', mode }, reading, surface: { ...reading, paper: null } };
 };
 
@@ -221,28 +221,19 @@ describe('ReaderChrome', () => {
     }
   });
 
-  it.each(Object.keys(PALETTES) as ThemeMode[])('previews %s with a Chinese name in its mode', theme => {
-    const callbacks = { ...handlers(), onSetting: vi.fn() };
-    const stage = document.createElement('div');
+  it.each(Object.keys(PALETTES) as ThemeMode[])('selects %s as one complete reading theme', theme => {
+    const callbacks = { ...handlers(themeState({ reading: `local-${theme}` })), onTheme: vi.fn() };
     render(h(ReaderChrome, { state: chromeState({ theme, settingsOpen: true, settingsTab: 'appearance',
-      lastDayTheme: 'rose-pine-dawn-day', lastNightTheme: 'nord-night', paper: `local-${theme}` }), stage, handlers: callbacks }), container);
+      lastDayTheme: 'rose-pine-dawn-day', lastNightTheme: 'nord-night' }), stage: document.createElement('div'), handlers: callbacks }), container);
     const palette = PALETTES[theme];
-    const group = container.querySelector(`[aria-label="${palette.scheme === 'light' ? '日间主题' : '夜间主题'}"]`)!;
-    const selected = group.querySelector<HTMLButtonElement>(`[aria-label="${palette.label}"]`)!;
+    const selected = container.querySelector<HTMLButtonElement>(`[aria-label="主题"] [aria-label="${palette.label}"]`)!;
     expect(selected.getAttribute('aria-pressed')).toBe('true');
-    expect(selected.dataset.themeOption).toBe(theme);
-    expect(selected.textContent).toContain(palette.name);
-    expect(group.querySelectorAll('button')).toHaveLength(palette.scheme === 'light' ? 12 : 9);
     selected.click();
-    expect(callbacks.onSetting).toHaveBeenLastCalledWith({ theme, paper: `local-${theme}`, paperFollowsDark: false });
-    const opposite = palette.scheme === 'light' ? 'nord-night' : 'rose-pine-dawn-day';
-    const modes = container.querySelectorAll<HTMLButtonElement>('.theme-modes button');
-    modes[palette.scheme === 'light' ? 1 : 0]!.click();
-    expect(callbacks.onSetting).toHaveBeenLastCalledWith({ theme: opposite, paper: `local-${opposite}`, paperFollowsDark: false });
+    expect(callbacks.onTheme).toHaveBeenLastCalledWith({ reading: `local-${theme}` });
     const rail = container.querySelector<HTMLButtonElement>('.reader-rail .rail-button')!;
     expect(rail.getAttribute('aria-label')).toBe(palette.scheme === 'light' ? '夜间' : '日间');
     rail.click();
-    expect(callbacks.onSetting).toHaveBeenLastCalledWith({ theme: opposite, paper: `local-${opposite}`, paperFollowsDark: false });
+    expect(callbacks.onTheme).toHaveBeenLastCalledWith({ reading: `local-${palette.scheme === 'light' ? 'nord-night' : 'rose-pine-dawn-day'}` });
   });
 
   it('offers refresh only in the chapter publication contents panel and disables it while busy', () => {
@@ -299,7 +290,7 @@ describe('ReaderChrome', () => {
     );
     // Size, spacing, theme and brightness fill the first screen; the readouts that
     // used to come first are behind a fold, closed by default.
-    expect(order).toEqual(['fold:阅读配色', '字号', '行距', '主题', '明暗', '页面亮度', 'fold:更多排版', 'fold:页眉页脚']);
+    expect(order).toEqual(['fold:主题', '字号', '行距', '页面亮度', 'fold:更多排版', 'fold:页眉页脚']);
     for (const fold of body.querySelectorAll<HTMLDetailsElement>('details.panel-fold')) expect(fold.open).toBe(true);
     expect(body.querySelector('details.panel-fold input[aria-label="页边距"]')).not.toBeNull();
     expect(body.querySelector('details.panel-fold select[aria-label="顶部左侧"]')).not.toBeNull();
@@ -308,58 +299,28 @@ describe('ReaderChrome', () => {
   it('offers the reading themes as swatches, follow-app or 黑白灰, and marks the current one', () => {
     const tree = paint({ settingsOpen: true, settingsTab: 'appearance' });
     const swatches = [...tree.querySelectorAll<HTMLButtonElement>('[aria-label="主题"] .theme-swatch')];
-    expect(swatches.map((button) => button.querySelector('.theme-swatch-label')?.textContent)).toEqual(['跟随应用', '黑白灰']);
+    expect(swatches.map((button) => button.querySelector('.theme-swatch-label')?.textContent)).toEqual(readingThemeOptions.map(option => option.label));
     expect(swatches.filter((button) => button.getAttribute('aria-pressed') === 'true').map((button) => button.querySelector('.theme-swatch-label')?.textContent)).toEqual(['跟随应用']);
     // Each chip is drawn in that theme's own background (light mode here): 黑白灰 #F5F5F5.
     const chip = swatches[1]!.querySelector<HTMLElement>('.theme-swatch-chip')!;
     expect(chip.style.background).toContain('rgb(245, 245, 245)');
-    const modes = [...tree.querySelectorAll<HTMLButtonElement>('[aria-label="明暗"] button')];
-    expect(modes.map((button) => button.textContent)).toEqual(['跟随系统', '浅色', '深色']);
-    expect(modes.find((button) => button.getAttribute('aria-pressed') === 'true')?.textContent).toBe('跟随系统');
+    expect(tree.querySelector('[aria-label="明暗"]')).toBeNull();
+    expect(tree.querySelector('[aria-label="纸色"]')).toBeNull();
+    expect(tree.textContent).not.toContain('跟随系统深色模式');
   });
 
-  it('saves reading-theme and day/night choices as theme preference patches', () => {
+  it('changes only the reading theme from the chooser and day/night shortcut', () => {
     const patches: Array<Partial<ThemePreference>> = [];
-    render(h(ReaderChrome, { state: chromeState({ settingsOpen: true, settingsTab: 'appearance' }), stage: document.createElement('div'), handlers: handlers(themeState({}, true), (patch) => patches.push(patch)) }), container);
-    const tree = container;
-    [...tree.querySelectorAll<HTMLButtonElement>('[aria-label="主题"] .theme-swatch')][1]!.click();
-    [...tree.querySelectorAll<HTMLButtonElement>('[aria-label="明暗"] button')][1]!.click();
-    // The rail's day/night button: dark now, so it offers day and leaves follow-system.
-    const rail = tree.querySelector<HTMLButtonElement>('.reader-rail button')!;
-    expect(rail.getAttribute('aria-label')).toBe('日间');
-    rail.click();
-    expect(patches).toEqual([{ reading: 'gray' }, { mode: 'light', theme: 'warm' }, { mode: 'light', theme: 'warm' }]);
-  });
-
-  it('offers the reading papers as a page setting, and the follow-dark switch only for a light paper', () => {
-    const settings: Array<Record<string, unknown>> = [];
-    const paint2 = (state: Partial<ChromeState>) => {
-      const h2 = handlers();
-      (h2 as { onSetting: ChromeHandlers['onSetting'] }).onSetting = (patch) => settings.push(patch);
-      render(h(ReaderChrome, { state: chromeState({ settingsOpen: true, settingsTab: 'appearance', ...state }), stage: document.createElement('div'), handlers: h2 }), container);
-      return container;
-    };
-    let tree = paint2({});
-    const papers = [...tree.querySelectorAll<HTMLButtonElement>('[aria-label="纸色"] .theme-swatch')];
-    expect(papers.map((button) => button.querySelector('.theme-swatch-label')?.textContent)).toEqual(['跟随主题', '白纸', '暖黄', '浅绿', '灰调', '夜间']);
-    expect(papers[0]!.getAttribute('aria-pressed')).toBe('true');
-    // 暖黄 is drawn in its own paper: #F4ECD8.
-    expect(papers[2]!.querySelector<HTMLElement>('.theme-swatch-chip')!.style.background).toContain('rgb(244, 236, 216)');
-    expect(tree.textContent).not.toContain('跟随系统深色模式');
-    papers[2]!.click();
-    expect(settings).toEqual([{ paper: 'warm' }]);
-    tree = paint2({ paper: 'warm' });
-    expect(tree.textContent).toContain('跟随系统深色模式');
-    tree.querySelector<HTMLButtonElement>('.switch')!.click();
-    expect(settings).toEqual([{ paper: 'warm' }, { paperFollowsDark: false }]);
-    tree = paint2({ paper: 'night' });
-    expect(tree.textContent).not.toContain('跟随系统深色模式');
+    render(h(ReaderChrome, { state: chromeState({ settingsOpen: true, settingsTab: 'appearance' }), stage: document.createElement('div'), handlers: handlers(themeState({}, true), patch => patches.push(patch)) }), container);
+    container.querySelector<HTMLButtonElement>('[aria-label="主题"] [aria-label="黑白灰"]')!.click();
+    container.querySelector<HTMLButtonElement>('.reader-rail button')!.click();
+    expect(patches).toEqual([{ reading: 'gray' }, { reading: 'local-light' }]);
   });
 
   it('keeps typography folded away for fixed layouts and offers only the readouts', () => {
     const tree = paint({ settingsOpen: true, settingsTab: 'appearance', layout: 'fixed' });
     const folds = [...tree.querySelectorAll('details.panel-fold .panel-fold-title')].map((element) => element.textContent);
-    expect(folds).toEqual(['阅读配色', '页眉页脚']);
+    expect(folds).toEqual(['主题', '页眉页脚']);
     expect(tree.querySelector('.sheet')?.textContent).not.toContain('字号');
     expect(tree.querySelector('.sheet')?.textContent).toContain('黑白灰');
   });

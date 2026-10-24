@@ -5,7 +5,9 @@ import { act } from 'react';
 import {
   ThemeController, defaultThemePreference, migrateLegacyTheme, readThemePreference, resolveAppTheme,
   resolveReaderSurface, resolveReadingTheme, saveThemePreference, themeSummary,
+  themeTokens, readingThemeOptions, type ReadingTheme,
 } from '../src/shared/theme/theme.ts';
+import { PALETTES } from '../src/render/theme.ts';
 import { MediaThemeSettings } from '../src/features/media/components/theme-settings.tsx';
 
 const root = document.createElement('div');
@@ -87,6 +89,33 @@ describe('reading paper', () => {
     expect(resolveReaderSurface(dark, false, 'warm', false)).toEqual({ theme: 'warm', mode: 'light', paper: 'warm' });
     expect(resolveReaderSurface(light, false, 'night', true)).toEqual({ theme: 'warm', mode: 'dark', paper: 'night' });
     expect(resolveReaderSurface({ ...light, reading: 'gray' }, false, 'green', true)).toEqual({ theme: 'gray', mode: 'light', paper: 'green' });
+  });
+});
+
+describe('unified reading themes', () => {
+  it.each(Object.entries(PALETTES))('%s preserves every saved colour and its own mode', (id, palette) => {
+    const reading = `local-${id}` as ReadingTheme;
+    const preference = { ...defaultThemePreference, reading };
+    const day = resolveReadingTheme(preference, false);
+    expect(resolveReadingTheme(preference, true)).toEqual(day);
+    expect(day.mode).toBe(palette.scheme);
+    expect(themeTokens(day)).toMatchObject({ bg: palette.background, ink: palette.text, surface: palette.surface,
+      muted: palette.muted, line: palette.line, brand: palette.accent, onBrand: palette.onAccent,
+      ch: { read: { fill: palette.accent, text: palette.accent, soft: palette.surface } } });
+    expect(resolveReaderSurface(preference, false, 'night', true)).toEqual({ ...day, paper: null });
+    expect(resolveAppTheme(preference, false)).toEqual({ theme: 'warm', mode: 'light' });
+    saveThemePreference('presets', { reading });
+    expect(readThemePreference('presets').reading).toBe(reading);
+    expect(readingThemeOptions.filter(option => option.value === reading)).toHaveLength(1);
+  });
+
+  it('keeps old paper colours as complete presets and returns to the app theme', () => {
+    const resolved = resolveReadingTheme({ ...defaultThemePreference, reading: 'paper-warm' }, true);
+    expect(resolved.mode).toBe('light');
+    expect(themeTokens(resolved)).toMatchObject({ bg: '#F4ECD8', ink: '#3B3226' });
+    expect(themeTokens(resolveReadingTheme(defaultThemePreference, false)).bg).toBe('#FDF9F6');
+    saveThemePreference('invalid', { reading: 'local-toString' as ReadingTheme });
+    expect(readThemePreference('invalid').reading).toBe('app');
   });
 });
 

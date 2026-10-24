@@ -1,4 +1,3 @@
-import { ThemePicker } from './theme-picker.tsx';
 import { CHINESE_VARIANTS } from '../render/chinese.ts';
 /**
  * The shelf's own settings.
@@ -64,9 +63,6 @@ export function ShelfSettingsSheet({
 }: ShelfSettingsOptions): JSX.Element {
   return (
     <Sheet className="shelf-settings" title="书架设置" onClose={onClose}>
-      <SectionTitle>阅读配色</SectionTitle>
-      <ThemePicker value={settings.theme} lastDayTheme={settings.lastDayTheme} lastNightTheme={settings.lastNightTheme}
-        onChange={theme => onPatch({ theme })} />
       <SectionTitle>正文</SectionTitle>
       <Segmented label="繁简转换（全局）" options={[...CHINESE_VARIANTS]} value={settings.chineseVariant}
         onChange={value => onPatch({ chineseVariant: value })} />

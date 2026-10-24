@@ -1,4 +1,4 @@
-import { localPaper, themeTokens, readThemePreference, resolveAppTheme, resolveReaderSurface, resolveReadingTheme, saveThemePreference, subscribeTheme, systemPrefersDark } from '../shared/theme/theme.ts';
+import { localPaper, readingThemeForPaper, themeTokens, readThemePreference, resolveAppTheme, resolveReaderSurface, resolveReadingTheme, saveThemePreference, subscribeTheme, systemPrefersDark } from '../shared/theme/theme.ts';
 import { applyCorrections, emptyOverrides, type ReadingOverrides } from './reading-overrides.ts';
 import { loadTxt } from '../formats/txt.ts';
 import { ApiError } from '../api/errors.ts';
@@ -39,8 +39,8 @@ import { newId } from '../core/id.ts';
 import { textToChapterHtml } from '../formats/segments.ts';
 import { parseLocator } from './locator.ts';
 import { shouldPrefetch } from '../render/prefetch.ts';
-import { PALETTES, clampBrightness } from '../render/theme.ts';
-import { applyBrowserTheme, applyTheme } from './settings.ts';
+import { clampBrightness } from '../render/theme.ts';
+import { applyBrowserTheme } from './settings.ts';
 import { chineseText, chineseSearchQueries } from '../render/chinese.ts';
 
 export interface ReaderScreenOptions {
@@ -230,6 +230,10 @@ export class ReaderScreen {
 
   constructor(private readonly options: ReaderScreenOptions) {
     this.settings = { ...options.settings };
+    if (this.settings.readingTheme === undefined && this.settings.paper && this.settings.paper !== 'theme') {
+      this.settings.readingTheme = readingThemeForPaper(this.settings.paper);
+    }
+    this.settings.paper = 'theme';
     this.publicationCache = new PublicationCache(
       options.platform.kv,
       options.platform.blobs,
@@ -267,29 +271,45 @@ export class ReaderScreen {
 
   private themeScope(): string { return this.options.themeScope ?? 'default'; }
 
+  private readingPreference() {
+    const preference = readThemePreference(this.themeScope());
+    return { ...preference, reading: this.settings.readingTheme ?? preference.reading };
+  }
+
   private readerSurface() {
-    return resolveReaderSurface(readThemePreference(this.themeScope()), systemPrefersDark(), this.settings.paper ?? 'theme', this.settings.paperFollowsDark ?? true);
+    return resolveReaderSurface(this.readingPreference(), systemPrefersDark(), 'theme', false);
   }
 
   private applyReadingTheme(): void {
     const surface = this.readerSurface();
     this.element.dataset['theme'] = surface.theme;
     this.element.dataset['mode'] = surface.mode;
+    this.element.dataset['readingTheme'] = this.readingPreference().reading;
     if (surface.paper) this.element.dataset['paper'] = surface.paper; else delete this.element.dataset['paper'];
     for (const key of ['ink', 'paper', 'surface', 'muted', 'line', 'accent', 'on-accent']) this.element.style.removeProperty(`--reader-${key}`);
-    for (const key of ['bg', 'surface', 'surface-2', 'ink', 'muted', 'line', 'brand', 'brand-text', 'on-brand', 'scrim']) this.element.style.removeProperty(`--color-${key}`);
+    const tokens = themeTokens(surface);
+    const colors: Record<string, string> = {};
+    for (const [key, value] of Object.entries(tokens)) {
+      if (key !== 'ch') colors[key === 'surface2' ? 'surface-2' : key.replace(/[A-Z]/g, letter => '-' + letter.toLowerCase())] = value as string;
+    }
+    for (const [channel, values] of Object.entries(tokens.ch)) {
+      colors[`ch-${channel}`] = values.fill;
+      colors[`ch-${channel}-soft`] = values.soft;
+      colors[`ch-${channel}-text`] = values.text;
+    }
+    for (const [key, value] of Object.entries(colors)) {
+      this.element.style.removeProperty(`--color-${key}`);
+      if (surface.preset) this.element.style.setProperty(`--color-${key}`, value);
+    }
     this.element.style.removeProperty('--reader-fill');
     this.element.style.removeProperty('--reader-on-fill');
     this.element.style.removeProperty('color-scheme');
-    const palette = surface.paper && localPaper(surface.paper);
-    if (palette) {
-      applyTheme(this.element, palette);
-      this.element.dataset['theme'] = surface.theme;
-      const p = PALETTES[palette];
-      for (const [key, value] of Object.entries({ bg: p.background, surface: p.surface, 'surface-2': p.surface,
-        ink: p.text, muted: p.muted, line: p.line, brand: p.accent, 'brand-text': p.accent, 'on-brand': p.onAccent, scrim: 'rgba(0,0,0,.42)' })) this.element.style.setProperty(`--color-${key}`, value);
-      this.element.style.setProperty('--reader-fill', p.accent);
-      this.element.style.setProperty('--reader-on-fill', p.onAccent);
+    if (surface.preset) {
+      // The renderer and browser tint still consume the older reader token names.
+      for (const [key, value] of Object.entries({ paper: tokens.bg, ink: tokens.ink, surface: tokens.surface,
+        muted: tokens.muted, line: tokens.line, accent: tokens.brandText, 'on-accent': tokens.onBrand })) {
+        this.element.style.setProperty(`--reader-${key}`, value);
+      }
     }
     // Browser tint belongs to the document; local paper must not shadow its updates.
     this.element.style.removeProperty('--reader-browser-paper');
@@ -340,11 +360,19 @@ export class ReaderScreen {
             toggleSettings: (tab) => this.toggleSettings(tab),
             onSetting: (patch) => void this.updateSetting(patch),
             theme: () => {
-              const preference = readThemePreference(this.themeScope());
+              const preference = this.readingPreference();
               const systemDark = systemPrefersDark();
               return { preference, app: resolveAppTheme(preference, systemDark), reading: resolveReadingTheme(preference, systemDark), surface: this.readerSurface() };
             },
-            onTheme: (patch) => { try { saveThemePreference(this.themeScope(), patch); } catch { /* the device refused storage; the choice simply does not stick */ } this.patch({}); },
+            onTheme: (patch) => {
+              if (patch.reading !== undefined) {
+                const palette = localPaper(patch.reading as AppSettings['paper']);
+                void this.updateSetting({ ...(palette ? { theme: palette } : {}), readingTheme: patch.reading, paper: 'theme' });
+              } else {
+                try { saveThemePreference(this.themeScope(), patch); } catch { /* the device refused storage */ }
+                this.patch({});
+              }
+            },
             onSpeechSetting: (patch) => this.updateSpeechSetting(patch),
             onVoice: (voice) => this.updateSpeechSetting({ ttsVoice: voice }),
             onSpeakFromHere: () => void this.speakFromReaderPosition(),
@@ -1898,7 +1926,7 @@ export class ReaderScreen {
     patch = withThemeMemory(this.settings, patch);
     this.options.onSettingsChange(patch);
     Object.assign(this.settings, patch);
-    if ('paper' in patch || 'paperFollowsDark' in patch) this.applyReadingTheme();
+    if ('readingTheme' in patch || 'paper' in patch || 'paperFollowsDark' in patch) this.applyReadingTheme();
     // Reading information changes only the chrome, never the book's pagination.
     if (Object.keys(patch).some(key => !['autoCache', 'autoCacheChapters', 'lastDayTheme', 'lastNightTheme', 'readerSections'].includes(key) && !READOUT_FIELDS.some(field => field.key === key))) {
       this.view?.applySettings(this.viewSettings());

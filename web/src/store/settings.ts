@@ -2,7 +2,7 @@ import { PALETTES, clampBrightness, type ThemeMode } from '../render/theme.ts';
 import type { KeyValueStore } from '../core/platform.ts';
 import type { ViewSettings } from '../ui/reader-view.ts';
 import { CHINESE_VARIANTS } from '../render/chinese.ts';
-import { validReaderPaper, type ReaderPaper } from '../shared/theme/theme.ts';
+import { readingThemeForPaper, validReadingTheme, validReaderPaper, type ReadingTheme, type ReaderPaper } from '../shared/theme/theme.ts';
 
 /**
  * Reader preferences, persisted per device.
@@ -48,6 +48,8 @@ export const READOUT_OPTIONS: Array<{ value: ReadoutMode; label: string }> = [
 ];
 
 export interface AppSettings extends ViewSettings {
+  /** One complete reading theme; absent until an existing scoped choice is read. */
+  readingTheme?: ReadingTheme;
   pageInsets: Record<'top' | 'bottom' | 'left' | 'right', number>;
   lastDayTheme: ViewSettings['theme'];
   lastNightTheme: ViewSettings['theme'];
@@ -212,6 +214,9 @@ export class SettingsStore {
         }
         this.settings.paper = validReaderPaper(this.settings.paper);
         if (typeof this.settings.paperFollowsDark !== 'boolean') this.settings.paperFollowsDark = true;
+        if (parsed.readingTheme !== undefined) this.settings.readingTheme = validReadingTheme(parsed.readingTheme);
+        else if (this.settings.paper !== 'theme') this.settings.readingTheme = readingThemeForPaper(this.settings.paper);
+        if (this.settings.readingTheme !== undefined) this.settings.paper = 'theme';
         if (!['recent', 'added', 'title', 'author'].includes(this.settings.shelfSort)) {
           this.settings.shelfSort = DEFAULT_APP_SETTINGS.shelfSort;
         }
@@ -257,5 +262,5 @@ function normalizePageInsets(value: AppSettings['pageInsets'] | undefined): AppS
 export function withThemeMemory(settings: AppSettings, patch: Partial<AppSettings>): Partial<AppSettings> {
   if (!patch.theme) return patch;
   const memoryKey = (theme: ThemeMode) => PALETTES[theme].scheme === 'dark' ? 'lastNightTheme' : 'lastDayTheme';
-  return { [memoryKey(settings.theme)]: settings.theme, paper: `local-${patch.theme}`, paperFollowsDark: false, ...patch, [memoryKey(patch.theme)]: patch.theme };
+  return { [memoryKey(settings.theme)]: settings.theme, readingTheme: `local-${patch.theme}`, paper: 'theme', paperFollowsDark: false, ...patch, [memoryKey(patch.theme)]: patch.theme };
 }

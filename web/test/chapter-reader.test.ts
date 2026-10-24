@@ -818,14 +818,15 @@ it('matches the saved page theme and system tint before the first content loads'
   applyTheme(root, 'light');
   const env = await setup(undefined, undefined, 'u1', 'http://one.test', { theme: 'dark', brightness: 0.5 });
   try {
-    expect(env.screen.element.style.getPropertyValue('--reader-surface')).toBe('#1e2024');
+    expect(env.screen.element.style.getPropertyValue('--color-surface')).toBe('#1e2024');
     expect(env.screen.element.style.getPropertyValue('--reader-browser-paper')).toBe('');
-    expect(env.screen.element.dataset.paper).toBe('local-dark');
+    expect(env.screen.element.dataset.readingTheme).toBe('local-dark');
+    expect(env.screen.element.dataset.paper).toBeUndefined();
     expect(root.dataset.theme).toBe('light');
     expect(meta.content).toBe('#0f1012');
     const reader = env.screen as unknown as { updateSetting(patch: Partial<AppSettings>): Promise<void> };
     await reader.updateSetting({ theme: 'green' });
-    expect(env.screen.element.style.getPropertyValue('--reader-surface')).toBe('#e8f2e8');
+    expect(env.screen.element.style.getPropertyValue('--color-surface')).toBe('#e8f2e8');
     expect(meta.content).toBe('#747974');
   } finally { meta.remove(); }
 });
@@ -886,14 +887,14 @@ it.each(['sepia', 'green'] as const)('restores %s after a night toggle and reope
   const env = await setup(undefined, undefined, 'u1', 'http://one.test', { theme });
   serve(env.transport, content(['a'])); await env.screen.open(book);
   await click(env.screen, '夜间');
-  expect(env.onSettingsChange).toHaveBeenLastCalledWith({ theme: 'dark', paper: 'local-dark', paperFollowsDark: false, lastDayTheme: theme, lastNightTheme: 'dark' });
+  expect(env.onSettingsChange).toHaveBeenLastCalledWith({ theme: 'dark', readingTheme: 'local-dark', paper: 'theme', paperFollowsDark: false, lastDayTheme: theme, lastNightTheme: 'dark' });
   const kv = new MemoryKv(), store = new SettingsStore(kv);
   await store.load(); await store.update(env.onSettingsChange.mock.calls.at(-1)![0]);
   const restored = await new SettingsStore(kv).load();
   const next = await setup(undefined, undefined, 'u1', 'http://one.test', restored);
   serve(next.transport, content(['a'])); await next.screen.open(book);
   await click(next.screen, '日间');
-  expect(next.onSettingsChange).toHaveBeenLastCalledWith({ theme, paper: `local-${theme}`, paperFollowsDark: false, lastDayTheme: theme, lastNightTheme: 'dark' });
+  expect(next.onSettingsChange).toHaveBeenLastCalledWith({ theme, readingTheme: `local-${theme}`, paper: 'theme', paperFollowsDark: false, lastDayTheme: theme, lastNightTheme: 'dark' });
 });
 
 it('keeps automatic sync quiet while preserving failures and offline feedback', async () => {
@@ -927,7 +928,7 @@ it('remembers each settings section independently across reopening and reload', 
   const next = await setup(undefined, undefined, 'u1', 'http://one.test', await new SettingsStore(kv).load());
   serve(next.transport, content(['a'])); await next.screen.open(book); await click(next.screen, '外观');
   const details = [...next.screen.element.querySelectorAll<HTMLDetailsElement>('details')];
-  expect(details.map(item => item.querySelector('summary')?.textContent)).toEqual(['阅读配色', '更多排版页边距 · 对齐 · 字体', '页眉页脚顶部与底部显示的信息']);
+  expect(details.map(item => item.querySelector('summary')?.textContent)).toEqual(['主题', '更多排版页边距 · 对齐 · 字体', '页眉页脚顶部与底部显示的信息']);
   expect(details.map(item => item.open)).toEqual([true, true, false]);
   const readout = details[2]!; readout.open = true; readout.dispatchEvent(new Event('toggle'));
   await vi.waitFor(() => expect(next.onSettingsChange).toHaveBeenCalledWith({ readerSections: { readout: true, text: true, theme: true, paging: true } }));

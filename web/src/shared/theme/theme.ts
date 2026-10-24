@@ -72,8 +72,9 @@ export type ThemeId = keyof typeof themes;
 export type AppThemeId = Exclude<ThemeId, 'gray'>;
 export type ThemeMode = 'light' | 'dark';
 export type ModePreference = 'system' | ThemeMode;
-/** 跟随应用, or the reading-only 黑白灰. */
-export type ReadingTheme = 'app' | 'gray';
+/** Reading-only presets never change the app theme or its light/dark preference. */
+export type ReadingPreset = `local-${ReaderPalette}` | `paper-${PaperId}`;
+export type ReadingTheme = 'app' | 'gray' | ReadingPreset;
 
 export const appThemeIds: readonly AppThemeId[] = ['warm', 'blue', 'green'];
 export const appThemes = appThemeIds.map(id => themes[id]);
@@ -86,7 +87,7 @@ export interface ThemePreference {
   system: { light: AppThemeId; dark: AppThemeId };
   reading: ReadingTheme;
 }
-export interface ResolvedTheme { theme: ThemeId; mode: ThemeMode }
+export interface ResolvedTheme { theme: ThemeId; mode: ThemeMode; preset?: ReadingPreset }
 
 export const defaultThemePreference: ThemePreference = { theme: 'warm', mode: 'system', system: { light: 'warm', dark: 'warm' }, reading: 'app' };
 const defaults = (): ThemePreference => ({ ...defaultThemePreference, system: { ...defaultThemePreference.system } });
@@ -109,7 +110,7 @@ export function validThemePreference(value: unknown): ThemePreference {
       light: isAppTheme(system.light) ? system.light : defaultThemePreference.system.light,
       dark: isAppTheme(system.dark) ? system.dark : defaultThemePreference.system.dark,
     },
-    reading: raw.reading === 'gray' ? 'gray' : 'app',
+    reading: validReadingTheme(raw.reading),
   };
 }
 
@@ -170,13 +171,16 @@ export function resolveAppTheme(preference: ThemePreference, systemDark: boolean
   return { theme: preference.theme, mode: preference.mode };
 }
 
-/** What the book wears: the app's theme, or 黑白灰 in the app's current light/dark mode. */
+/** Follow the app mode, except for presets that carry their own fixed mode. */
 export function resolveReadingTheme(preference: ThemePreference, systemDark: boolean): ResolvedTheme {
   const app = resolveAppTheme(preference, systemDark);
+  if (isReadingPreset(preference.reading)) {
+    return { theme: 'gray', mode: readingPresetTokens(preference.reading).mode, preset: preference.reading };
+  }
   return preference.reading === 'gray' ? { theme: 'gray', mode: app.mode } : app;
 }
 
-export const themeTokens = ({ theme, mode }: ResolvedTheme): ThemeTokens => themes[theme][mode];
+export const themeTokens = ({ theme, mode, preset }: ResolvedTheme): ThemeTokens => preset ? readingPresetTokens(preset).tokens : themes[theme][mode];
 
 /**
  * Reading papers: the page's own colours, a per-device reader setting (like the font
@@ -206,6 +210,35 @@ export function paperColors(paper: Exclude<ReaderPaper, 'theme'>) {
 export const paperIds = Object.keys(readerPapers) as PaperId[];
 export const validReaderPaper = (value: unknown): ReaderPaper => value === 'theme' || paperIds.includes(value as PaperId) || (typeof value === 'string' && localPaper(value as ReaderPaper)) ? value as ReaderPaper : 'theme';
 
+export function isReadingPreset(value: unknown): value is ReadingPreset {
+  return typeof value === 'string' && (localPaper(value as ReaderPaper) !== null || (value.startsWith('paper-') && paperIds.includes(value.slice(6) as PaperId)));
+}
+export const validReadingTheme = (value: unknown): ReadingTheme => value === 'gray' || isReadingPreset(value) ? value : 'app';
+export const readingThemeForPaper = (paper: Exclude<ReaderPaper, 'theme'>): ReadingPreset => localPaper(paper) ? paper as ReadingPreset : `paper-${paper as PaperId}`;
+
+/** Existing colours become complete V3 reading themes, with a fixed light/dark mode. */
+function readingPresetTokens(id: ReadingPreset): { mode: ThemeMode; tokens: ThemeTokens } {
+  const legacy = localPaper(id as ReaderPaper);
+  if (legacy) {
+    const p = PALETTES[legacy];
+    const mode = p.scheme;
+    const tokens: ThemeTokens = { ...themes.gray[mode], bg: p.background, surface: p.surface, surface2: p.surface,
+      ink: p.text, muted: p.muted, line: p.line, brand: p.accent, brandText: p.accent, brandSoft: p.surface,
+      onBrand: p.onAccent, onCh: p.onAccent,
+      ch: Object.fromEntries(channels.map(channel => [channel, { fill: p.accent, soft: p.surface, text: p.accent }])) as ThemeTokens['ch'] };
+    return { mode, tokens };
+  }
+  const p = readerPapers[id.slice(6) as PaperId];
+  const mode = p.dark ? 'dark' : 'light';
+  return { mode, tokens: { ...themes.gray[mode], bg: p.bg, ink: p.ink, muted: p.muted, line: p.line } };
+}
+
+export const readingThemeOptions: ReadonlyArray<{ value: ReadingTheme; label: string }> = [
+  { value: 'app', label: '跟随应用' }, { value: 'gray', label: '黑白灰' },
+  ...Object.entries(PALETTES).map(([id, p]) => ({ value: `local-${id}` as ReadingPreset, label: p.label })),
+  ...paperIds.map(id => ({ value: `paper-${id}` as ReadingPreset, label: readerPapers[id].name + (id === 'green' || id === 'night' ? '纸色' : '') })),
+];
+
 /** What the reading screen wears: a theme and mode for its chrome, and the paper (if any) for its page. */
 export interface ReaderSurface extends ResolvedTheme { paper: Exclude<ReaderPaper, 'theme'> | null }
 
@@ -218,6 +251,7 @@ export interface ReaderSurface extends ResolvedTheme { paper: Exclude<ReaderPape
  */
 export function resolveReaderSurface(preference: ThemePreference, systemDark: boolean, paper: ReaderPaper, followDark: boolean): ReaderSurface {
   const reading = resolveReadingTheme(preference, systemDark);
+  if (reading.preset) return { ...reading, paper: null };
   if (paper === 'theme') return { ...reading, paper: null };
   if (paperColors(paper).dark) return { theme: reading.theme, mode: 'dark', paper };
   if (reading.mode === 'dark' && followDark) return { ...reading, paper: null };
