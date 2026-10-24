@@ -29,7 +29,7 @@ export function ReaderIndicators({ state }: { state: ChromeState }) {
       default: return '';
     }
   };
-  return <>{(['top', 'bottom'] as const).map((edge, index) => (
+  return <><div className="reader-system-edge" aria-hidden="true" />{(['top', 'bottom'] as const).map((edge, index) => (
     <div key={edge} className={`reading-indicator reading-indicator-${edge}`} aria-label={edge === 'top' ? '顶部阅读信息' : '底部阅读信息'}>
       {(['left', 'right'] as const).map((side, offset) => {
         const mode = modes[index * 2 + offset]!;

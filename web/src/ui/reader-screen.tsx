@@ -291,6 +291,8 @@ export class ReaderScreen {
       this.element.style.setProperty('--reader-fill', p.accent);
       this.element.style.setProperty('--reader-on-fill', p.onAccent);
     }
+    // Browser tint belongs to the document; local paper must not shadow its updates.
+    this.element.style.removeProperty('--reader-browser-paper');
   }
 
   private renderChrome(): void {

@@ -15,6 +15,19 @@ const texts = () => Array.from(container.querySelectorAll('span'), el => el.text
 afterEach(() => { act(() => render(null, container)); vi.useRealTimers(); });
 
 describe('reading information', () => {
+  it('keeps one empty sampling node mounted across control and readout changes', () => {
+    act(() => render(h(ReaderIndicators, { state: { ...state, chromeVisible: true } }), container));
+    const edge = container.querySelector('.reader-system-edge');
+    expect(edge).not.toBeNull();
+    expect(edge?.getAttribute('aria-hidden')).toBe('true');
+    expect(edge?.childNodes).toHaveLength(0);
+    act(() => render(h(ReaderIndicators, { state: { ...state, chromeVisible: false,
+      readoutTopLeft: 'none', readoutTopRight: 'none', readoutBottomLeft: 'none', readoutBottomRight: 'none' } }), container));
+    expect(container.querySelectorAll('.reader-system-edge')).toHaveLength(1);
+    expect(container.querySelector('.reader-system-edge')).toBe(edge);
+    expect(edge?.hasAttribute('hidden')).toBe(false);
+  });
+
   it('maps all four positions independently and allows hiding each one', () => {
     act(() => render(h(ReaderIndicators, { state: { ...state,
       readoutTopLeft: 'book', readoutTopRight: 'chapter',

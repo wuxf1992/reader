@@ -819,6 +819,7 @@ it('matches the saved page theme and system tint before the first content loads'
   const env = await setup(undefined, undefined, 'u1', 'http://one.test', { theme: 'dark', brightness: 0.5 });
   try {
     expect(env.screen.element.style.getPropertyValue('--reader-surface')).toBe('#1e2024');
+    expect(env.screen.element.style.getPropertyValue('--reader-browser-paper')).toBe('');
     expect(env.screen.element.dataset.paper).toBe('local-dark');
     expect(root.dataset.theme).toBe('light');
     expect(meta.content).toBe('#0f1012');

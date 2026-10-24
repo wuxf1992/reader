@@ -3722,6 +3722,23 @@ book-content {
 
 /* Mobile reading: the surface and its information strip never resize with chrome. */
 svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; vertical-align: middle; }
+.reader-system-edge { display: none; }
+@supports (-webkit-touch-callout: none) {
+  /* WebKit samples 4px inside the edge; 11px clears its 10px color-read threshold.
+     https://zenn.dev/uakihir0/articles/260920-ios27-pwa-blur
+     shortcut: private WebKit sampling behavior; revisit when iOS changes it. */
+  .reader-system-edge {
+    display: block;
+    position: fixed;
+    inset: 0 0 auto;
+    height: 11px;
+    z-index: 2147483647;
+    pointer-events: none;
+    background-color: var(--reader-browser-paper, var(--reader-paper));
+    -webkit-background-clip: text;
+    background-clip: text;
+  }
+}
 .reader-screen { --reader-footer-height: calc(8.5rem + var(--safe-bottom)); }
 .reader-screen .stage-host {
   inset: var(--reader-inset-top, 0px) var(--reader-inset-right, 0px) var(--reader-inset-bottom, 0px) var(--reader-inset-left, 0px);
