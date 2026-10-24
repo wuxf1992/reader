@@ -1928,7 +1928,7 @@ export class ReaderScreen {
     Object.assign(this.settings, patch);
     if ('readingTheme' in patch || 'paper' in patch || 'paperFollowsDark' in patch) this.applyReadingTheme();
     // Reading information changes only the chrome, never the book's pagination.
-    if (Object.keys(patch).some(key => !['autoCache', 'autoCacheChapters', 'lastDayTheme', 'lastNightTheme', 'readerSections'].includes(key) && !READOUT_FIELDS.some(field => field.key === key))) {
+    if (Object.keys(patch).some(key => !['liquidGlass', 'autoCache', 'autoCacheChapters', 'lastDayTheme', 'lastNightTheme', 'readerSections'].includes(key) && !READOUT_FIELDS.some(field => field.key === key))) {
       this.view?.applySettings(this.viewSettings());
     }
     this.patch({});
@@ -2382,6 +2382,7 @@ function settingsView(
   const isTxt = context.format === 'txt' || context.plainText === true;
   const activeEngine = context.engine ?? context.availability.preferred;
   return {
+    liquidGlass: settings.liquidGlass,
     mode: settings.mode,
     readoutTopLeft: settings.readoutTopLeft,
     readoutTopRight: settings.readoutTopRight,

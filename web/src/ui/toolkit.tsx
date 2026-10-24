@@ -219,6 +219,7 @@ export function SwitchRow({ label, hint, checked, onChange }: SwitchRowProps): J
       <button
         type="button"
         className="switch"
+        aria-label={label}
         aria-pressed={checked}
         onClick={() => onChange(!checked)}
       />

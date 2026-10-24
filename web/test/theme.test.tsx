@@ -9,6 +9,8 @@ import {
 } from '../src/shared/theme/theme.ts';
 import { PALETTES } from '../src/render/theme.ts';
 import { MediaThemeSettings } from '../src/features/media/components/theme-settings.tsx';
+import { useSettingsStore } from '../src/shared/stores/settings.store.ts';
+import { DEFAULT_APP_SETTINGS } from '../src/store/settings.ts';
 
 const root = document.createElement('div');
 document.body.append(root);
@@ -17,6 +19,7 @@ afterEach(() => {
   localStorage.clear();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  useSettingsStore.getState().replace({ ...DEFAULT_APP_SETTINGS });
   delete document.documentElement.dataset.theme;
   delete document.documentElement.dataset.mode;
 });
@@ -150,6 +153,16 @@ describe('ThemeController', () => {
 });
 
 describe('外观与主题', () => {
+  it('saves the glass switch independently of the theme', async () => {
+    const onReaderSettings = vi.fn(patch => useSettingsStore.getState().update(patch));
+    await act(async () => render(<MediaThemeSettings scope="a" onReaderSettings={onReaderSettings} />, root));
+    expect(pressed('液态玻璃')).toBe('false');
+    await click('液态玻璃');
+    expect(onReaderSettings).toHaveBeenLastCalledWith({ liquidGlass: true });
+    expect(pressed('液态玻璃')).toBe('true');
+    expect(readThemePreference('a')).toEqual(defaultThemePreference);
+  });
+
   it('follows the system by default with one theme for light and one for dark', async () => {
     stubSystem(false);
     await act(async () => render(<MediaThemeSettings scope="a" />, root));

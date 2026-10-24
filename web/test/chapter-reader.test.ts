@@ -831,6 +831,19 @@ it('matches the saved page theme and system tint before the first content loads'
   } finally { meta.remove(); }
 });
 
+it('toggles glass without reapplying body settings or changing its saved palette', async () => {
+  const env = await setup(undefined, undefined, 'u1', 'http://one.test', { theme: 'wechat-night' });
+  serve(env.transport, content(['a'])); await env.screen.open(book);
+  const reader = env.screen as unknown as { view: { applySettings(settings: unknown): void }; updateSetting(patch: Partial<AppSettings>): Promise<void> };
+  const apply = vi.spyOn(reader.view, 'applySettings');
+  await reader.updateSetting({ liquidGlass: true });
+  expect(apply).not.toHaveBeenCalled();
+  expect(env.onSettingsChange).toHaveBeenLastCalledWith({ liquidGlass: true });
+  expect(env.screen.element.dataset.readingTheme).toBe('local-wechat-night');
+  await click(env.screen, '外观');
+  expect(env.screen.element.querySelector('[aria-label="液态玻璃"]')?.getAttribute('aria-pressed')).toBe('true');
+});
+
 it('blocks body tap, swipe and keyboard paging while controls are visible and restores them after closing', async () => {
   const env = await setup(undefined, undefined, 'u1', 'http://one.test', { mode: 'paged' });
   serve(env.transport, content(['a', 'b'])); await env.screen.open(book);

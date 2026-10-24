@@ -48,6 +48,7 @@ export const READOUT_OPTIONS: Array<{ value: ReadoutMode; label: string }> = [
 ];
 
 export interface AppSettings extends ViewSettings {
+  liquidGlass: boolean;
   /** One complete reading theme; absent until an existing scoped choice is read. */
   readingTheme?: ReadingTheme;
   pageInsets: Record<'top' | 'bottom' | 'left' | 'right', number>;
@@ -109,6 +110,7 @@ export interface AppSettings extends ViewSettings {
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
+  liquidGlass: false,
   pageInsets: { top: 0, bottom: 0, left: 0, right: 0 },
   readoutTopLeft: 'chapter',
   readoutTopRight: 'none',
@@ -165,6 +167,7 @@ export class SettingsStore {
         this.settings = { ...DEFAULT_APP_SETTINGS, ...parsed };
         this.settings.pageInsets = normalizePageInsets(parsed.pageInsets);
         this.settings.brightness = clampBrightness(this.settings.brightness);
+        this.settings.liquidGlass = parsed.liquidGlass === true;
         if (!CHINESE_VARIANTS.some(option => option.value === this.settings.chineseVariant)) this.settings.chineseVariant = 'original';
         if (typeof this.settings.theme !== 'string' || !Object.prototype.hasOwnProperty.call(PALETTES, this.settings.theme)) {
           this.settings.theme = DEFAULT_APP_SETTINGS.theme;

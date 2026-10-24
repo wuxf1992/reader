@@ -6,6 +6,7 @@ import { LoginPage } from '../features/auth/pages/LoginPage.tsx';
 import { AppNav, navMode } from './AppNav.tsx';
 import { ThemeController } from '../shared/theme/theme.ts';
 import { FloatingNotice } from '../ui/floating-notice.tsx';
+import { useSettingsStore } from '../shared/stores/settings.store.ts';
 
 export function AppShell() {
   return <AuthBoundary><AuthenticatedShell /></AuthBoundary>;
@@ -25,6 +26,11 @@ function AuthenticatedShell() {
   }, [runtime, navigate]);
   useEffect(() => runtime.player.setVisible(location.pathname.startsWith('/media/')), [runtime, location.pathname]);
   const mode = navMode(location.pathname);
+  const liquidGlass = useSettingsStore(state => state.settings.liquidGlass);
+  useEffect(() => {
+    document.documentElement.dataset.liquidGlass = String(liquidGlass);
+    return () => { delete document.documentElement.dataset.liquidGlass; };
+  }, [liquidGlass]);
   // One app theme for every page; the reader may wear its own reading theme on top.
   useEffect(() => {
     const theme = new ThemeController(runtime.mediaApi.preferenceScope());

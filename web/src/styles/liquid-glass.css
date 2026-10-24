@@ -1,0 +1,41 @@
+/* The switch changes only the material of existing controls. */
+:root[data-liquid-glass='false'] .app-nav,
+:root[data-liquid-glass='false'] .reader-screen .topbar,
+:root[data-liquid-glass='false'] .reader-screen .footer,
+:root[data-liquid-glass='false'] .reader-screen .reader-rail,
+:root[data-liquid-glass='false'] .sheet {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root[data-liquid-glass='true'] .app-nav,
+  :root[data-liquid-glass='true'] .reader-screen .topbar,
+  :root[data-liquid-glass='true'] .reader-screen .footer,
+  :root[data-liquid-glass='true'] .reader-screen .reader-rail,
+  :root[data-liquid-glass='true'] .sheet {
+    background-color: color-mix(in srgb, var(--reader-surface) 80%, transparent);
+    background-image: none;
+    -webkit-backdrop-filter: blur(18px) saturate(125%);
+    backdrop-filter: blur(18px) saturate(125%);
+  }
+  :root[data-liquid-glass='true'] .sheet {
+    background-color: color-mix(in srgb, var(--reader-surface) 92%, transparent);
+  }
+  :root[data-liquid-glass='true'] .reader-screen[data-chrome='visible'] .reading-indicator-top {
+    background: linear-gradient(to bottom, transparent calc(100% - 1.8rem), var(--reader-paper) calc(100% - 1.8rem));
+  }
+}
+
+@media (prefers-reduced-transparency: reduce), (forced-colors: active) {
+  :root[data-liquid-glass='true'] .app-nav,
+  :root[data-liquid-glass='true'] .reader-screen .topbar,
+  :root[data-liquid-glass='true'] .reader-screen .footer,
+  :root[data-liquid-glass='true'] .reader-screen .reader-rail,
+  :root[data-liquid-glass='true'] .sheet {
+    background-color: var(--reader-surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  :root[data-liquid-glass='true'] .reader-screen[data-chrome='visible'] .reading-indicator-top { background: var(--reader-surface); }
+}

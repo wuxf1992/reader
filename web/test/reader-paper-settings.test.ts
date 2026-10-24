@@ -42,3 +42,13 @@ it('keeps the unified theme after saving and does not restore the stale paper', 
   await store.update({ readingTheme: 'app', paper: 'theme' });
   expect(await new SettingsStore(kv).load()).toMatchObject({ readingTheme: 'app', paper: 'theme', fontScale: 1.2, brightness: .6 });
 });
+
+it('keeps liquid glass opt-in, validates the stored switch and preserves the reading theme', async () => {
+  expect((await new SettingsStore(memory({})).load()).liquidGlass).toBe(false);
+  for (const value of ['true', 1, null, {}]) expect((await load({ liquidGlass: value })).liquidGlass).toBe(false);
+  const kv = memory({ 'reader.settings.v1': JSON.stringify({ theme: 'wechat-night', liquidGlass: true, brightness: .6 }) });
+  const store = new SettingsStore(kv);
+  expect(await store.load()).toMatchObject({ liquidGlass: true, readingTheme: 'local-wechat-night', brightness: .6 });
+  await store.update({ liquidGlass: false });
+  expect(await new SettingsStore(kv).load()).toMatchObject({ liquidGlass: false, readingTheme: 'local-wechat-night', brightness: .6 });
+});

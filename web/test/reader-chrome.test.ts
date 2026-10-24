@@ -290,7 +290,7 @@ describe('ReaderChrome', () => {
     );
     // Size, spacing, theme and brightness fill the first screen; the readouts that
     // used to come first are behind a fold, closed by default.
-    expect(order).toEqual(['fold:主题', '字号', '行距', '页面亮度', 'fold:更多排版', 'fold:页眉页脚']);
+    expect(order).toEqual(['', 'fold:主题', '字号', '行距', '页面亮度', 'fold:更多排版', 'fold:页眉页脚']);
     for (const fold of body.querySelectorAll<HTMLDetailsElement>('details.panel-fold')) expect(fold.open).toBe(true);
     expect(body.querySelector('details.panel-fold input[aria-label="页边距"]')).not.toBeNull();
     expect(body.querySelector('details.panel-fold select[aria-label="顶部左侧"]')).not.toBeNull();
@@ -303,10 +303,20 @@ describe('ReaderChrome', () => {
     expect(swatches.filter((button) => button.getAttribute('aria-pressed') === 'true').map((button) => button.querySelector('.theme-swatch-label')?.textContent)).toEqual(['跟随应用']);
     // Each chip is drawn in that theme's own background (light mode here): 黑白灰 #F5F5F5.
     const chip = swatches[1]!.querySelector<HTMLElement>('.theme-swatch-chip')!;
-    expect(chip.style.background).toContain('rgb(245, 245, 245)');
+    expect(chip.style.backgroundColor).toContain('rgb(245, 245, 245)');
     expect(tree.querySelector('[aria-label="明暗"]')).toBeNull();
     expect(tree.querySelector('[aria-label="纸色"]')).toBeNull();
     expect(tree.textContent).not.toContain('跟随系统深色模式');
+  });
+
+  it('keeps each theme preview fixed while the active palette and mode change', () => {
+    const preview = (reading: ThemePreference['reading'], dark: boolean) => {
+      render(h(ReaderChrome, { state: chromeState({ settingsOpen: true, settingsTab: 'appearance' }),
+        stage: document.createElement('div'), handlers: handlers(themeState({ reading }, dark)) }), container);
+      return [...container.querySelectorAll<HTMLElement>('[data-reading-theme-option]:not([data-reading-theme-option="app"]) .theme-swatch-chip')]
+        .map(chip => [chip.style.backgroundColor, chip.style.color]);
+    };
+    expect(preview('local-wechat-night', true)).toEqual(preview('local-kraft-day', false));
   });
 
   it('changes only the reading theme from the chooser and day/night shortcut', () => {

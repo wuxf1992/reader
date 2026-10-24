@@ -66,6 +66,7 @@ function ReadingPapers({ themeId, settings, onChange }: { themeId: ThemeId; sett
 
 export function MediaThemeSettings({ scope, onReaderSettings }: { scope: string; onReaderSettings?: (patch: Partial<AppSettings>) => void }) {
   const { preference, systemDark } = useThemeState(scope);
+  const liquidGlass = useSettingsStore(state => state.settings.liquidGlass);
   const paper = useSettingsStore(state => state.settings.paper);
   const paperFollowsDark = useSettingsStore(state => state.settings.paperFollowsDark);
   const [error, setError] = useState(''), [saved, setSaved] = useState(false);
@@ -92,6 +93,13 @@ export function MediaThemeSettings({ scope, onReaderSettings }: { scope: string;
       </> : <div className="theme-settings-row"><span>明暗</span><Chips label="明暗" options={modeOptions} value={resolved.mode} onChange={mode => save({ mode })} /></div>}
     </div>
 
+    {onReaderSettings && <div className="theme-settings-card">
+      <button type="button" className="theme-follow" aria-label="液态玻璃" aria-pressed={liquidGlass}
+        onClick={() => { onReaderSettings({ liquidGlass: !liquidGlass }); setSaved(true); setError(''); }}>
+        <span className="theme-follow-text"><strong>液态玻璃</strong><small>控制栏和面板呈现半透明玻璃效果</small></span>
+        <span className="theme-switch" aria-hidden="true" />
+      </button>
+    </div>}
     <h2>应用主题</h2>
     <div className="theme-grid" role="group" aria-label="应用主题">
       {appThemes.map(theme => <ThemeCard key={theme.id} id={theme.id} label={theme.name} note="浅色 · 深色" pressed={themePressed(theme.id)} onClick={() => chooseTheme(theme.id)} />)}

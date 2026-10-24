@@ -2,7 +2,7 @@ import { BusyIndicator } from './busy.tsx';
 import { MIN_BRIGHTNESS } from '../render/theme.ts';
 import { CHINESE_VARIANTS } from '../render/chinese.ts';
 import type { CSSProperties } from 'react';
-import { readingThemeOptions, resolveReadingTheme, themeTokens, type AppThemeId, type ReaderPaper, type ReaderSurface, type ResolvedTheme, type ThemeMode, type ThemePreference } from '../shared/theme/theme.ts';
+import { defaultThemePreference, readingThemeOptions, resolveReadingTheme, themeTokens, type AppThemeId, type ReaderPaper, type ReaderSurface, type ResolvedTheme, type ThemeMode, type ThemePreference } from '../shared/theme/theme.ts';
 import type { ChapterQuality } from '../api/sources.ts';
 import { Sheet } from './sheet.tsx';
 import type { SourcePage } from '../api/sources.ts';
@@ -30,7 +30,7 @@ import { DEFAULT_APP_SETTINGS, READOUT_FIELDS, READOUT_OPTIONS, type ReadoutMode
 import { ReaderIndicators } from './reader-indicators.tsx';
 import type { SpeechEngineKind } from '../render/speech.ts';
 import { type ReactNode, type JSX, useLayoutEffect, useRef, useState } from 'react';
-import { Button, IconButton, SectionTitle } from './toolkit.tsx';
+import { Button, IconButton, SectionTitle, SwitchRow } from './toolkit.tsx';
 import { Icon, type IconName } from './icon.tsx';
 
 /**
@@ -121,6 +121,7 @@ export interface ChromeState {
   lastDayTheme?: AppSettings['theme'];
   lastNightTheme?: AppSettings['theme'];
   readerSections?: AppSettings['readerSections'];
+  liquidGlass?: boolean;
   pageInsets?: AppSettings['pageInsets'];
   chineseVariant?: AppSettings['chineseVariant'];
   fit: AppSettings['fit'];
@@ -393,6 +394,8 @@ function SettingsBody({ state, handlers }: { state: ChromeState; handlers: Chrom
       {/* Most-used first. Size, spacing, theme and brightness are what a reader opens
           this sheet to change, so they fill its first screen; the rows that are set once
           and left alone are folded underneath instead of pushing these below the fold. */}
+      <SwitchRow label="液态玻璃" hint="控制栏和面板呈现半透明玻璃效果" checked={state.liquidGlass ?? false}
+        onChange={liquidGlass => handlers.onSetting({ liquidGlass })} />
       <FoldSection state={state} handlers={handlers} section="theme" title="主题">
         <ReadingThemeRow label="主题" state={handlers.theme()} onChange={reading => handlers.onTheme({ reading })} />
       </FoldSection>
@@ -792,11 +795,12 @@ function ReadingThemeRow({ label, state, onChange }: { label: string; state: Rea
     <div className="field is-stacked">
       <div className="theme-swatches" role="group" aria-label={label}>
         {readingThemeOptions.map((option) => {
-          const current = themeTokens(resolveReadingTheme({ ...state.preference, reading: option.value }, state.app.mode === 'dark'));
+          const preview = option.value === 'app' ? state.app : resolveReadingTheme({ ...defaultThemePreference, reading: option.value }, false);
+          const current = themeTokens(preview);
           return (
             <button type="button" key={option.value} className="theme-swatch" data-reading-theme-option={option.value} aria-label={option.label} aria-pressed={state.preference.reading === option.value} onClick={() => onChange(option.value)}>
               <span className="theme-swatch-chip" aria-hidden="true"
-                style={{ background: current.bg, color: current.ink, '--chip-line': current.line } as CSSProperties}>Aa</span>
+                style={{ backgroundColor: current.bg, color: current.ink, '--chip-line': current.line } as CSSProperties}>Aa</span>
               <span className="theme-swatch-label">{option.label}</span>
             </button>
           );
