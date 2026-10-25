@@ -61,12 +61,28 @@ export async function createAppRuntime(defaultServerUrl = '') {
   useAuthStore.getState().setSession(restored);
   if (restored) {
     await offline.setScope(publicationScope(api.baseUrl, restored.user.id), { claimLegacy: true });
-    try {
-      useAuthStore.getState().verify(await api.me());
-    } catch (error) {
-      if (!(error instanceof ApiError) || (!error.isConnectivity && error.kind !== 'server')) {
-        await sessions.clear();
-        useAuthStore.getState().setSession(null);
+    if (await platform.connectivity() !== 'offline') {
+      const controller = new AbortController();
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+      try {
+        // Wi-Fi can report online with no internet; boot must still reach local books.
+        const user = await Promise.race([
+          api.me({ signal: controller.signal }),
+          new Promise<never>((_, reject) => {
+            timeout = setTimeout(() => {
+              reject(new ApiError('offline', '登录验证超时，使用本地缓存'));
+              controller.abort();
+            }, 3000);
+          }),
+        ]);
+        useAuthStore.getState().verify(user);
+      } catch (error) {
+        if (!(error instanceof ApiError) || (!error.isConnectivity && error.kind !== 'server')) {
+          await sessions.clear();
+          useAuthStore.getState().setSession(null);
+        }
+      } finally {
+        clearTimeout(timeout);
       }
     }
     if (useAuthStore.getState().session) sync.start();

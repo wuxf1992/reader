@@ -39,11 +39,11 @@ declare global {
   }
 }
 async function start(): Promise<void> {
+  registerPwa();
   const runtime = await createAppRuntime(import.meta.env.VITE_SERVER_URL ?? inferDefaultUrl());
   window.readerApp = runtime;
   window.__readerFlush = () => runtime.flush();
   createRoot(appRoot).render(<AppProviders runtime={runtime}><RouterProvider router={router} /></AppProviders>);
-  registerPwa();
   document.getElementById('app-startup')?.remove();
 }
 

@@ -107,6 +107,12 @@ it('registers the worker relative to the deployed document and bypasses the HTTP
   });
 });
 
+it('starts offline caching without waiting for images or other load events', () => {
+  vi.spyOn(document, 'readyState', 'get').mockReturnValue('loading');
+  registerPwa();
+  expect(register).toHaveBeenCalledTimes(1);
+});
+
 it('does not register in development', () => {
   vi.stubEnv('PROD', false);
   registerPwa();

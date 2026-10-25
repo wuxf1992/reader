@@ -239,8 +239,8 @@ export class ReaderApi {
     return session;
   }
 
-  async me(): Promise<User> {
-    const result = await this.get<{ user: User }>('/api/v1/auth/me');
+  async me(options: RequestOptions = {}): Promise<User> {
+    const result = await this.get<{ user: User }>('/api/v1/auth/me', options);
     return result.user;
   }
 
