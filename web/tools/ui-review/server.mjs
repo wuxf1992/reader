@@ -886,7 +886,7 @@ export function createReviewServer({ port = 5199 } = {}) {
     if (path === `/api/v1/books/${BOOK_ID}/assets`) {
       if (!authorisedForAssets(request, url)) return unauthorised(reply);
       const ref = url.searchParams.get('ref') ?? '';
-      const index = Number.parseInt(ref.replace(/^chapter(-html)?:/, ''), 10);
+      const index = Number.parseInt(ref.replace(/^chapter(?:-full|-html)?:/, ''), 10);
       const body = chapterText(Number.isFinite(index) ? index : 0);
       // `text/plain`, not `text/html`: the server stopped rendering markup, and the
       // content type is part of what the client is being reviewed against.

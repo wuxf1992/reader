@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { chromium, webkit } from 'playwright';
-import { createReviewServer, BOOK_ID } from '../ui-review/server.mjs';
+import { createReviewServer, BOOK_ID, CHAPTERS } from '../ui-review/server.mjs';
 
 // Keep navigator.onLine true while the server stops responding, as on Wi-Fi
 // without internet. This also avoids WebKit's broken setOffline navigation.
@@ -20,6 +20,20 @@ server.server.on('request', (request, response) => {
   for (const handler of handlers) handler.call(server.server, request, response);
 });
 const origin = await server.listen();
+async function chapterVisible(page, index) {
+  await page.waitForFunction(text => document.querySelector('book-content')?.shadowRoot?.textContent?.includes(text), CHAPTERS[index].title, { timeout: 8000 });
+}
+async function readCachedNovel(page) {
+  await page.evaluate(book => { location.hash = '#/book/' + book; }, BOOK_ID);
+  await chapterVisible(page, 1);
+  await page.getByRole('button', { name: '上一章', exact: true }).click();
+  await chapterVisible(page, 0);
+  await page.getByRole('button', { name: '下一章', exact: true }).click();
+  await chapterVisible(page, 1);
+  await page.evaluate(async () => { await window.__readerFlush(); });
+  const progress = await page.evaluate(book => window.readerApp.offline.progressFor(book), BOOK_ID);
+  assert(progress.locator.includes('chapter:1'), 'offline reading position is saved locally');
+}
 try {
   for (const [engine, type] of Object.entries({ chromium, webkit })) {
     mode = 'online';
@@ -42,6 +56,12 @@ try {
           navigator.serviceWorker.addEventListener('controllerchange', resolve, { once: true }));
         await window.readerApp.offline.flush();
       });
+      await page.evaluate(async () => { await window.readerApp.updateSettings({ autoCache: false }); });
+      await page.evaluate(book => { location.hash = '#/book/' + book; }, BOOK_ID);
+      await chapterVisible(page, 0);
+      await page.getByRole('button', { name: '下一章', exact: true }).click();
+      await chapterVisible(page, 1);
+      await page.evaluate(async () => { await window.__readerFlush(); });
       await page.close();
       mode = 'hanging';
       page = await context.newPage();
@@ -62,6 +82,7 @@ try {
       await page.getByText('剑来 第1卷', { exact: true }).first().waitFor({ timeout: 5000 });
       assert.equal(await page.evaluate(() => window.readerApp.api.currentSession()?.user.id), 'u1');
       assert.equal(await page.evaluate(() => navigator.onLine), true);
+      await readCachedNovel(page);
       if (engine === 'chromium') {
         await page.close();
         await context.setOffline(true);
@@ -70,9 +91,10 @@ try {
         await page.locator('.app-shell').waitFor({ timeout: 5000 });
         await page.getByText('剑来 第1卷', { exact: true }).first().waitFor({ timeout: 5000 });
         assert.equal(await page.evaluate(() => navigator.onLine), false);
+        await readCachedNovel(page);
       }
       await context.close();
-      console.log(`PASS ${engine}: cached shell + authenticated shelf cold-start with hanging validation and unreachable server`);
+      console.log(`PASS ${engine}: cached shell, authenticated shelf and previously read novel cold-start offline; cached chapter navigation and saved position`);
     } finally { await browser.close(); }
   }
 } finally {
