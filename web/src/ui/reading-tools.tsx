@@ -16,7 +16,7 @@ import { FloatingNotice } from './floating-notice.tsx';
 export interface SearchSection { id: string; title: string; text: string }
 export interface ReadingToolsProps {
   api: ReaderApi; cache: PublicationCache; offline: OfflineStore; sync: SyncEngine; manifest: Manifest;
-  selection: TextAnchor | null; locator: string; returnLocator: string;
+  selection: TextAnchor | null; locator: string; returnLocator: string; currentChapter: number;
   sections(signal: AbortSignal): AsyncGenerator<SearchSection>;
   searchQueries?(query: string): string[];
   displayText?(text: string): string;
@@ -51,7 +51,7 @@ export function ReadingTools(props: ReadingToolsProps) {
   const [noteFilter, setNoteFilter] = useState<'all' | 'bookmark' | 'annotation'>('all');
   const [deleteId, setDeleteId] = useState('');
   const editorRef = useRef<HTMLDivElement>(null);
-  const [from, setFrom] = useState(1), [to, setTo] = useState(['chapters', 'txt'].includes(props.manifest.book.format) ? props.manifest.content?.total ?? 1 : 1);
+  const [from, setFrom] = useState(props.currentChapter), [to, setTo] = useState(['chapters', 'txt'].includes(props.manifest.book.format) ? props.manifest.content?.total ?? 1 : 1);
   const [downloadReady, setDownloadReady] = useState(false);
   const [download, setDownload] = useState<DownloadState | null>(null);
   const [usage, setUsage] = useState(0), [books, setBooks] = useState<Array<{ id: string; bytes: number }>>([]), [quota, setQuota] = useState(256);
@@ -77,7 +77,7 @@ export function ReadingTools(props: ReadingToolsProps) {
     try { await work(); } catch (error) { if (alive.current) {setMessageError(true);setMessage(error instanceof Error ? error.message : '操作失败');} }
   }
   useEffect(() => {
-    void action(async () => { await task.load(); if (!alive.current) return; setDownloadReady(true); if (task.state.status !== 'idle') { setFrom(task.state.from); setTo(task.state.to); } await storage(); });
+    void action(async () => { await task.load(); if (!alive.current) return; setDownloadReady(true); if (task.state.status === 'paused' || task.state.status === 'error') { setFrom(task.state.from); setTo(task.state.to); } await storage(); });
     return () => { alive.current = false; searchRun.current?.abort(); if (task.state.status === 'running') void task.pause().catch(() => undefined); props.stopPreview(); };
   }, []);
   async function search() {

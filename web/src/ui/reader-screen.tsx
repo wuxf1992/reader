@@ -329,6 +329,7 @@ export class ReaderScreen {
             close={() => { this.annotation = null; this.view?.clearSelection(); this.patch({}); }} />}{this.toolsOpen && this.manifest ? <ReadingTools
             api={this.options.api} cache={this.publicationCache} offline={this.options.offline}
             sync={this.options.sync} manifest={this.manifest} selection={this.toolsSelection}
+            currentChapter={this.chrome.chapterIndex}
             locator={this.view?.position()?.locator ?? ''} returnLocator={this.toolsReturn}
             sections={signal => this.searchSections(signal)} navigate={target => this.navigateTool(target)}
             searchQueries={query => chineseSearchQueries(query, this.settings.chineseVariant)}

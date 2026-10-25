@@ -508,6 +508,35 @@ it('refreshes only the current chapter, updates offline cache and preserves text
   expect(new TextDecoder().decode((await cache.resource(book.id, 'resource:r1:a'))!)).toContain('已更新的章节正文');
 });
 
+it('defaults manual caching to the current chapter and preserves an edited range across tab changes', async () => {
+  const env = await setup(); serve(env.transport, content(['a', 'b', 'c']));
+  await env.screen.open(book);
+  await click(env.screen, '下一章');
+  await vi.waitFor(() => expect(body(env.screen)?.textContent).toContain('resource:r1:b'));
+  await click(env.screen, '工具'); await click(env.screen, '离线缓存');
+  const fields = () => env.screen.element.querySelectorAll<HTMLInputElement>('.reading-tool-range input');
+  await vi.waitFor(() => expect(fields()[0]?.value).toBe('2'));
+  expect(fields()[1]?.value).toBe('3');
+  await act(() => { fields()[0]!.value = '3'; fields()[0]!.dispatchEvent(new Event('input', { bubbles: true })); });
+  await click(env.screen, '书内搜索'); await click(env.screen, '离线缓存');
+  expect(fields()[0]?.value).toBe('3');
+});
+
+it.each(['complete', 'cancelled', 'paused', 'error'] as const)('uses the current chapter for a new download and retains unfinished ranges: %s', async status => {
+  const env = await setup(); serve(env.transport, content(['a', 'b', 'c']));
+  const cache = new PublicationCache(env.platform.kv, env.platform.blobs, publicationScope(env.api.baseUrl, 'u1'));
+  await cache.putTask(book.id, JSON.stringify({ status, completed: 1, total: 2, from: 1, to: 2, message: '', revision: 'r1' }));
+  await env.screen.open(book);
+  await click(env.screen, '下一章');
+  await vi.waitFor(() => expect(body(env.screen)?.textContent).toContain('resource:r1:b'));
+  await click(env.screen, '工具'); await click(env.screen, '离线缓存');
+  await vi.waitFor(() => expect([...env.screen.element.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === '下载 / 继续')?.disabled).toBe(false));
+  const fields = env.screen.element.querySelectorAll<HTMLInputElement>('.reading-tool-range input');
+  const resume = status === 'paused' || status === 'error';
+  expect(fields[0]?.value).toBe(resume ? '1' : '2');
+  expect(fields[1]?.value).toBe(resume ? '2' : '3');
+});
+
 describe('legacy offline migration', () => {
   it('claims a restored session once and preserves pending progress, notes, deletes and the original backup', async () => {
     const kv = new MemoryKv();
