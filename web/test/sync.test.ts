@@ -187,18 +187,17 @@ describe('ReaderApi', () => {
 });
 
 describe('OfflineStore', () => {
-  it('keeps a farther local position when a server position has a newer timestamp and queues it for upload', async () => {
+  it('accepts a newer rereading position from another device without uploading the old position', async () => {
     const kv = new MemoryKv();
     const store = new OfflineStore(kv);
     const local = { bookId: 'b1', locator: 'r1:0.6000:c1', percentage: 0.6, chapterTitle: 'c1', device: 'a', updatedAt: 1000 };
     await store.setProgress(local);
     await store.markDelivered(store.outbox(), 10);
-    const remote = { ...local, locator: 'r1:0.5800:c1', percentage: 0.58, updatedAt: Date.now() + 1000 };
+    const remote = { ...local, locator: 'r1:0.2000:c1', percentage: 0.2, device: 'b', updatedAt: 2000 };
     await store.applyPulled({ serverTime: 20, progress: [remote], notes: [] });
     const restored = new OfflineStore(kv); await restored.load();
-    expect(restored.progressFor('b1')).toMatchObject({ ...local, updatedAt: expect.any(Number) });
-    expect(restored.progressFor('b1')!.updatedAt).toBeGreaterThan(remote.updatedAt);
-    expect(restored.outbox().progress).toHaveLength(1);
+    expect(restored.progressFor('b1')).toEqual(remote);
+    expect(restored.outbox().progress).toEqual([]);
     expect(restored.current.serverTime).toBe(20);
   });
 
@@ -594,31 +593,26 @@ describe('SyncEngine', () => {
     }
   });
 
-  it('uploads farther local progress after rejecting a behind server position, then finishes without a retry loop', async () => {
+  it('syncs a newer rereading position without uploading the old farther position', async () => {
     vi.useFakeTimers();
     const { api, transport, offline, engine } = build();
     try {
       transport.json(SESSION); await api.login('me', 'password12'); await offline.load();
       const local = { bookId: 'b1', locator: 'r1:0.6000:c1', percentage: 0.6, chapterTitle: 'c1', device: 'a', updatedAt: 1000 };
       await offline.setProgress(local); await offline.markDelivered(offline.outbox(), 1);
-      let remote = { ...local, locator: 'r1:0.5800:c1', percentage: 0.58, updatedAt: Date.now() + 1000 };
+      const remote = { ...local, locator: 'r1:0.2000:c1', percentage: 0.2, device: 'b', updatedAt: 2000 };
       transport.respondWith(request => {
-        if (request.method === 'POST') {
-          const sent = JSON.parse(bodyText(request)).progress[0];
-          expect(sent.updatedAt).toBeGreaterThan(remote.updatedAt);
-          remote = sent;
-          return { status: 200, headers: {}, json: { accepted: 1, rejected: 0, serverTime: 3, progress: [remote], notes: [] } };
-        }
+        expect(request.method).toBe('GET');
         return { status: 200, headers: {}, json: { serverTime: 2, progress: [remote], notes: [] } };
       });
       await engine.syncNow();
-      expect(engine.pendingRequest).toBe(true);
+      expect(engine.pendingRequest).toBe(false);
       await vi.advanceTimersByTimeAsync(2500);
-      expect(remote.locator).toBe(local.locator);
+      expect(offline.progressFor('b1')).toEqual(remote);
       expect(offline.outbox().progress).toEqual([]);
       expect(engine.pendingRequest).toBe(false);
       await vi.advanceTimersByTimeAsync(5000);
-      expect(transport.countMatching(request => request.method === 'POST' && request.url.endsWith('/api/v1/sync'))).toBe(1);
+      expect(transport.countMatching(request => request.method === 'POST' && request.url.endsWith('/api/v1/sync'))).toBe(0);
     } finally { engine.stop(); vi.useRealTimers(); }
   });
 

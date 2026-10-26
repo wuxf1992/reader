@@ -190,19 +190,18 @@ describe('chapter publication reading', () => {
     expect(env.offline.outbox().progress).toEqual([]);
   });
 
-  it.each(['chapters', 'epub'] as const)('opens the farther local position in %s even when the server position has a newer timestamp', async format => {
+  it.each(['chapters', 'epub'] as const)('opens the newer rereading position from another device in %s', async format => {
     const env = await setup(); serve(env.transport, content(['a', 'b']));
     const local = { bookId: book.id, locator: 'r1:0.0000:chapter:b', percentage: 0.5,
       chapterTitle: 'b', device: 'phone', updatedAt: 10 };
-    const remote = { ...local, locator: 'r1:0.0000:chapter:a', percentage: 0, updatedAt: Date.now() + 1000 };
+    const remote = { ...local, locator: 'r1:0.0000:chapter:a', percentage: 0, device: 'other phone', updatedAt: 20 };
     await env.offline.setProgress(local);
     await env.offline.markDelivered(env.offline.outbox(), 1);
     vi.spyOn(env.api, 'getProgress').mockResolvedValue(remote);
     await env.screen.open({ ...book, format });
-    expect(body(env.screen)?.textContent).toContain('resource:r1:b');
-    expect(env.offline.progressFor(book.id)?.locator).toBe(local.locator);
-    expect(env.offline.progressFor(book.id)!.updatedAt).toBeGreaterThan(remote.updatedAt);
-    expect(env.sync.schedule).toHaveBeenCalled();
+    expect(body(env.screen)?.textContent).toContain('resource:r1:a');
+    expect(env.offline.progressFor(book.id)).toEqual(remote);
+    expect(env.offline.outbox().progress).toEqual([]);
     await env.screen.flushProgress();
     expect(env.offline.progressFor(book.id)!.updatedAt).toBeGreaterThan(remote.updatedAt + 1);
   });

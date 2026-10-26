@@ -192,13 +192,6 @@ export class OfflineStore {
 
   private mergeProgress(remote: Progress): Progress {
     const local = this.snapshot.progress[remote.bookId];
-    if (local && local.percentage > remote.percentage) {
-      // A timestamp alone must not move the reader backward; requeue the local position for repair.
-      const kept = { ...local, updatedAt: Math.max(local.updatedAt, remote.updatedAt + 1, Date.now()) };
-      this.snapshot.progress[remote.bookId] = kept;
-      this.markDirty('dirtyProgress', remote.bookId);
-      return kept;
-    }
     if (local && local.updatedAt > remote.updatedAt) return local;
     this.snapshot.progress[remote.bookId] = remote;
     return remote;
@@ -264,7 +257,7 @@ export class OfflineStore {
     return Object.values(this.snapshot.books);
   }
 
-  /** Merges remote state without moving a farther local reading position backward. */
+  /** Applies the same last-writer-wins rule as the server, including deliberate rereading. */
   async applyPulled(pull: SyncPull): Promise<void> {
     for (const progress of pull.progress) {
       this.mergeProgress(progress);

@@ -41,7 +41,7 @@ async function mount(capabilities = ['search', 'browse', 'content.manifest']) {
     sourceDetail: vi.fn(async (_id: string, ref: string) => ({ ...entries.find(entry => entry.ref === ref), shelfBookId: null })),
     searchSource: vi.fn(async function* () { yield { items: entries }; }),
     sourceChapters: vi.fn(async (_id: string, _ref: string, _options: any) => Array.from({ length: 205 }, (_, seq) => ({ id: 'chapter-' + seq, seq, title: `第${seq + 1}章 内容` }))),
-    coverBytes: vi.fn(async () => new Uint8Array([137, 80, 78, 71])),
+    coverBytes: vi.fn(async (_url: string, _options: { signal?: AbortSignal } = {}): Promise<Uint8Array> => new Uint8Array([137, 80, 78, 71])),
     acquireSource: vi.fn(async () => ({ kind: 'ready', publicationId: 'book/id' })),
     subscriptions: vi.fn(async () => [{ ...subscription }]),
     configureSubscription: vi.fn(async (_id: string, patch: { enabled?: boolean; intervalMinutes?: number }) => { subscription = { ...subscription, ...patch }; }),
@@ -291,6 +291,27 @@ it('keeps details usable when cover loading fails and shows placeholders for mis
   expect(detail.textContent).toContain('暂无简介');
   expect(detail.textContent).toContain('尚未加入书架');
   expect(button(detail, '加入书架').disabled).toBe(false);
+});
+
+it('loads the directory while the cover request is still pending', async () => {
+  const api = await mount();
+  api.sourceDetail.mockResolvedValueOnce({ ...entries[0], shelfBookId: null, coverUrl: 'https://images.example.com/slow.jpg' } as any);
+  let coverSignal: AbortSignal | undefined;
+  api.coverBytes.mockImplementationOnce((_url: string, options: { signal?: AbortSignal } = {}) => new Promise<Uint8Array>((_resolve, reject) => {
+    coverSignal = options.signal;
+    coverSignal?.addEventListener('abort', () => reject(coverSignal!.reason), { once: true });
+  }));
+  const group = await openGroup();
+  await act(async () => button(group, '详情').click()); await settle();
+  const detail = detailDialog();
+  expect(coverSignal?.aborted).toBe(false);
+  await act(async () => button(detail, '查看目录').click()); await settle(); await settle();
+  expect(api.sourceChapters).toHaveBeenCalledOnce();
+  expect(directoryDialog().textContent).toContain('共 205 章');
+  expect(coverSignal?.aborted).toBe(true);
+  await closeDirectory();
+  await act(async () => detail.querySelector<HTMLButtonElement>('.sheet-close')!.click()); await settle();
+  expect(coverSignal?.aborted).toBe(true);
 });
 
 
