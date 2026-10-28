@@ -1,4 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
+import { useCover } from '../../../ui/use-cover.ts';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { BookOpen, LibraryBig, MoreHorizontal, Search } from 'lucide-react';
@@ -13,23 +14,6 @@ import { OpdsAccess } from '../../../ui/opds-access.tsx';
 import { DialogView, type Dialog } from '../../../ui/dialog.tsx';
 import { FloatingNotice } from '../../../ui/floating-notice.tsx';
 import { animateShelfPositions, captureShelfPositions, resetShelfMotion, type ShelfSnapshot } from '../shelf-motion.ts';
-
-export function useCover(api: ReturnType<typeof useRuntime>['api'], coverUrl: string | null | undefined): string | null {
-  const [src, setSrc] = useState<string | null>(null);
-  useEffect(() => {
-    setSrc(null);
-    if (!coverUrl) return;
-    let live = true;
-    let objectUrl: string | undefined;
-    void api.coverBytes(coverUrl).then(bytes => {
-      if (!live) return;
-      objectUrl = URL.createObjectURL(new Blob([new Uint8Array(bytes)]));
-      setSrc(objectUrl);
-    }).catch(() => { if (live) setSrc(null); });
-    return () => { live = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
-  }, [api, coverUrl]);
-  return src;
-}
 
 export function BookCard({ book, showAuthor, showProgress, onRemove }: { book: Book | ContinueReadingItem; showAuthor: boolean; showProgress: boolean; onRemove?: () => void }) {
   const runtime = useRuntime();

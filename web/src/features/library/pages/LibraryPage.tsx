@@ -1,9 +1,10 @@
 import { BookOpen, FileText, Folder, Plus, Search, Upload } from 'lucide-react';
+import { useCover } from '../../../ui/use-cover.ts';
 import { ActionMenu } from '../../../ui/action-menu.tsx';
 import { Callout, Icon } from '../../../ui/toolkit.tsx';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import type { Book, BrowseEntry } from '../../../api/types.ts';
 import { useRuntime } from '../../../app/providers/runtime-context.tsx';
 import { useAuthStore } from '../../../shared/stores/auth.store.ts';
@@ -13,18 +14,7 @@ import { FloatingNotice } from '../../../ui/floating-notice.tsx';
 
 function Cover({ book }: { book: Book }) {
   const runtime = useRuntime();
-  const [src, setSrc] = useState<string | null>(null);
-  useEffect(() => {
-    let live = true;
-    let objectUrl: string | null = null;
-    if (!book.coverUrl) { setSrc(null); return; }
-    void runtime.api.coverBytes(book.coverUrl).then(bytes => {
-      if (!live) return;
-      objectUrl = URL.createObjectURL(new Blob([bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer], { type: 'image/jpeg' }));
-      setSrc(objectUrl);
-    }).catch(() => { if (live) setSrc(null); });
-    return () => { live = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
-  }, [runtime.api, book.coverUrl]);
+  const src = useCover(runtime.api, book.coverUrl);
   return <div className="cover">{src ? <img src={src} alt="" loading="lazy" /> : <div className="placeholder">{book.title || '无封面'}</div>}<span className="format-badge">{book.format || '书籍'}</span></div>;
 }
 

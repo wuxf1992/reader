@@ -613,7 +613,7 @@ manifest 的每个条目还带 `ref`，即这个文件对应的**资源引用**�
 
 ### `GET /books/:id/cover`
 
-返回封面。无封面时 `404 NO_COVER`。缓存头是 `immutable`（封面随书籍主键变化）。
+返回封面。无封面时 `404 NO_COVER`。使用 `ETag` 与 `If-None-Match` 校验，未变化返回无正文的 `304`；缓存头为 `private, no-cache`，并按 `origin, authorization` 区分。客户端可先显示当前账号的本地缓存，再在后台校验更新。
 
 ### `PATCH /books/:id/metadata`
 

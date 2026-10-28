@@ -663,7 +663,7 @@ export class ReaderApi {
     return response.bytes ?? new Uint8Array();
   }
 
-  async coverBytes(coverUrl: string, options: RequestOptions = {}): Promise<Uint8Array> {
+  async coverBytes(coverUrl: string, options: RequestOptions = {}, onCached?: (bytes: Uint8Array) => void): Promise<Uint8Array> {
     if (!this.session || !/^\/api\/v1\/books\/[^/?]+\/cover(?:\?|$)/.test(coverUrl)) {
       const response = await this.request(coverUrl, 'GET', undefined, { ...options, binary: true });
       return response.bytes ?? new Uint8Array();
@@ -681,6 +681,13 @@ export class ReaderApi {
       if (etag) cached = await this.platform.blobs.get(key + ':' + etag);
     } catch { /* A cache failure must not prevent downloading a cover. */ }
     assertCurrent();
+    // Display the account's saved image while its validator is checked in the background.
+    if (cached?.byteLength) {
+      onCached?.(cached);
+      const offline = await this.platform.connectivity() === 'offline';
+      assertCurrent();
+      if (offline) return cached;
+    }
     try {
       const response = await this.request(coverUrl, 'GET', undefined, {
         ...options, binary: true, cache: 'no-cache',

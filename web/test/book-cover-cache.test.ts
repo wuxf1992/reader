@@ -94,3 +94,46 @@ it('accepts binary 304 and validates past old immutable browser caches', async (
   expect(response.status).toBe(304); expect(response.bytes).toHaveLength(0);
   expect(fetch.mock.calls[0]?.[1].cache).toBe('no-cache');
 });
+
+
+it('publishes the account cache before delayed validation, then still rejects explicit permission errors', async () => {
+  const { open, transport } = setup(); const api = await open();
+  transport.respondWith(() => ({status:200,headers:{etag:'"first"'},bytes:new Uint8Array([1])}));
+  await api.coverBytes(cover);
+  let finish!: (value: { status: number; headers: Record<string,string> }) => void;
+  transport.respondWith(() => new Promise(resolve => { finish = resolve; }));
+  const cached = vi.fn(); let settled = false;
+  const loading = api.coverBytes(cover, {}, cached).then(bytes => {settled=true;return bytes;});
+  await vi.waitFor(() => expect(cached).toHaveBeenCalledWith(new Uint8Array([1])));
+  expect(settled).toBe(false);
+  finish({status:304,headers:{}});
+  expect(await loading).toBe(cached.mock.calls[0]![0]);
+  transport.failWith(new ApiError('forbidden','revoked'));
+  await expect(api.coverBytes(cover, {}, cached)).rejects.toMatchObject({kind:'forbidden'});
+});
+
+it('does not publish a cache after the request is cancelled or the server changes', async () => {
+  const {open,transport,platform}=setup();const api=await open();
+  transport.respondWith(()=>({status:200,headers:{etag:'"first"'},bytes:new Uint8Array([1])}));
+  await api.coverBytes(cover);
+  const controller=new AbortController(),cached=vi.fn();
+  const read=platform.blobs.get.bind(platform.blobs);
+  vi.spyOn(platform.blobs,'get').mockImplementation(async key=>{controller.abort();return read(key);});
+  await expect(api.coverBytes(cover,{signal:controller.signal},cached)).rejects.toMatchObject({kind:'aborted'});
+  expect(cached).not.toHaveBeenCalled();
+  vi.spyOn(platform.blobs,'get').mockImplementation(async key=>{api.setBaseUrl('https://other.test');return read(key);});
+  await expect(api.coverBytes(cover,{},cached)).rejects.toMatchObject({code:'ACCOUNT_CHANGED'});
+  expect(cached).not.toHaveBeenCalled();
+});
+
+
+it('does not attempt validation while the platform knows it is offline', async () => {
+  const {open,transport,platform}=setup();const api=await open();
+  transport.respondWith(()=>({status:200,headers:{etag:'"first"'},bytes:new Uint8Array([1])}));
+  await api.coverBytes(cover); const count=transport.requests.length;
+  vi.spyOn(platform,'connectivity').mockResolvedValue('offline');
+  const cached=vi.fn();
+  expect(await api.coverBytes(cover,{},cached)).toEqual(new Uint8Array([1]));
+  expect(cached).toHaveBeenCalledWith(new Uint8Array([1]));
+  expect(transport.requests).toHaveLength(count);
+});
