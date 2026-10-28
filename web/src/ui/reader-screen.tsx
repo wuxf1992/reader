@@ -810,7 +810,14 @@ export class ReaderScreen {
     }
   }
   private localSectionId(id: string): string {
-    if (this.view && this.view.indexOfSection(id) >= 0) return id;
+    // The loaded document is the authority on its own section ids. Guessing the
+    // `xhtml:` prefix from the format alone is wrong for a windowed book whose ids
+    // never had one, and a highlight whose id gains a prefix the chapter does not
+    // have matches no chapter: saved, synced, and never drawn.
+    const bare = id.replace(/^xhtml:/, '');
+    const sections = this.doc?.sections ?? [];
+    const known = sections.find(section => section.id === id) ?? sections.find(section => section.id.replace(/^xhtml:/, '') === bare);
+    if (known) return known.id;
     if (!this.content && this.book?.format === 'epub') return id.replace(/^xhtml:/, '');
     if (this.content && this.book?.format === 'epub' && !id.startsWith('xhtml:')) return 'xhtml:' + id;
     return id;

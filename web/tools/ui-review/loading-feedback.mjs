@@ -39,7 +39,7 @@ try {
       await page.route('**/api/v1/plugins', route => route.fulfill({ json: { plugins: [] } }));
       await page.route('**/api/v1/subscriptions', route => route.fulfill({ json: { subscriptions: [] } }));
       await page.route('https://wuxf.top/**', route => route.abort());
-      await page.route('**/assets/client.js*', async route => {
+      await page.route('**/assets/client*.js*', async route => {
         await new Promise(resolve => setTimeout(resolve, 400)); await route.continue();
       });
       await page.goto(origin, { waitUntil: 'commit' });

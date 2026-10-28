@@ -127,6 +127,13 @@ describe('ReaderChrome', () => {
     container = document.createElement('div');
     document.body.append(container);
   });
+  // Unmount before jsdom is torn down: a root left mounted can still commit a
+  // scheduled update afterwards, which surfaced in CI as an unhandled
+  // "Right-hand side of 'instanceof' is not an object" from react-dom.
+  afterEach(() => {
+    render(null, container);
+    container.remove();
+  });
 
   afterEach(() => { act(() => render(null, container)); container.remove(); });
 

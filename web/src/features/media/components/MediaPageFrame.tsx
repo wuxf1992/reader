@@ -1,11 +1,13 @@
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Callout, Icon } from '../../../ui/toolkit.tsx';
 import type { ReactNode } from 'react';
 import { useMediaChannel } from '../hooks/use-media-channel.ts';
-import { ChannelSegments } from './channel-navigation.tsx';
+import { ChannelSegments, swipeCatalogTarget } from './channel-navigation.tsx';
+import { useSwipeTabs } from '../../../shared/ui/use-swipe-tabs.ts';
 import { FloatingNotice } from '../../../ui/floating-notice.tsx';
 
-export function MediaPageFrame({ title, subtitle, children, actions, className, backTo, backLabel, hideHeader = false }: { title: string; subtitle?: ReactNode; children: ReactNode; actions?: ReactNode; className?: string; backTo?: string; backLabel?: string; hideHeader?: boolean }) {
+/** `emptyChannel`: the channel has no library, so a swipe moves by channel (see swipeCatalogTarget). */
+export function MediaPageFrame({ title, subtitle, children, actions, className, backTo, backLabel, hideHeader = false, emptyChannel = false }: { title: string; subtitle?: ReactNode; children: ReactNode; actions?: ReactNode; className?: string; backTo?: string; backLabel?: string; hideHeader?: boolean; emptyChannel?: boolean }) {
   const channel = useMediaChannel();
   const location = useLocation();
   const stateReturn = typeof location.state?.returnTo === 'string' && location.state.returnTo.startsWith('/media/') ? location.state.returnTo : undefined;
@@ -13,7 +15,14 @@ export function MediaPageFrame({ title, subtitle, children, actions, className, 
   const label = backLabel ?? (stateReturn ? '返回上一页' : '返回频道');
   const rootClassName = ['media-screen', 'media-page', className].filter(Boolean).join(' ');
   const catalog = className?.split(/\s+/).includes('media-catalog-page') ?? false;
-  return <div className={rootClassName}>
+  const navigate = useNavigate();
+  // On a phone the catalog tabs are also a swipe apart (see swipeCatalogTarget).
+  const swipe = useSwipeTabs<HTMLDivElement>(catalog ? direction => {
+    const target = swipeCatalogTarget(location.pathname, location.search, direction, emptyChannel ? 'channel' : 'category');
+    if (target) navigate(target);
+    return target !== null;
+  } : null);
+  return <div ref={swipe} className={rootClassName}>
     {!hideHeader && <header className="media-heading">
       {catalog
         ? <>

@@ -166,7 +166,7 @@ try {
       assert.deepEqual(errors.filter(error => !resizeWarnings.includes(error)), []);
       // Hold the bundle to inspect the real startup screen before React mounts.
       const startupTint = await page.locator('html').evaluate(node => getComputedStyle(node).backgroundColor);
-      await page.route('**/assets/client.js*', route => route.abort());
+      await page.route('**/assets/client*.js*', route => route.abort());
       await page.reload({ waitUntil: 'domcontentloaded' });
       assert.equal(await page.locator('#app-startup').evaluate(node => getComputedStyle(node).backgroundColor), startupTint, 'startup restores the visible browser tint');
       assert.equal(await page.locator('html').evaluate(node => getComputedStyle(node).colorScheme), 'dark');

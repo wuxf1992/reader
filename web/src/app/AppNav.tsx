@@ -17,7 +17,9 @@ import { useRuntime } from './providers/runtime-context.tsx';
 export type NavMode = 'hidden' | 'top' | 'push';
 
 const mediaTop = /^\/media\/(video|music|audiobook)(?:\/([^/]+))?$/;
-const pushed = new Set(['favorites', 'queue', 'settings', 'history', 'folders', 'player', 'narrators']);
+// 演播者 (audiobook/narrators) is not here: it is the channel's second catalog tab, a
+// sibling of 有声书, so it keeps the bar. A narrator's own page is deeper and pushes.
+const pushed = new Set(['favorites', 'queue', 'settings', 'history', 'folders', 'player']);
 
 export function navMode(pathname: string): NavMode {
   if (pathname.startsWith('/book/') || /^\/media\/[^/]+\/player(\/|$)/.test(pathname)) return 'hidden';
@@ -52,7 +54,7 @@ export function AppNav({ mode }: { mode: Exclude<NavMode, 'hidden'> }) {
     {/* Desktop only: one search across books and media (the page is /search). */}
     <form className="app-nav-search" role="search" onSubmit={search}>
       <Search size={16} aria-hidden="true" />
-      <input type="search" aria-label="搜索书籍和影音" placeholder="搜索书名、片名、歌曲、有声书" value={query} maxLength={200} onInput={event => setQuery(event.currentTarget.value)} />
+      <input type="search" aria-label="搜索书籍和影音" placeholder="搜索书籍和影音" value={query} maxLength={200} onInput={event => setQuery(event.currentTarget.value)} />
     </form>
     <ul className="app-nav-list">
       {destinations.map(({ to, label, icon: Icon, current }) => {

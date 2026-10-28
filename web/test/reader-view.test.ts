@@ -880,3 +880,20 @@ describe('paged drag previews', () => {
     expect(fixed.beginDrag()).toBe(false); fixed.dispose();
   });
 });
+
+
+it('restores EPUB columns at whole-page boundaries and repairs browser focus scrolling', async () => {
+  const container = document.createElement('div'); document.body.append(container);
+  const view = make(container, reflowableDoc(2));
+  try {
+    const flow = view.elementHost.flow;
+    Object.defineProperties(flow, { clientWidth: { value: 300 }, scrollWidth: { value: 900 } });
+    view.applySettings({ mode: 'paged' });
+    await view.open(0, 0.3);
+    expect(flow.scrollLeft).toBe(300);
+    flow.scrollLeft = 410;
+    flow.dispatchEvent(new Event('scroll'));
+    expect(flow.scrollLeft).toBe(300);
+    expect(view.position().pageInChapter).toBe(2);
+  } finally { view.dispose(); container.remove(); }
+});

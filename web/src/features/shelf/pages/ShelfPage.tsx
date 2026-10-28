@@ -1,5 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useCover } from '../../../ui/use-cover.ts';
+import { coverTint } from '../../../ui/cover-tint.ts';
+import { BookGridSkeleton } from '../../../ui/book-grid-skeleton.tsx';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { BookOpen, LibraryBig, MoreHorizontal, Search } from 'lucide-react';
@@ -14,6 +16,7 @@ import { OpdsAccess } from '../../../ui/opds-access.tsx';
 import { DialogView, type Dialog } from '../../../ui/dialog.tsx';
 import { FloatingNotice } from '../../../ui/floating-notice.tsx';
 import { animateShelfPositions, captureShelfPositions, resetShelfMotion, type ShelfSnapshot } from '../shelf-motion.ts';
+import { useSwipeTabs } from '../../../shared/ui/use-swipe-tabs.ts';
 
 export function BookCard({ book, showAuthor, showProgress, onRemove }: { book: Book | ContinueReadingItem; showAuthor: boolean; showProgress: boolean; onRemove?: () => void }) {
   const runtime = useRuntime();
@@ -22,7 +25,7 @@ export function BookCard({ book, showAuthor, showProgress, onRemove }: { book: B
   return <div className="book-card" data-shelf-book-id={book.id}>
     <Link className="book-open" aria-label={`${book.title} ${book.author ?? ''}`.trim()} to={`/book/${encodeURIComponent(book.id)}`}>
       <div className="cover">
-        {src ? <img src={src} alt="" loading="lazy" /> : <div className="placeholder">{book.title || '无封面'}</div>}
+        {src ? <img src={src} alt="" loading="lazy" /> : <div className="placeholder" style={coverTint(book.title || '')}>{book.title || '无封面'}</div>}
         <span className="format-badge">{book.format?.toUpperCase() === 'CHAPTERS' && onRemove ? '连载' : book.format || '书籍'}</span>
         {showProgress && progress !== undefined && progress > 0 && <div className="cover-progress"><span style={{ width: `${Math.round(Math.max(0, Math.min(1, progress)) * 100)}%` }} /></div>}
       </div>
@@ -127,6 +130,14 @@ export function ShelfPage() {
   const onSearch = (event: FormEvent) => { event.preventDefault(); setQueryText(search.trim()); go({ q: search.trim() }); };
   const clearSearch = () => { setSearch(''); setQueryText(''); go({ q: '' }); };
   const clearFilters = () => go({ status: null, series: null, tag: null }, true);
+  // On a phone the status chips are also a swipe apart: 全部 · 在读 · 想读 · 已读.
+  const swipe = useSwipeTabs<HTMLDivElement>(direction => {
+    const order = [null, ...readingStates] as const;
+    const next = order[order.indexOf(status ?? null) + (direction === 'next' ? 1 : -1)];
+    if (next === undefined) return false;
+    go({ status: next }, true);
+    return true;
+  });
   const act = async (book: Book, action: BookAction) => {
     if (action === 'remove') { setRemoveTarget(book); return; }
     setActionError('');
@@ -149,7 +160,7 @@ export function ShelfPage() {
   const groupLabel = series ? '系列 · ' + series : tag ? '标签 · ' + tag : '';
   const remove = async (book: Book | ContinueReadingItem) => { await runtime.api.browseBatchShelf({ bookIds: [book.id] }, 'remove'); await runtime.offline.removeBooks([book.id]); await queryClient.invalidateQueries({ queryKey: ['shelf'] }); };
   const densityLabel = settings.shelfDensity === 'compact' ? '紧凑' : settings.shelfDensity === 'comfortable' ? '宽松' : '适中';
-  return <div id="shelf-scroll" className="shelf shelf-screen">
+  return <div ref={swipe} id="shelf-scroll" className="shelf shelf-screen">
     <header className="shelf-head">
       <div className="shelf-head-text"><h1 className="shelf-title">书架</h1>
         <nav className="collection-links shelf-links" aria-label="发现书籍">
@@ -164,11 +175,11 @@ export function ShelfPage() {
     <div className="shelf-discovery">
       <form className="shelf-search" role="search" onSubmit={onSearch}>
         <Search className="search-glyph" size={18} aria-hidden="true" />
-        <input type="search" aria-label="搜索书库" placeholder="搜索书名、作者、系列" value={search} onChange={event => setSearch(event.currentTarget.value)} />
+        <input type="search" aria-label="筛选书架" placeholder="在书架中筛选书名、作者、系列" value={search} onChange={event => setSearch(event.currentTarget.value)} />
         {search && <button type="button" className="search-clear" aria-label="清除搜索" onClick={clearSearch}>×</button>}
       </form>
     </div>
-    <section className="shelf-section" aria-label={queryText ? '搜索结果' : '全部书籍'}>
+    <section className="shelf-section" aria-label={queryText ? '筛选结果' : '全部书籍'}>
       <div className="shelf-filters">
         <div className="shelf-state-filter" role="group" aria-label="阅读状态">
           <button type="button" className="chip" aria-pressed={!status} onClick={() => go({ status: null }, true)}>全部</button>
@@ -180,7 +191,7 @@ export function ShelfPage() {
       </div>
       <FloatingNotice message={actionError} error />
       {(!query.isPending && (cards.length > 0 || queryText || filtered)) && <div className="shelf-toolbar"><span className="shelf-count muted" role="status" aria-live="polite" aria-atomic="true">{query.isPlaceholderData ? '正在更新' : queryText ? `「${queryText}」 · 找到 ${query.data?.total ?? 0} 本` : `共 ${query.data?.total ?? 0} 本`}</span><select className="shelf-sort" aria-label="排序方式" value={sort} onChange={event => onSort(event.currentTarget.value)}>{SHELF_SORTS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>}
-      {query.isPending && <FloatingNotice message="正在加载书架…" busy />}
+      {query.isPending && <><FloatingNotice message="正在加载书架…" busy /><BookGridSkeleton density={settings.shelfDensity} /></>}
       {query.error && <Callout tone="error" title="书架加载失败">{query.error.message}</Callout>}
       {query.data && !query.isPlaceholderData && cards.length === 0 && filtered && !queryText && <div className="empty-state collection-empty"><BookOpen className="empty-glyph" aria-hidden="true" /><p>{status ? `还没有${readingLabels[status]}的书` : '这个分组里没有书'}</p><p className="muted">{status === 'want' ? '在书籍的“⋯”菜单里可以标记想读。' : '换一个分类，或查看全部书籍。'}</p><div className="empty-actions"><button type="button" className="button" onClick={clearFilters}>查看全部书籍</button></div></div>}
       {query.data && !query.isPlaceholderData && cards.length === 0 && !(filtered && !queryText) && <div className="empty-state collection-empty"><BookOpen className="empty-glyph" aria-hidden="true" /><p>{queryText ? '没有匹配的书' : '书架还没有书'}</p><p className="muted">{queryText ? '换个关键词，或者检查一下作者名的写法' : '从书库挑选喜欢的书，或通过书源搜索，加入书架后就能开始阅读。'}</p><div className="empty-actions">{queryText ? <button type="button" className="button" onClick={clearSearch}>清除搜索</button> : <><Link className="button primary" to="/sources"><Search size={16} />去搜书</Link><Link className="button" to="/library"><LibraryBig size={16} />打开书库</Link></>}</div></div>}

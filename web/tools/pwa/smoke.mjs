@@ -63,7 +63,10 @@ try {
       return (await Promise.all(names.map(async (name) =>
         (await (await caches.open(name)).keys()).map((req) => req.url)))).flat();
     });
-    assert(cached.some((url) => new URL(url).pathname.endsWith('/assets/client.js')));
+    assert(cached.some((url) => /\/assets\/client-[\w-]+\.js$/.test(new URL(url).pathname)));
+    const styles = await page.locator('link[rel=stylesheet]').evaluateAll(links => links.map(link => link.href));
+    assert(styles.some(url => /\/assets\/index-[\w-]+\.css$/.test(new URL(url).pathname)));
+    assert(styles.every(url => cached.includes(url)), 'loaded CSS must use its exact offline cache URL');
     assert(!cached.some((url) => url.includes('/api/')));
     await context.setOffline(true);
     await page.close();
@@ -98,7 +101,9 @@ try {
     const bounds = await page.locator('.pwa-update').boundingBox();
     assert(bounds && bounds.x >= 0 && bounds.x + bounds.width <= 320);
     await page.evaluate(() => {
+      const save = window.readerApp.saveBeforeUpdate.bind(window.readerApp);
       window.readerApp.saveBeforeUpdate = async () => {
+        await save();
         await new Promise((resolve) => setTimeout(resolve, 100));
         sessionStorage.setItem('pwa-saved', 'yes');
       };

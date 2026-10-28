@@ -217,6 +217,10 @@ export class ReaderView {
    * value it would write is the one already there.
    */
   private trimApplied: number | null = null;
+  private maskedAt: number | null = null;
+  private maskTimer: ReturnType<typeof setTimeout> | undefined;
+  private noteAnchors: Array<{ id?: string; anchor: TextAnchor; color: string }> = [];
+  private searchAnchor: TextAnchor | null = null;
   private textPageCache: TextPage[] | null = null;
   private textPagesMeasured = false;
   /** Keep the same character through successive reflows; only a deliberate turn replaces it. */
@@ -226,6 +230,7 @@ export class ReaderView {
     this.animatePage('none');
     this.invalidateTextPages();
     this.restoreOffset();
+    this.repaintMarks();
     this.emitPosition();
   };
 
@@ -243,6 +248,11 @@ export class ReaderView {
     this.resolver = new ResourceResolver(options.doc.resources);
     this.container.append(this.host);
     this.bindChapterLinks();
+    this.host.flow.addEventListener('scroll', () => this.snapStrayScroll(), { passive: true });
+    this.host.addEventListener('scroll', () => this.pageMaskScrolled(), { passive: true });
+    this.host.flow.addEventListener('load', event => {
+      if (event.target instanceof HTMLImageElement) this.repaintMarks();
+    }, true);
     document.fonts?.addEventListener('loadingdone', this.fontsChanged);
     let timer: ReturnType<typeof setTimeout> | undefined;
     const changed = () => {
@@ -452,7 +462,7 @@ export class ReaderView {
     this.syncPagedHeight();
     // Toggling pagination changes the column count, so the stored offset has to
     // be re-applied after the browser has laid out the new column box.
-    requestAnimationFrame(() => this.restoreOffset());
+    requestAnimationFrame(() => { this.restoreOffset(); this.repaintMarks(); });
 
     // A page turn is the only place an animation is wanted, and only the two
     // settings that change where a page *is* can start one.
@@ -542,6 +552,7 @@ export class ReaderView {
       this.host.removeAttribute('data-animating');
       this.fadingPage?.remove();
       this.fadingPage = null;
+      this.syncPageMask();
     };
     // CSS animations can start a frame late. Wait for both pages to finish instead
     // of cutting them off using wall-clock time measured before they began.
@@ -703,6 +714,7 @@ export class ReaderView {
     if (slice) this.host.style.clipPath = `inset(0 0 ${Math.max(0, this.host.clientHeight - slice.visibleHeight)}px 0)`;
     else this.host.style.removeProperty('clip-path');
     if (remember || !this.textPageAnchor) this.rememberTextPage(slice);
+    this.syncPageMask();
   }
 
   /** Find the first character of the first row, even inside a wrapped paragraph. */
@@ -778,6 +790,7 @@ export class ReaderView {
     catch (error) { if (epoch !== this.openingEpoch) return; throw error; }
     if (epoch !== this.openingEpoch) return;
     this.sectionIndex = index;
+    this.searchAnchor = null;
     this.textPageAnchor = null;
     this.sectionOffset = Math.min(1, Math.max(0, offset));
     this.releaseObjectUrl();
@@ -892,6 +905,7 @@ export class ReaderView {
     const range = this.textAnchorRange(anchor);
     if (!range) return false;
     this.revealRange(range);
+    this.searchAnchor = anchor;
     this.paintRange(range, '#f5a623', 'search');
     return true;
   }
@@ -902,6 +916,7 @@ export class ReaderView {
   }
 
   paintAnnotations(anchors: Array<{ id?: string; anchor: TextAnchor; color: string }>): void {
+    this.noteAnchors = anchors;
     for (const mark of this.host.flow.querySelectorAll('[data-reader-mark="note"]')) mark.remove();
     const sectionId = this.doc.sections[this.sectionIndex]?.id;
     for (const { id, anchor, color } of anchors) {
@@ -909,6 +924,16 @@ export class ReaderView {
       const range = this.textAnchorRange(anchor);
       if (range) this.paintRange(range, /^#[0-9a-f]{6}$/i.test(color) ? color : '#ffd54f', 'note', id);
     }
+  }
+
+  /** Re-measures every highlight box against the text as it is laid out now. */
+  private repaintMarks(): void {
+    if (this.doc.layout === 'fixed') return;
+    this.paintAnnotations(this.noteAnchors);
+    const search = this.searchAnchor;
+    if (!search || this.doc.sections[this.sectionIndex]?.id !== search.sectionId) return;
+    const range = this.textAnchorRange(search);
+    if (range) this.paintRange(range, '#f5a623', 'search');
   }
 
   private paintRange(range: Range, color: string, kind: string, id?: string): void {
@@ -930,10 +955,7 @@ export class ReaderView {
     const rect = rangeRect(range);
     if (rect) {
       const scroller = this.scroller, box = scroller.getBoundingClientRect();
-      if (this.usesColumns()) {
-          const stride = this.columnStride(this.columnCount());
-          scroller.scrollLeft = Math.floor((scroller.scrollLeft + rect.left - box.left) / stride) * stride;
-        }
+      if (this.usesColumns()) this.scrollToColumnAt(scroller.scrollLeft + rect.left - box.left);
       else if (this.usesTextPages()) this.showScreen(this.textPageAt(scroller.scrollTop + rect.top - box.top));
       else scroller.scrollTop += rect.top - box.top - box.height / 3;
     }
@@ -1043,6 +1065,7 @@ export class ReaderView {
    * have to invent a destination.
    */
   async seekPageInChapter(page: number): Promise<void> {
+    this.cancelDrag();
     if (this.doc.layout === 'fixed') return;
     if (this.usesColumns()) {
       const columns = this.columnCount();
@@ -1063,6 +1086,7 @@ export class ReaderView {
     this.detachSelection?.(); this.detachSelection = null;
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
+    clearTimeout(this.maskTimer);
     if (this.animationTimer !== null) clearTimeout(this.animationTimer);
     this.animationTimer = null;
     this.detachChapterLinks?.();
@@ -1356,6 +1380,7 @@ export class ReaderView {
   }
 
   private restoreOffset(): void {
+    this.cancelDrag();
     const scroller = this.scroller;
     if (this.doc.layout === 'fixed') return;
     // Before the offset is applied, because the page's height decides which offsets
@@ -1363,8 +1388,10 @@ export class ReaderView {
     this.syncPageTrim();
     this.syncPagedHeight();
     if (this.usesColumns()) {
-      const max = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
-      scroller.scrollLeft = max * this.sectionOffset;
+      const columns = this.columnCount();
+      const page = Math.round(this.sectionOffset * (columns - 1));
+      scroller.scrollLeft = page * this.columnStride(columns);
+      this.syncPageMask();
       return;
     }
     const limit = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
@@ -1379,6 +1406,7 @@ export class ReaderView {
         : Math.round(this.sectionOffset * (this.screenCount() - 1));
       this.showScreen(page, false);
     } else scroller.scrollTop = target ?? limit * this.sectionOffset;
+    this.syncPageMask();
   }
 
   private emitPosition(): void {
@@ -1409,6 +1437,7 @@ export class ReaderView {
       // A rotation changes the viewport, and the page's line grid with it: the trim is
       // recomputed before the offset is restored for the same reason as everywhere else.
       this.restoreOffset();
+      this.repaintMarks();
       this.emitPosition();
       geometry = this.layoutGeometry();
     });
@@ -1600,6 +1629,59 @@ export class ReaderView {
     if (this.trimApplied !== null && Math.abs(this.trimApplied - trim) < 0.5) return;
     this.trimApplied = trim;
     this.host.style.setProperty('--reader-page-trim', `${trim}px`);
+  }
+
+  /**
+   * Hides the line the page's bottom edge cuts through, in scroll mode.
+   *
+   * The trim makes the page a whole number of *lines*, but a page is not a whole
+   * number of lines: paragraph margins and headings sit between them and move every
+   * line after them off the grid the trim was computed on. So on almost every page the
+   * last line still crossed the bottom edge and was drawn sliced in half — and the
+   * next page starts at that line's top (`snapToLine`), so nothing is lost by hiding
+   * it. The trim cannot do this itself: it is constant per chapter because the page
+   * count is derived from it, while the line the edge cuts depends on the page.
+   *
+   * Applied as a `clip-path` inset (reader.css) rather than a height, because a clip
+   * does not change `clientHeight`, so the page count, the page offsets and the
+   * ResizeObserver all stay exactly where the trim put them.
+   */
+  private syncPageMask(): void {
+    clearTimeout(this.maskTimer);
+    const host = this.host;
+    // A turn in scroll mode slides the flow with translateY, so every line box is
+    // displaced until it lands; the end of the animation measures again.
+    if (host.hasAttribute('data-animating')) return;
+    let mask = 0;
+    if (this.doc.layout !== 'fixed' && this.settings.mode !== 'paged') {
+      const line = this.lineHeight();
+      const top = host.scrollTop;
+      const bottom = top + host.clientHeight;
+      let cut = Number.POSITIVE_INFINITY;
+      // Line-sized rects only: a range over a block also reports the boxes of the
+      // elements inside it, and a paragraph box crossing the edge is not a cut line.
+      if (line > 0) for (const box of this.lineBoxes()) {
+        if (box.bottom - box.top > line * 1.5) continue;
+        if (box.top >= top && box.top < bottom - 0.5 && box.bottom > bottom + 0.5 && box.top < cut) cut = box.top;
+      }
+      if (Number.isFinite(cut)) mask = Math.max(0, bottom - cut);
+    }
+    this.maskedAt = host.scrollTop;
+    if (mask > 0) host.style.setProperty('--reader-page-mask', `${mask}px`);
+    else host.style.removeProperty('--reader-page-mask');
+  }
+
+  /**
+   * A scroll the reader made by hand (scroll mode lets them drag): show everything
+   * while it moves, and mask again once it has settled. Measuring every frame would
+   * walk the chapter's line boxes per frame.
+   */
+  private pageMaskScrolled(): void {
+    if (this.maskedAt !== null && Math.abs(this.host.scrollTop - this.maskedAt) < 1) return;
+    this.maskedAt = null;
+    this.host.style.removeProperty('--reader-page-mask');
+    clearTimeout(this.maskTimer);
+    this.maskTimer = setTimeout(() => this.syncPageMask(), 150);
   }
 
   /**
@@ -1818,6 +1900,28 @@ export class ReaderView {
   }
 
   /** The layout's own idea of one column, used only to count them. */
+  private scrollToColumnAt(x: number): void {
+    const columns = this.columnCount();
+    const stride = this.columnStride(columns);
+    // A hair of tolerance so an offset measured a sub-pixel short of a boundary
+    // still lands on the page that starts there, not on the one before it.
+    const page = Math.min(columns - 1, Math.max(0, Math.floor((x + 1) / stride)));
+    this.scroller.scrollLeft = page * stride;
+  }
+
+  private snapStrayScroll(): void {
+    // A drag being followed is between two pages on purpose.
+    if (this.drag) return;
+    if (!this.usesColumns() || this.doc.layout === 'fixed') return;
+    const scroller = this.scroller;
+    const stride = this.columnStride(this.columnCount());
+    const offset = scroller.scrollLeft;
+    const off = offset - Math.round(offset / stride) * stride;
+    if (Math.abs(off) <= 1) return;
+    this.scrollToColumnAt(Math.round(offset / stride) * stride);
+    this.emitPosition();
+  }
+
   private columnStrideBase(): number {
     return Math.max(1, this.scroller.clientWidth);
   }
@@ -1937,8 +2041,8 @@ export class ReaderView {
       // In paged mode the page is found by measurement, not by `scrollIntoView`,
       // because the browser's idea of "into view" is a horizontal jump to a
       // column boundary that ignores the chapter's own padding.
-      const target = flow.scrollLeft + rect.left - flow.getBoundingClientRect().left - flow.clientWidth / 2;
-      flow.scrollLeft = Math.max(0, target);
+      const x = flow.scrollLeft + rect.left - flow.getBoundingClientRect().left;
+      if (x < flow.scrollLeft || x >= flow.scrollLeft + flow.clientWidth) this.scrollToColumnAt(x);
       return;
     }
     this.revealRange(range);
@@ -2002,7 +2106,7 @@ export class ReaderView {
     if (!(block instanceof HTMLElement)) return;
     if (this.usesColumns()) {
       const flow = this.host.flow;
-      flow.scrollLeft = Math.max(0, block.offsetLeft - flow.clientWidth / 2);
+      this.scrollToColumnAt(flow.scrollLeft + block.getBoundingClientRect().left - flow.getBoundingClientRect().left);
       return;
     }
     const scroller = this.scroller;

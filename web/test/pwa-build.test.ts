@@ -5,12 +5,14 @@ import { join } from 'node:path';
 import { pwa } from '../tools/pwa/build.ts';
 const directories: string[] = [];
 afterEach(async () => { await Promise.all(directories.splice(0).map(path => rm(path, { recursive: true, force: true }))); });
-it('uses matching versioned URLs in HTML and offline cache, and changes them when assets change', async () => {
+it('keeps hashed JS and CSS URLs canonical across HTML, lazy imports and offline cache', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'reader-pwa-build-')); directories.push(dir);
   await mkdir(join(dir, 'assets'));
-  const index = '<script src="./assets/client.js"></script><link href="./assets/index.css" rel="stylesheet">';
-  await writeFile(join(dir, 'assets/client.js'), 'console.log("old")');
-  await writeFile(join(dir, 'assets/index.css'), 'body { color: black; }');
+  const index = '<script src="./assets/client-oldhash.js"></script><link href="./assets/index-oldhash.css" rel="stylesheet">';
+  await writeFile(join(dir, 'assets/client-oldhash.js'), 'console.log("old")');
+  await writeFile(join(dir, 'assets/index-oldhash.css'), 'body { color: black; }');
+  const lazy = 'import { shared } from \"./client-oldhash.js\"; export default shared;';
+  await writeFile(join(dir, 'assets/ReaderPage-lazyhash.js'), lazy);
   await writeFile(join(dir, 'index.html'), index);
   const plugin = pwa();
   const build = plugin.writeBundle as (options: {dir: string}) => Promise<void>;
@@ -19,12 +21,19 @@ it('uses matching versioned URLs in HTML and offline cache, and changes them whe
   const worker = await readFile(join(dir, 'sw.js'), 'utf8');
   const urls = [...html.matchAll(/(?:src|href)="\.\/([^"]+)"/g)].map(match => match[1]);
   expect(urls).toHaveLength(2);
-  for (const url of urls) { expect(url).toMatch(/\?v=[a-f0-9]{20}$/); expect(worker).toContain(JSON.stringify(url)); }
-  await writeFile(join(dir, 'assets/client.js'), 'console.log("new")');
-  await writeFile(join(dir, 'index.html'), index);
+  expect(worker).toContain(JSON.stringify('assets/ReaderPage-lazyhash.js'));
+  expect(worker).not.toMatch(/\.(js|css)\?v=/);
+  expect(html).toBe(index);
+  expect(await readFile(join(dir, 'assets/ReaderPage-lazyhash.js'), 'utf8')).toBe(lazy);
+  expect(urls[0]).toBe('assets/client-oldhash.js');
+  expect(urls[1]).toBe('assets/index-oldhash.css');
+  for (const url of urls) expect(worker).toContain(JSON.stringify(url));
+  await writeFile(join(dir, 'assets/client-newhash.js'), 'console.log("new")');
+  await writeFile(join(dir, 'assets/index-newhash.css'), 'body { color: blue; }');
+  await writeFile(join(dir, 'index.html'), index.replaceAll('oldhash', 'newhash'));
   await build({dir});
   expect(await readFile(join(dir, 'index.html'), 'utf8')).not.toBe(html);
   expect(await readFile(join(dir, 'sw.js'), 'utf8')).not.toBe(worker);
-  // The native shell still has its fixed entry point.
-  expect(await readFile(join(dir, 'assets/client.js'), 'utf8')).toBe('console.log("new")');
+  // The native shell loads the same entry named by HTML.
+  expect(await readFile(join(dir, 'assets/client-newhash.js'), 'utf8')).toBe('console.log("new")');
 });

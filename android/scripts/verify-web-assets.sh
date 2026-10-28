@@ -38,11 +38,10 @@ else
     err "$dest has no index.html; the APK would launch to a blank screen"
   fi
 
-  # Vite emits the entry bundle at a path derived from vite.config.ts
-  # (`entryFileNames: assets/client.js`). Matching that exact name means a change
-  # to the bundler config shows up here instead of in a blank screen.
-  if [ ! -f "$dest/assets/client.js" ]; then
-    err "$dest/assets/client.js is missing; check entryFileNames in web/vite.config.ts"
+  # Check the actual hashed entry named by HTML; the native asset loader follows it.
+  entry=$(sed -n 's/.*src="\.\/\(assets\/client-[^"?]*\.js\)".*/\1/p' "$dest/index.html" | head -n 1)
+  if [ -z "$entry" ] || [ ! -f "$dest/$entry" ]; then
+    err "the client entry referenced by index.html is missing"
   fi
 
   count=$(find "$dest" -type f ! -name 'README.txt' | wc -l | tr -d ' ')
