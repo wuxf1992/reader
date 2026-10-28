@@ -384,7 +384,8 @@ export class ReaderScreen {
             onAiSummary: () => void this.generateAiSummary(),
             onRefresh: () => void this.refreshPublication(),
             onRefreshChapter: () => void this.refreshChapter(),
-            onAlternatives: cursor => void this.loadAlternatives(cursor),
+            onAlternatives: () => void this.loadAlternatives(),
+            onAlternativePool: pool => void this.loadAlternatives(pool),
             onAlternative: (ref, title) => void this.previewAlternative(ref, title),
             onAlternativeChapter: id => { this.qualityRun?.abort(); this.patch({ alternativeChapter: id, alternativeQuality:null, alternativeQualityError:'', alternativeQualityBusy:false }); },
             onCheckAlternative: () => void this.checkAlternative(),
@@ -887,14 +888,14 @@ export class ReaderScreen {
     this.alternativeEpoch++; this.alternativesRun?.abort(); this.alternativesRun = null;
     this.patch({ alternatives: null, alternativeChecks: {}, alternativesSearching: false, alternativeChapters: undefined, alternativeChapter: '', alternativeQuality:null, alternativeQualityError:'', alternativeQualityBusy:false });
   }
-  private async loadAlternatives(_cursor?: string): Promise<void> {
+  private async loadAlternatives(pool: 'all' | 'backup' = 'all'): Promise<void> {
     const book = this.book, token = this.loadingToken; if (!book) return;
     this.closeAlternatives();
     const run = new AbortController(); this.alternativesRun = run;
     const sessionId = Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('');
-    this.patch({ alternatives: { items: [] }, alternativesSearching: true, tocOpen: false, settingsOpen: false });
+    this.patch({ alternatives: { items: [] }, alternativesPool: pool, alternativesSearching: true, tocOpen: false, settingsOpen: false });
     try {
-      for await (const page of this.options.api.alternatives(book.id, { sessionId }, { signal: run.signal })) {
+      for await (const page of this.options.api.alternatives(book.id, { sessionId, pool }, { signal: run.signal })) {
         if (run.signal.aborted || token !== this.loadingToken) return;
         const items = new Map((this.chrome.alternatives?.items ?? []).map(entry => [entry.ref, entry]));
         for (const entry of page.items) items.set(entry.ref, entry);

@@ -3009,7 +3009,7 @@ book-content {
   cursor: pointer;
 }
 
-.segmented:is([aria-label='主题'], [aria-label='微信阅读'], [aria-label='厚墨']) button { min-height: 44px; }
+.segmented:is([aria-label='主题'], [aria-label='微信阅读'], [aria-label='厚墨'], [aria-label='换源范围']) button { min-height: 44px; }
 
 .segmented button[aria-pressed='true'] {
   background: var(--reader-accent);

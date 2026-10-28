@@ -174,7 +174,7 @@ export class SourceHost {
   async searchFilters(userId: string, id: string, signal?: AbortSignal) {
     return this.call(userId, id, (provider, ctx) => provider.searchFilters?.(ctx) ?? Promise.resolve([]), signal);
   }
-  async alternatives(userId: string, bookId: string, cursor?: string, signal?: AbortSignal, session?: Pick<SearchRequest, 'sessionId' | 'resultLimit'>) {
+  async alternatives(userId: string, bookId: string, cursor?: string, signal?: AbortSignal, session?: Pick<SearchRequest, 'sessionId' | 'resultLimit' | 'filters'>) {
     const binding = this.chapters.binding(userId, bookId);
     const book = this.db.get<{ title: string; author: string }>('SELECT title, author FROM books WHERE id = ?', bookId)!;
     return this.call(userId, binding.source_id, (provider, ctx) => provider.alternatives

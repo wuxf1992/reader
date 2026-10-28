@@ -671,6 +671,7 @@ test('alternative streams use owned book identity and forced chapter refresh upd
     async readResource() { return { mediaType: 'text/plain', text }; },
     async alternatives(ctx, request) {
       assert.equal(ctx.userId, h.admin.id); assert.equal(request.query, 'Expected title'); assert.deepEqual(request.authors, ['Expected author']);
+      assert.deepEqual(request.filters, { site: 'backup' });
       assert.equal(request.sessionId, 'alternative-session'); assert.equal(request.resultLimit, 3);
       calls.push(request.cursor ?? 'first');
       return request.cursor ? { items: [{ ref: 'second', title: 'Expected title' }] }
@@ -684,9 +685,11 @@ test('alternative streams use owned book identity and forced chapter refresh upd
   assert.equal(acquired.kind, 'ready'); if (acquired.kind !== 'ready') return;
   const id = acquired.publicationId, content = h.ctx.sources!.chapters.manifest(h.admin.id, id), ref = content.items[0]!.resourceRef!;
   assert.equal(content.sourceName, 'Example source'); assert.equal(content.items[0]!.sourceUrl, 'https://example.test/ch');
-  const response = await h.app.inject({ method: 'POST', url: '/api/v1/books/' + id + '/alternatives', headers: auth(h.admin), payload: { sessionId: 'alternative-session', resultLimit: 3, query: 'untrusted' } });
+  const response = await h.app.inject({ method: 'POST', url: '/api/v1/books/' + id + '/alternatives', headers: auth(h.admin), payload: { sessionId: 'alternative-session', resultLimit: 3, pool: 'backup', query: 'untrusted' } });
   assert.equal(response.statusCode, 200); assert.match(String(response.headers['content-type']), /text\/event-stream/);
   assert.deepEqual(streamEvents(response.body).map(event => event.event), ['results', 'results', 'done']); assert.deepEqual(calls, ['first', 'next']);
+  const invalidPool = await h.app.inject({ method: 'POST', url: '/api/v1/books/' + id + '/alternatives', headers: auth(h.admin), payload: { sessionId: 'alternative-session', pool: 'unknown' } });
+  assert.equal(invalidPool.statusCode, 400); assert.deepEqual(calls, ['first', 'next']);
   const quality = await h.app.inject({ method: 'POST', url: '/api/v1/books/' + id + '/switch-quality', headers: auth(h.admin), payload: { entryRef: 'book', chapterId: 'ch' } });
   assert.equal(quality.statusCode, 200, quality.body); assert.equal(quality.json().characters, 3);
   assert.equal(h.ctx.db.get<{body:string|null}>('SELECT body FROM chapter_resources WHERE book_id=?',id)!.body,null);

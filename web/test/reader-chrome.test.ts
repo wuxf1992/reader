@@ -137,6 +137,19 @@ describe('ReaderChrome', () => {
     return container;
   }
 
+  it('switches explicitly between primary and backup sources without claiming text is complete', () => {
+    const onPool = vi.fn(), stage = document.createElement('div');
+    const state = chromeState({ alternatives: { items: [] }, alternativesPool: 'backup' });
+    act(() => render(h(ReaderChrome, { state, stage, handlers: { ...handlers(), onAlternativePool: onPool } }), container));
+    const buttons = [...container.querySelectorAll<HTMLButtonElement>('[aria-label="换源范围"] button')];
+    expect(buttons.map(button => button.textContent)).toEqual(['主力源', '备用源']);
+    expect(buttons[1]!.getAttribute('aria-pressed')).toBe('true');
+    act(() => buttons[0]!.click()); expect(onPool).toHaveBeenCalledWith('all');
+    expect(container.textContent).toContain('备用源可能更新较慢');
+    act(() => paint({ alternatives: { items: [] }, alternativeChapters: [{ id: 'one', title: '第一章' }], alternativeChapter: 'one', alternativeQuality: { chapterId: 'one', title: '第一章', latestChapter: '第一章', characters: 1200, images: 0, bytes: 3600, elapsedMs: 10 } }));
+    expect(container.textContent).toContain('已获取正文'); expect(container.textContent).not.toContain('正文检测通过');
+  });
+
   it('shows delayed loading only on the selected chapter and clears it when navigation ends', () => {
     vi.useFakeTimers();
     const toc = [{ id: 'one', label: '第一章', depth: 0, spine: 0 }, { id: 'two', label: '第二章', depth: 0, spine: 1 }];

@@ -163,7 +163,8 @@ export function registerSourceRoutes(app: FastifyInstance, ctx: AppContext): voi
   app.post('/api/v1/books/:id/alternatives', { preHandler: auth }, async (request, reply) => {
     const user = currentUser(request), { id } = request.params as { id: string }; ctx.shelf.get(user.id, id);
     const body = (request.body ?? {}) as Record<string, unknown>;
-    const session = { sessionId: searchSessionId(parameter(body.sessionId, 'sessionId', true))!, resultLimit: searchResultLimit(body.resultLimit) };
+    if (body.pool !== undefined && body.pool !== 'all' && body.pool !== 'backup') throw badRequest('invalid source pool');
+    const session = { sessionId: searchSessionId(parameter(body.sessionId, 'sessionId', true))!, resultLimit: searchResultLimit(body.resultLimit), ...(body.pool ? { filters: { site: body.pool as string } } : {}) };
     const binding = host.chapters.binding(user.id, id);
     reply.header('content-type', 'text/event-stream; charset=utf-8').header('cache-control', 'no-cache, no-transform').header('x-accel-buffering', 'no');
     return reply.send(searchResponse(request, reply, host, user.id, binding.source_id,

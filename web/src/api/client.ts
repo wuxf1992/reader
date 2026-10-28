@@ -272,7 +272,7 @@ export class ReaderApi {
   }
   async sourceFilters(id: string): Promise<ExtensionField[]> { return this.get('/api/v1/sources/' + encodeURIComponent(id) + '/search-filters'); }
   async sourceOptions(id: string): Promise<{ canSwitch: boolean }> { return this.get('/api/v1/books/' + encodeURIComponent(id) + '/source-options'); }
-  alternatives(id: string, query: { sessionId: string; cursor?: string }, options: RequestOptions = {}): AsyncGenerator<SourcePage> {
+  alternatives(id: string, query: { sessionId: string; cursor?: string; pool?: 'all' | 'backup' }, options: RequestOptions = {}): AsyncGenerator<SourcePage> {
     return this.catalogStream('/api/v1/books/' + encodeURIComponent(id) + '/alternatives', query, options);
   }
   async refreshChapter(id: string, ref: string, options: RequestOptions = {}): Promise<Blob> {

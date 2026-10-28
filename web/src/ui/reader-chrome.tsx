@@ -93,6 +93,7 @@ export interface ChromeState {
   switching?: boolean;
   alternatives?: SourcePage | null;
   alternativesSearching?: boolean;
+  alternativesPool?: 'all' | 'backup';
   bookInfoOpen?: boolean;
   description?: string;
   sourceName?: string;
@@ -173,6 +174,7 @@ export interface ChromeHandlers {
   onRefresh?(): void;
   onRefreshChapter?(): void;
   onAlternatives?(cursor?: string): void;
+  onAlternativePool?(pool: 'all' | 'backup'): void;
   onAlternative?(ref: string, title: string): void;
   onAlternativeChapter?(id: string): void;
   onSwitchSource?(): void;
@@ -328,15 +330,16 @@ export function ReaderChrome({ state, stage, handlers, tools }: ReaderChromeProp
 
       <FloatingNotice message={state.switching ? "正在获取书源内容…" : ""} busy />
       {state.alternatives && <Sheet title="切换书源" onClose={() => handlers.onCancelSwitch?.()}><section className="source-switch" aria-label="切换书源">
-            <div className="source-switch-status" role="status"><span>{state.alternativesSearching ? '正在寻找可用书源' : '书源搜索完成'}</span><strong>{state.alternatives.items.length} 个可选</strong>
+            <div className="segmented" role="group" aria-label="换源范围"><Button aria-pressed={state.alternativesPool !== 'backup'} disabled={state.switching === true} onClick={() => handlers.onAlternativePool?.('all')}>主力源</Button><Button aria-pressed={state.alternativesPool === 'backup'} disabled={state.switching === true} onClick={() => handlers.onAlternativePool?.('backup')}>备用源</Button></div>
+            <div className="source-switch-status" role="status"><span>{state.alternativesSearching ? '正在搜索书源' : '书源搜索完成'}</span><strong>{state.alternatives.items.length} 个可选</strong>
               {state.alternativesSearching && state.alternatives.batch && <progress aria-label="换源搜索进度" max={Math.max(1, state.alternatives.batch.total)} value={state.alternatives.batch.completed} />}
             </div>
-            <p className="source-switch-hint">已按书名和作者匹配，选择书源后确认章节。</p>
+            <p className="source-switch-hint">{state.alternativesPool === 'backup' ? '备用源可能更新较慢或正文不完整，可按需试读。' : '默认只搜主力源，找不到时可试试备用源。'}</p>
             {!state.alternatives.items.length && !state.alternativesSearching && <p className="catalog-empty">没有找到书名、作者匹配的其它书源。</p>}
             <div className="source-switch-list">{state.alternatives.items.map(entry => <button type="button" className="source-switch-card" key={entry.ref} aria-label={'查看此源目录：' + (entry.sourceName || entry.title)} disabled={state.switching === true} onClick={() => handlers.onAlternative?.(entry.ref, entry.title)}>
               <span className="source-switch-card-heading"><strong>{entry.sourceName || '未命名书源'}</strong><Icon name="chevron-right" /></span>
               <span className="source-switch-book">{entry.title}<span> · {entry.authors?.join(' / ') || '作者未知'}</span></span>
-              <span className="source-switch-chapter"><span>最新</span>{entry.latestChapter || '暂无章节信息'}</span>
+              <span className="source-switch-chapter"><span>网站更新</span>{entry.latestChapter || '暂无章节信息'}</span>
               {state.alternativeChecks?.[entry.ref] && <span className="source-switch-chapter">已检测 {state.alternativeChecks[entry.ref]!.chapter}：{state.alternativeChecks[entry.ref]!.quality
                 ? `${state.alternativeChecks[entry.ref]!.quality!.characters} 字符 · ${state.alternativeChecks[entry.ref]!.quality!.elapsedMs} ms`
                 : state.alternativeChecks[entry.ref]!.error}</span>}
@@ -347,7 +350,7 @@ export function ReaderChrome({ state, stage, handlers, tools }: ReaderChromeProp
             </select></label>
               {state.alternativeLatest && <p>最新章节：{state.alternativeLatest}</p>}
               <Button disabled={state.switching || state.alternativeQualityBusy || !state.alternativeChapter} onClick={() => handlers.onCheckAlternative?.()}>{state.alternativeQualityBusy ? '正在检测正文…' : '检测所选章节 / 重试'}</Button>
-              {state.alternativeQuality && <div role="status" className="chapter-quality"><strong>正文检测通过</strong><p>{state.alternativeQuality.characters} 字符 · {state.alternativeQuality.images} 张图片 · {(state.alternativeQuality.bytes / 1024).toFixed(1)} KiB · {state.alternativeQuality.elapsedMs} ms</p><p>检测仅说明本次内容可读，不保证章节完整或与原书一致。</p></div>}
+              {state.alternativeQuality && <div role="status" className="chapter-quality"><strong>已获取正文</strong><p>{state.alternativeQuality.characters} 字符 · {state.alternativeQuality.images} 张图片 · {(state.alternativeQuality.bytes / 1024).toFixed(1)} KiB · {state.alternativeQuality.elapsedMs} ms</p><p>完整性未核验，发现缺段或串文请使用其他书源。</p></div>}
               {state.alternativeQualityError && <p role="alert">{state.alternativeQualityError}</p>}
               <Button type="button" disabled={state.switching || state.alternativeQualityBusy || !state.alternativeChapter} onClick={() => handlers.onSwitchSource?.()}>确认换源并阅读</Button></div></Sheet>}
           </section></Sheet>}
