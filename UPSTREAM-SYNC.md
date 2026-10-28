@@ -1,31 +1,51 @@
 # Reader 上游同步
 
-当前本地分支 `custom-reader` 跟踪 `origin/main`（https://github.com/hectorqin/reader）。
-从 `5c59cae0b0ec410207054c816c69d394ae132cc7` 合并至 `875fec84ddff0f76ab55d495cc428c658b80aeab`，完整保留上游 20 个提交及本地修改历史。
+## 当前工作区（2026-10-28 核对）
 
-## 后续更新
+- 主程序：`/home/ubuntu/codex/reader-main-merged-20261023`。
+- 当前分支：`ui/pwa-liquid-glass-20261024`；远端 `origin` 是 `https://github.com/hectorqin/reader`。
+- 最近已合并主线：`dca1004`；本次核对最新主线：`6c274a7`。
+- 已提交历史：本地独有 23 个提交、上游独有 34 个提交（含 merge commit）；工作区另有未提交改动。快照文件差异同时包含上游新增和本地定制，不能全部算成本地改写。
+- 书源插件在独立仓库 `../reader-novel-web-js`，维护和发布时分别记录版本。
+
+旧的 `reader-main-sync` 已归档，不要再照旧路径拉取或覆盖当前工作区。
+
+## 减少后续分叉的方式
+
+1. 先把当前已部署且验证过的工作整理成可独立审阅的提交：阅读交互、离线修复、封面缓存、书源接口分开。保留个人功能，避免用整份旧文件覆盖新版。
+2. 同步采用隔离分支/工作树，固定上游 SHA。先处理安全区、面板、触摸等共享缺陷，再整合路由与视觉变化；每一批验证后再发布。未提交改动必须先保存和整理，不在脏工作区直接 pull。
+3. 正确性修复尽量做成能回馈上游的小补丁；个人纸色、阅读偏好和插件能力保留在已有模块。共享的封面加载只维护 `web/src/ui/use-cover.ts`，避免首页、书架、书库各自修一遍。
+4. 按周检查主线；每次功能修改独立提交，避免再次累积成大快照。Git 的 rerere 用于记住已解决冲突，仍需检查最终行为。
+5. 把本地提交备份到自己的远端/fork；`origin` 是上游，不把它当成个人备份仓库。本次未创建远端或推送。
+
+## 日常核对
 
 ```sh
-cd /home/ubuntu/codex/reader-main-sync
-git pull --no-rebase
+cd /home/ubuntu/codex/reader-main-merged-20261023
+git fetch --no-tags origin main
+git status --short --branch
+git rev-list --left-right --count origin/main...HEAD
+git log --oneline HEAD..origin/main
 ```
 
-`pull.rebase=false` 已在该仓库配置，因此直接 `git pull` 也会按合并方式更新。遇到冲突后解决、运行检查，再完成合并提交。不要重新下载源码覆盖该目录。
+当前分支已设置跟踪 `origin/main`，并启用本仓库的 `rerere.enabled`。这两项只改善差异可见性和后续冲突处理，不会自动合并、提交或部署。
 
-更新代码之后需要重新构建、验证并部署，`git pull` 不会自动更换线上容器或网页。
+工作区整理干净、保存当前发布点后，创建隔离整合分支，再运行 `git merge --no-ff <固定的上游 SHA>`。不要直接在当前带未提交改动的目录运行 merge 或 pull。合并后先完成对应检查，再选择是否发布。
 
 ```sh
-cd web
-npm ci
-npm run build
-npm test
-cd ../server
-npm ci
-npm run build
-npm test
+npm run build --prefix web
+npm test --prefix web
+npm run build --prefix server
+npm test --prefix server
 ```
 
-生产网页继续使用 `web/.env.production` 中的 `VITE_SERVER_URL=https://wuxf.top/reader`；环境配置不纳入 Git。
+网页变更另验证 Chromium/WebKit、账号切换、离线重开和进度。部署前比较当前线上构建，保留回退副本。`git pull` 不会自动更新线上网页或容器。
+
+生产网页继续使用 `web/.env.production` 中的服务地址；环境配置不纳入 Git。
+
+## 历史：2026-10-09 同步记录
+
+以下是当时从 `5c59cae0` 合并到 `875fec84` 的交付记录，不表示当前分支或当前依赖状态。
 
 ## 本次兼容处理
 
