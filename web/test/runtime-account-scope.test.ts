@@ -6,7 +6,7 @@ import { useAuthStore } from '../src/shared/stores/auth.store.ts';
 import type { Book, Session } from '../src/api/types.ts';
 import { ApiError } from '../src/api/errors.ts';
 vi.mock('../src/core/web-platform.ts', () => ({ createWebPlatform: vi.fn() }));
-vi.mock('../src/features/media/services/player.ts', () => ({ MediaPlayer: class extends EventTarget { element = document.createElement('div'); reconnectNative() {} async stop() {} } }));
+vi.mock('../src/features/media/services/player.ts', () => ({ MediaPlayer: class extends EventTarget { element = document.createElement('div'); reconnectNative() {} async stop() {} async flush() {} } }));
 import { createWebPlatform } from '../src/core/web-platform.ts';
 it('publishes a logged-in account only after its private offline scope is loaded', async () => {
   useAuthStore.getState().setSession(null);
@@ -42,6 +42,24 @@ it('restores an offline login without making a startup verification request', as
     expect(useAuthStore.getState().verifiedUser).toBeNull();
     expect(await platform.kv.get('reader.session.v1')).toBe(JSON.stringify(session));
   } finally { runtime.sync.stop(); useAuthStore.getState().setSession(null); }
+});
+
+it('saves actual runtime progress locally before an update without waiting for network sync, and propagates save failures', async () => {
+  const transport = new FakeTransport(), platform = makePlatform(transport);
+  vi.mocked(createWebPlatform).mockResolvedValue(platform);
+  const runtime = await createAppRuntime('https://reader.test');
+  const sync = vi.spyOn(runtime.sync, 'flush').mockImplementation(() => new Promise(() => {}));
+  const calls: string[] = [];
+  const save = vi.fn(async () => { calls.push('position'); });
+  runtime.registerReader({ id: 'cached' } as Book, save);
+  vi.spyOn(runtime.offline, 'flush').mockImplementation(async () => { calls.push('storage'); });
+  await runtime.saveBeforeUpdate();
+  expect(calls).toEqual(['position', 'storage']);
+  expect(sync).not.toHaveBeenCalled();
+  const error = new Error('storage full');
+  save.mockRejectedValueOnce(error);
+  await expect(runtime.saveBeforeUpdate()).rejects.toBe(error);
+  runtime.sync.stop();
 });
 
 it('bounds startup even when online verification never responds and preserves local login', async () => {

@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { chromium, webkit } from 'playwright';
 import { createReviewServer, BOOK_ID, CHAPTERS } from '../ui-review/server.mjs';
 
@@ -12,7 +15,13 @@ const pending = new Set();
 server.server.on('request', (request, response) => {
   const path = new URL(request.url, 'http://localhost').pathname;
   if (mode === 'unreachable') { response.destroy(); return; }
-  if (mode === 'hanging' && path === '/api/v1/auth/me') {
+  if (mode === 'gateway') { response.writeHead(502); response.end('Bad Gateway'); return; }
+  if ((mode === 'hanging' && path === '/api/v1/auth/me')
+    || (mode === 'hanging-all' && path.startsWith('/api/'))
+    || (mode === 'hanging-shelf' && path === '/api/v1/books')
+    || (mode === 'hanging-manifest' && path.endsWith('/manifest'))
+    || (mode === 'hanging-overrides' && path.endsWith('/reading-overrides'))
+    || (mode === 'hanging-refresh' && path === '/api/v1/auth/refresh')) {
     pending.add(response);
     response.on('close', () => pending.delete(response));
     return;
@@ -21,7 +30,17 @@ server.server.on('request', (request, response) => {
 });
 const origin = await server.listen();
 async function chapterVisible(page, index) {
-  await page.waitForFunction(text => document.querySelector('book-content')?.shadowRoot?.textContent?.includes(text), CHAPTERS[index].title, { timeout: 8000 });
+  try {
+    await page.waitForFunction(text => document.querySelector('book-content')?.shadowRoot?.textContent?.includes(text), CHAPTERS[index].title, { timeout: 8000 });
+  } catch (error) {
+    console.error('Offline failure diagnostics', { mode, expected: CHAPTERS[index].title, state: await page.evaluate(book => ({
+      screen: document.body.innerText.slice(-1000),
+      chapter: document.querySelector('book-content')?.shadowRoot?.textContent?.slice(-300),
+      progress: window.readerApp?.offline.progressFor(book),
+      cachedBooks: window.readerApp?.offline.books().length,
+    }), BOOK_ID) });
+    throw error;
+  }
 }
 async function readCachedNovel(page) {
   await page.evaluate(book => { location.hash = '#/book/' + book; }, BOOK_ID);
@@ -30,16 +49,17 @@ async function readCachedNovel(page) {
   await chapterVisible(page, 0);
   await page.getByRole('button', { name: '下一章', exact: true }).click();
   await chapterVisible(page, 1);
-  await page.evaluate(async () => { await window.__readerFlush(); });
+  await page.evaluate(async () => { await window.readerApp.saveBeforeUpdate(); });
   const progress = await page.evaluate(book => window.readerApp.offline.progressFor(book), BOOK_ID);
   assert(progress.locator.includes('chapter:1'), 'offline reading position is saved locally');
 }
 try {
   for (const [engine, type] of Object.entries({ chromium, webkit })) {
     mode = 'online';
-    const browser = await type.launch({ headless: true });
+    const profile = await mkdtemp(join(tmpdir(), `reader-offline-${engine}-`));
+    const options = { headless: true, viewport: { width: 390, height: 844 } };
+    let context = await type.launchPersistentContext(profile, options);
     try {
-      const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
       let page = await context.newPage();
       await context.route('https://wuxf.top/**', route => route.abort());
       await page.goto(origin + '/#/shelf');
@@ -83,6 +103,45 @@ try {
       assert.equal(await page.evaluate(() => window.readerApp.api.currentSession()?.user.id), 'u1');
       assert.equal(await page.evaluate(() => navigator.onLine), true);
       await readCachedNovel(page);
+      // A real offline event pauses Query's default online-only scheduling.
+      // Keep WebKit's network emulation out of navigation; the server is unreachable.
+      await page.evaluate(() => window.dispatchEvent(new Event('offline')));
+      await page.evaluate(() => { location.hash = '#/shelf?sort=title'; });
+      await page.getByText('剑来 第1卷', { exact: true }).first().waitFor({ timeout: 5000 });
+      await readCachedNovel(page);
+      for (const fault of ['hanging-shelf', 'hanging-manifest', 'hanging-overrides', 'hanging-all']) {
+        await page.close();
+        for (const response of pending) response.destroy();
+        mode = fault;
+        page = await context.newPage();
+        await page.goto(origin + '/#/shelf', { waitUntil: 'domcontentloaded' });
+        await page.locator('.app-shell').waitFor({ timeout: 5000 });
+        await page.getByText('剑来 第1卷', { exact: true }).first().waitFor({ timeout: 5000 });
+        await readCachedNovel(page);
+        assert.equal(await page.getByText('书架加载失败', { exact: true }).count(), 0);
+        console.log(`PASS ${engine}: ${fault}, cached shelf, chapter navigation and durable local progress`);
+      }
+      await page.evaluate(async () => {
+        const kv = window.readerApp.platform.kv;
+        const session = JSON.parse(await kv.get('reader.session.v1'));
+        session.accessTokenExpiresAt = 0;
+        await kv.set('reader.session.v1', JSON.stringify(session));
+      });
+      await page.close();
+      for (const response of pending) response.destroy();
+      mode = 'hanging-refresh';
+      page = await context.newPage();
+      await page.goto(origin + '/#/shelf');
+      await page.getByText('剑来 第1卷', { exact: true }).first().waitFor({ timeout: 5000 });
+      await readCachedNovel(page);
+      await page.close();
+      for (const response of pending) response.destroy();
+      mode = 'gateway';
+      page = await context.newPage();
+      await page.goto(origin + '/#/shelf');
+      await page.getByText('剑来 第1卷', { exact: true }).first().waitFor({ timeout: 5000 });
+      await readCachedNovel(page);
+      mode = 'unreachable';
       if (engine === 'chromium') {
         await page.close();
         await context.setOffline(true);
@@ -94,8 +153,15 @@ try {
         await readCachedNovel(page);
       }
       await context.close();
-      console.log(`PASS ${engine}: cached shell, authenticated shelf and previously read novel cold-start offline; cached chapter navigation and saved position`);
-    } finally { await browser.close(); }
+      // Restart the whole browser process, preserving only committed disk storage.
+      mode = 'unreachable';
+      context = await type.launchPersistentContext(profile, options);
+      page = await context.newPage();
+      await page.goto(origin + '/#/shelf');
+      await page.getByText('剑来 第1卷', { exact: true }).first().waitFor({ timeout: 5000 });
+      await readCachedNovel(page);
+      console.log(`PASS ${engine}: browser process restart offline, offline event, hanging token refresh, 502 with expired access token; cached shelf, chapters and saved position`);
+    } finally { await context.close(); await rm(profile, { recursive: true, force: true }); }
   }
 } finally {
   for (const response of pending) response.destroy();

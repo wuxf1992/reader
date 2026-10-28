@@ -8,6 +8,8 @@ import { QueryClient } from '@tanstack/query-core';
 export const createReaderQueryClient = () => new QueryClient({
   defaultOptions: {
     queries: {
+      // Callers must receive transport failures so they can read offline stores.
+      networkMode: 'offlineFirst',
       staleTime: 5 * 60_000,
       gcTime: 10 * 60_000,
       // ReaderApi owns auth refresh and transport retry semantics. Query retry

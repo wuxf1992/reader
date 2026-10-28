@@ -32,6 +32,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { flushSync } from 'react-dom';
 import { ReaderChrome, type ChromeState, type ChromeTocEntry } from './reader-chrome.tsx';
 import { OFFLINE_FILE, PublicationCache, publicationScope } from '../store/publications.ts';
+import { withOfflineTimeout, type OfflineReadBudget } from '../core/offline-timeout.ts';
 import { ReadingTools, type SearchSection } from './reading-tools.tsx';
 import { decodeAnchor, encodeAnchor, searchableText, type TextAnchor } from './text-anchor.ts';
 import { AnnotationPopover, type AnnotationTarget } from './annotation-popover.tsx';
@@ -423,6 +424,7 @@ export class ReaderScreen {
 
   /** Opens a book: fetch bytes, parse, restore position, start reporting. */
   async open(book: Book): Promise<void> {
+    const budget = { timedOut: false };
     this.positionReady = false;
     this.stopPrefetch(); this.prefetchChapter = null; this.prefetchReady = false; this.prefetchMessage = '';
     this.closeAlternatives(); this.chapterRefresh?.abort(); this.chapterRefresh = null;
@@ -434,13 +436,13 @@ export class ReaderScreen {
     this.setChromeVisible(true);
 
     try {
-      this.manifest = await this.loadManifest(book);
+      this.manifest = await this.loadManifest(book, budget);
       if (token !== this.loadingToken) return;
       const storedOverrides = await this.publicationCache.overrides(book.id) ?? emptyOverrides();
       if (token !== this.loadingToken) return;
       this.overrides = storedOverrides;
       try {
-        const remote = await this.options.api.readingOverrides(book.id);
+        const remote = await withOfflineTimeout(this.options.api.readingOverrides(book.id), true, budget);
         if (token !== this.loadingToken) return;
         if (remote && Number.isSafeInteger(remote.version) && Array.isArray(remote.corrections)) {
           this.overrides = remote; await this.publicationCache.putOverrides(book.id,remote).catch(() => undefined);
@@ -459,7 +461,7 @@ export class ReaderScreen {
       // the file. That is the whole answer to "客户端需要下载完整的书籍，那消耗太大":
       // this manifest already carries the first window, so opening the book has
       // cost exactly one window of metadata.
-      const staged = await this.openStaged(book, token);
+      const staged = await this.openStaged(book, token, budget);
       if (staged) {
         this.doc = staged.doc;
         this.afterDocLoaded();
@@ -468,7 +470,7 @@ export class ReaderScreen {
         // meant that message was immediately replaced by nothing — so a reader
         // returning to a book saw no confirmation at all. The other order lets the
         // restore message overwrite "正在载入…", which is what it is there for.
-        await this.restorePosition(book, token);
+        await this.restorePosition(book, token, budget);
         if (token !== this.loadingToken) return;
         this.prefetchReady = true; this.startPrefetch();
         if (this.chrome.statusState === 'loading') this.hideStatus();
@@ -486,7 +488,7 @@ export class ReaderScreen {
       if (loaded.notes.length > 0) this.setStatus('idle', loaded.notes.join(' · '));
       else this.hideStatus();
 
-      await this.restorePosition(book, token);
+      await this.restorePosition(book, token, budget);
     } catch (err) {
       if (token !== this.loadingToken) return;
       this.handleLoadError(err);
@@ -505,7 +507,7 @@ export class ReaderScreen {
    * An EPUB is the case where the window is worth the most — a 1200-chapter
    * omnibus would otherwise be a 50MB download to show one page of chapter one.
    */
-  private async openStaged(book: Book, token: number): Promise<{ doc: BookDoc } | null> {
+  private async openStaged(book: Book, token: number, budget: OfflineReadBudget): Promise<{ doc: BookDoc } | null> {
     if (book.format === 'txt' && this.overrides.headingPrefix) return null;
     if (!['chapters', 'txt'].includes(book.format) && await this.publicationCache.resource(book.id, OFFLINE_FILE)) return null;
     const manifest = this.manifest;
@@ -529,7 +531,7 @@ export class ReaderScreen {
     let toc: TocEntry[] = [];
     if (book.format !== 'chapters') {
       try {
-        const fetched = await this.options.api.toc(book.id);
+        const fetched = await withOfflineTimeout(this.options.api.toc(book.id), true, budget);
         if (Array.isArray(fetched)) { toc = fetched; await this.publicationCache.putToc(book.id, toc).catch(() => undefined); }
       } catch {
         toc = await this.publicationCache.toc(book.id) ?? [];
@@ -672,7 +674,7 @@ export class ReaderScreen {
       await this.flushProgress();
       this.content = null; this.patch({toc:[]});
       if (!this.manifest) return;
-      const staged = await this.openStaged(book,this.loadingToken);
+      const staged = await this.openStaged(book,this.loadingToken,{ timedOut: false });
       this.doc = staged?.doc ?? (await this.loadDoc(book,this.manifest,await this.fetchBookBytes(book,this.manifest))).doc;
       this.afterDocLoaded(); await this.view?.open(0,0); this.toolsReturn = '';
     } else {
@@ -791,11 +793,18 @@ export class ReaderScreen {
   }
 
   private async readWindow(bookId: string, group: number, signal?: AbortSignal): Promise<BookContent> {
-    try { const content = await this.options.api.items(bookId, group, signal ? { signal } : {}); signal?.throwIfAborted(); await this.publicationCache.putWindow(bookId, group, content).catch(() => undefined); return content; }
-    catch (error) {
+    const cached = await this.publicationCache.window(bookId, group);
+    signal?.throwIfAborted();
+    const compatible = !!cached && cached.revision === this.manifest?.content?.revision;
+    if (compatible && cached.revision) return cached;
+    try {
+      const content = await withOfflineTimeout(this.options.api.items(bookId, group, signal ? { signal } : {}), compatible);
+      signal?.throwIfAborted();
+      await this.publicationCache.putWindow(bookId, group, content).catch(() => undefined);
+      return content;
+    } catch (error) {
       if (error instanceof ApiError && !error.isConnectivity && error.kind !== 'server') throw error;
-      const cached = await this.publicationCache.window(bookId, group);
-      if (cached && cached.revision === this.manifest?.content?.revision) return cached;
+      if (compatible) return cached;
       throw error;
     }
   }
@@ -858,15 +867,15 @@ export class ReaderScreen {
 
   // ---- loading ----
 
-  private async loadManifest(book: Book): Promise<Manifest> {
+  private async loadManifest(book: Book, budget: OfflineReadBudget): Promise<Manifest> {
+    const cached = await this.publicationCache.manifest(book.id);
     try {
-      const manifest = await this.options.api.manifest(book.id);
+      const manifest = await withOfflineTimeout(this.options.api.manifest(book.id), !!cached, budget);
       await this.publicationCache.putManifest(book.id, manifest).catch(() => undefined);
       return manifest;
     } catch (error) {
       // Authentication failures must never be hidden behind cached content.
       if (error instanceof ApiError && !error.isConnectivity && error.kind !== 'server') throw error;
-      const cached = await this.publicationCache.manifest(book.id);
       if (cached) return cached;
       throw error;
     }
@@ -1397,10 +1406,10 @@ export class ReaderScreen {
     void this.turnPage(forward ? 'next' : 'previous');
   }
 
-  private async restorePosition(book: Book, token: number): Promise<void> {
+  private async restorePosition(book: Book, token: number, budget: OfflineReadBudget): Promise<void> {
     let latest = await this.options.offline.getProgress(book.id);
     try {
-      const remote = await this.options.api.getProgress(book.id, { signal: AbortSignal.timeout(5000) });
+      const remote = await withOfflineTimeout(this.options.api.getProgress(book.id, { signal: AbortSignal.timeout(5000) }), true, budget);
       const local = await this.options.offline.getProgress(book.id);
       if (token !== this.loadingToken) return;
       latest = local ?? latest;
@@ -1652,7 +1661,7 @@ export class ReaderScreen {
       return;
     }
     try {
-      const toc = await this.options.api.toc(book.id);
+      const toc = await withOfflineTimeout(this.options.api.toc(book.id), true);
       entries = toc.map((entry) => ({
         id: entry.href,
         label: entry.title,

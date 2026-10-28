@@ -23,7 +23,7 @@ function mount({ reading = [book], video = [activity({})], audio = [] as object[
       listBooks: vi.fn().mockResolvedValue({ items: [book], total: 1 }),
       coverBytes: vi.fn().mockRejectedValue(new Error('none')),
     },
-    offline: { replaceBooks: async () => undefined },
+    offline: { replaceBooks: async () => undefined, books: () => [] },
     mediaApi: {
       preferenceScope: () => 'home-test',
       request: vi.fn(async (path: string) => ({ items: path.includes('channel=video') ? video : audio, total: 0 })),

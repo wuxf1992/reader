@@ -66,6 +66,19 @@ it('keeps the old page when saving fails and allows retry', async () => {
   expect(postMessage).toHaveBeenCalledTimes(1);
 });
 
+it('uses the current runtime local-save hook instead of waiting for network flush', async () => {
+  const postMessage = pendingUpdate();
+  const saveBeforeUpdate = vi.fn().mockResolvedValue(undefined);
+  const networkFlush = vi.fn(() => new Promise(() => {}));
+  vi.stubGlobal('readerApp', { saveBeforeUpdate });
+  vi.stubGlobal('__readerFlush', networkFlush);
+  dispose = watchPwaUpdates(registration);
+  document.querySelector<HTMLButtonElement>('.pwa-update button')!.click();
+  await vi.waitFor(() => expect(postMessage).toHaveBeenCalledWith({ type: 'SKIP_WAITING' }));
+  expect(saveBeforeUpdate).toHaveBeenCalledTimes(1);
+  expect(networkFlush).not.toHaveBeenCalled();
+});
+
 it('offers updates that finish downloading after registration', () => {
   dispose = watchPwaUpdates(registration);
   expect(document.querySelector('.pwa-update')).toBeNull();

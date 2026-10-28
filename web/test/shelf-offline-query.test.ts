@@ -23,6 +23,25 @@ it('uses scoped cached books when offline and applies sorting and search', async
   expect((await load(value)).items.map((book: Book) => book.id)).toEqual(['b', 'a']);
   expect((await load(value, 'title', '甲')).items.map((book: Book) => book.id)).toEqual(['a']);
 });
+it.each([500, 502, 503, 504])('uses cached books when the server or gateway returns %s', async status => {
+  expect((await load(runtime(new ApiError('server', 'unreachable', '', status)))).items.map((book: Book) => book.id)).toEqual(['b', 'a']);
+});
+it('keeps the error when no local books are available', async () => {
+  const error = new ApiError('server', 'unreachable', '', 502);
+  const value = runtime(error);
+  value.offline.books = () => [];
+  await expect(load(value)).rejects.toBe(error);
+});
+it('uses cached books when the request never settles, without waiting for browser network errors', async () => {
+  vi.useFakeTimers();
+  try {
+    const value = runtime();
+    value.api.listBooks = vi.fn(() => new Promise<never>(() => {}));
+    const result = load(value);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect((await result).items.map((book: Book) => book.id)).toEqual(['b', 'a']);
+  } finally { vi.useRealTimers(); }
+});
 it('does not mask account authorization failures with cached books', async () => {
   await expect(load(runtime(new ApiError('unauthorized', 'expired')))).rejects.toMatchObject({ kind: 'unauthorized' });
 });
@@ -77,4 +96,18 @@ it('does not expose a cached shelf when the account changes during the request',
   value.api.listBooks = vi.fn(async () => { user = 'two'; throw new ApiError('offline', 'offline'); });
   await expect(load(value)).rejects.toMatchObject({ kind: 'offline' });
   expect(value.offline.replaceBooks).not.toHaveBeenCalled();
+});
+
+it.each(['server', 'account'])('does not expose another scope when a hanging request times out after changing %s', async scope => {
+  vi.useFakeTimers();
+  try {
+    const value = runtime();
+    value.api.listBooks = vi.fn(() => new Promise<never>(() => {}));
+    const result = expect(load(value)).rejects.toMatchObject({ kind: 'offline' });
+    if (scope === 'server') (value.api as any).baseUrl = 'https://other-reader.test';
+    else value.api.currentSession = () => ({ user: { id: 'other' } }) as any;
+    await vi.advanceTimersByTimeAsync(3000);
+    await result;
+    expect(value.offline.replaceBooks).not.toHaveBeenCalled();
+  } finally { vi.useRealTimers(); }
 });

@@ -380,6 +380,49 @@ describe('chapter publication reading', () => {
     expect(body(second.screen)?.textContent).not.toContain('resource:r1:b');
   });
 
+  it('opens cached text within one time budget even when every metadata request hangs', async () => {
+    const kv = new MemoryKv(), blobs = new MemoryBlobs();
+    const first = await setup(kv, blobs);
+    serve(first.transport, content(['a']));
+    await first.screen.open(book);
+    first.screen.dispose(); screens.splice(screens.indexOf(first.screen), 1);
+    await first.offline.flush();
+    const second = await setup(kv, blobs);
+    second.transport.respondWith(() => new Promise(() => {}));
+    vi.useFakeTimers();
+    try {
+      const opening = second.screen.open(book);
+      await vi.waitFor(() => expect(second.transport.requests.length).toBeGreaterThan(0));
+      await vi.advanceTimersByTimeAsync(3100);
+      await opening;
+      expect(body(second.screen)?.textContent).toContain('resource:r1:a');
+      expect(second.onSignedOut).not.toHaveBeenCalled();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('uses matching cached windows without waiting for the server and rejects mismatched revisions', async () => {
+    const env = await setup();
+    const value = content(['a']);
+    const cache = new PublicationCache(env.platform.kv, env.platform.blobs, publicationScope(env.api.baseUrl, 'u1'));
+    await cache.putWindow(book.id, 1, value);
+    const reader = env.screen as unknown as { manifest: Manifest; readWindow(bookId: string, group: number, signal?: AbortSignal): Promise<BookContent> };
+    reader.manifest = manifest(value);
+    const request = vi.spyOn(env.api, 'items').mockRejectedValue(new ApiError('offline', 'unreachable'));
+    expect(await reader.readWindow(book.id, 1)).toEqual(value);
+    expect(request).not.toHaveBeenCalled();
+    reader.manifest = manifest(content(['a'], 'new-revision'));
+    await expect(reader.readWindow(book.id, 1)).rejects.toMatchObject({ kind: 'offline' });
+    expect(request).toHaveBeenCalledTimes(1);
+    const legacy = content(['a']); delete legacy.revision;
+    await cache.putWindow(book.id, 1, legacy);
+    reader.manifest = manifest(legacy);
+    expect(await reader.readWindow(book.id, 1)).toEqual(legacy);
+    request.mockRejectedValueOnce(new ApiError('unauthorized', 'revoked'));
+    await expect(reader.readWindow(book.id, 1)).rejects.toMatchObject({ kind: 'unauthorized' });
+    const cancelled = new AbortController(); cancelled.abort();
+    await expect(reader.readWindow(book.id, 1, cancelled.signal)).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
   it('refreshes by stable href, preserving the chapter after insertion and keeping old content on failure', async () => {
     const { screen, offline, transport } = await setup();
     await offline.setProgress({ bookId: book.id, locator: 'r1:0.2500:chapter:b', chapterTitle: '章节 b',
