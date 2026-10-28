@@ -96,6 +96,7 @@ try {
           await page.locator('book-content .book-flow p').first().waitFor();
           await page.waitForFunction(() => Number(document.querySelector('.progress-scrubber')?.max) > 1);
           await page.evaluate(() => { window.reviewEdge = document.querySelector('.reading-indicator-top'); window.reviewSampler = document.querySelector('.reader-system-edge'); });
+          await toggle(page, width, 'visible');
           if (width === 390 && mode === 'scroll') {
             for (const brightness of [.5, 1]) {
               await page.getByRole('button', { name: '外观', exact: true }).click();
@@ -124,30 +125,24 @@ try {
             const hidden = await snapshot(page);
             assert.equal(hidden.shield, 'none');
             const show = await toggle(page, width, 'visible');
-            const locked = await snapshot(page);
-            assert.equal(locked.touchAction, 'none');
-            assert.notEqual(locked.shield, 'none');
-            assert.deepEqual(locked.host, before.host, 'controls must not resize or move the body');
-            const frozen = { top: locked.scrollTop, left: locked.scrollLeft, progress: locked.progress };
+            const visible = await snapshot(page);
+            assert.equal(visible.shield, 'none');
+            assert.deepEqual(visible.host, before.host, 'controls must not resize or move the body');
             await page.mouse.click(width * .8, 400);
-            await swipe(page, width);
-            if (touch && cycle === 0) {
-              await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: width / 2, y: 500 }] });
-              for (const y of [440, 380, 320, 260]) await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: width / 2, y }] });
-              await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-            }
-            await page.mouse.move(width / 2, 400);
-            await page.mouse.wheel(0, 600);
-            await page.locator('.stage').evaluate(el => { el.tabIndex = -1; el.focus(); });
-            await page.keyboard.press('PageDown');
-            await page.waitForTimeout(300);
+            await page.waitForFunction(progress => document.querySelector('.reading-indicator-bottom [data-mode=progress]').textContent !== progress, visible.progress);
+            await settlePage(page);
             const after = await snapshot(page);
-            const rgb = before => 'rgb(' + before.slice(1).match(/../g).map(c => parseInt(c, 16)).join(', ') + ')';
+            assert.equal(after.state, 'hidden', 'continuing to read dismisses controls');
+            const rgb = value => 'rgb(' + value.slice(1).match(/../g).map(c => parseInt(c, 16)).join(', ') + ')';
             assert.equal(after.sampler.background, rgb(after.sampler.expectedColor));
-            assert.deepEqual({ top: after.scrollTop, left: after.scrollLeft, progress: after.progress }, frozen, 'body tap, swipe, wheel and keyboard must remain blocked');
-            cycles.push({ hide, show, locked: after });
+            await toggle(page, width, 'visible');
+            await page.getByRole('slider', { name: '章节内页数', exact: true }).evaluate(el => {
+              el.value = '1'; el.dispatchEvent(new Event('input', { bubbles: true }));
+            });
+            await settlePage(page);
+            cycles.push({ hide, show, reading: after });
           }
-          // The controls themselves still navigate while the body is locked.
+          // Toolbar controls continue navigating without closing themselves.
           const slider = page.getByRole('slider', { name: '章节内页数', exact: true });
           await slider.focus(); await page.keyboard.press('Home');
           await page.keyboard.press('ArrowRight');
@@ -179,7 +174,7 @@ try {
           await page.evaluate(() => { location.hash = '#/shelf'; });
           await page.locator('.reader-screen').waitFor({ state: 'detached' });
           assert.equal(await page.locator('.reader-system-edge').count(), 0);
-          console.log(`${engine} ${width} ${mode}: repeated control cycles, persistent fixed edge, body lock and control navigation passed`);
+          console.log(`${engine} ${width} ${mode}: repeated control cycles, persistent fixed edge, body gestures and control navigation passed`);
         }
         await touch?.detach();
         await page.close();

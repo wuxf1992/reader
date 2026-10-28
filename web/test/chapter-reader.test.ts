@@ -894,11 +894,11 @@ it('matches the saved page theme and system tint before the first content loads'
     expect(env.screen.element.dataset.readingTheme).toBe('local-dark');
     expect(env.screen.element.dataset.paper).toBeUndefined();
     expect(root.dataset.theme).toBe('light');
-    expect(meta.content).toBe('#0f1012');
+    expect(meta.content).toBe('#0b0c0d');
     const reader = env.screen as unknown as { updateSetting(patch: Partial<AppSettings>): Promise<void> };
     await reader.updateSetting({ theme: 'green' });
     expect(env.screen.element.style.getPropertyValue('--color-surface')).toBe('#e8f2e8');
-    expect(meta.content).toBe('#747974');
+    expect(meta.content).toBe('#6b766c');
   } finally { meta.remove(); }
 });
 
@@ -915,35 +915,50 @@ it('toggles glass without reapplying body settings or changing its saved palette
   expect(env.screen.element.querySelector('[aria-label="液态玻璃"]')?.getAttribute('aria-pressed')).toBe('true');
 });
 
-it('blocks body tap, swipe and keyboard paging while controls are visible and restores them after closing', async () => {
+it('opens immersed and lets body taps, swipes and keys continue reading while controls are visible', async () => {
   const env = await setup(undefined, undefined, 'u1', 'http://one.test', { mode: 'paged' });
   serve(env.transport, content(['a', 'b'])); await env.screen.open(book);
   const reader = env.screen as unknown as { turnPage(direction: 'next' | 'previous'): Promise<void>; onTapZone(zone: 'previous' | 'next' | 'toggle-chrome'): void };
+  expect(env.screen.element.dataset.chrome).toBe('hidden');
+  expect(document.activeElement).toBe(env.screen.element);
   const turn = vi.spyOn(reader, 'turnPage').mockResolvedValue();
   const stage = env.screen.element.querySelector<HTMLElement>('.stage')!;
   stage.getBoundingClientRect = () => ({ x: 0, y: 0, left: 0, top: 0, right: 300, bottom: 600, width: 300, height: 600, toJSON() {} });
-  const swipe = () => {
-    for (const [type, x] of [['pointerdown', 250], ['pointerup', 50]] as const) {
-      const event = new Event(type, { bubbles: true });
-      Object.assign(event, { clientX: x, clientY: 300, pointerType: 'touch', button: 0 });
-      stage.dispatchEvent(event);
-    }
-  };
-  const pageKey = () => {
-    const event = new KeyboardEvent('keydown', { key: 'PageDown', bubbles: true, cancelable: true });
-    stage.dispatchEvent(event);
-    return event;
-  };
-  reader.onTapZone('next'); reader.onTapZone('previous'); swipe();
-  expect(pageKey().defaultPrevented).toBe(true);
-  expect(turn).not.toHaveBeenCalled();
-  reader.onTapZone('toggle-chrome');
+  reader.onTapZone('toggle-chrome'); reader.onTapZone('next');
   expect(env.screen.element.dataset.chrome).toBe('hidden');
-  reader.onTapZone('next'); swipe(); pageKey();
+  expect(turn).toHaveBeenLastCalledWith('next');
+  reader.onTapZone('toggle-chrome');
+  for (const [type, x] of [['pointerdown', 250], ['pointerup', 50]] as const) {
+    const event = new Event(type, { bubbles: true });
+    Object.assign(event, { clientX: x, clientY: 300, pointerType: 'touch', button: 0 });
+    stage.dispatchEvent(event);
+  }
+  expect(env.screen.element.dataset.chrome).toBe('hidden');
+  expect(turn).toHaveBeenCalledTimes(2);
+  reader.onTapZone('toggle-chrome');
+  stage.dispatchEvent(new KeyboardEvent('keydown', { key: 'PageDown', bubbles: true }));
   expect(turn).toHaveBeenCalledTimes(3);
-  reader.onTapZone('toggle-chrome'); turn.mockClear();
-  reader.onTapZone('next'); swipe(); pageKey();
+  expect(env.screen.element.dataset.chrome).toBe('hidden');
+  reader.onTapZone('toggle-chrome');
+  await click(env.screen, '外观');
+  turn.mockClear();
+  reader.onTapZone('next');
+  stage.dispatchEvent(new KeyboardEvent('keydown', { key: 'PageDown', bubbles: true }));
   expect(turn).not.toHaveBeenCalled();
+});
+
+it('hides controls on a scroll drag without consuming the browser scroll', async () => {
+  const env = await setup(); serve(env.transport, content(['a'])); await env.screen.open(book);
+  const reader = env.screen as unknown as { onTapZone(zone: 'toggle-chrome'): void };
+  reader.onTapZone('toggle-chrome');
+  const stage = env.screen.element.querySelector<HTMLElement>('.stage')!;
+  for (const [type, y] of [['pointerdown', 400], ['pointermove', 300], ['pointercancel', 300]] as const) {
+    const event = new Event(type, { bubbles: true, cancelable: true });
+    Object.assign(event, { clientX: 100, clientY: y, pointerType: 'touch', button: 0 });
+    stage.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+  }
+  expect(env.screen.element.dataset.chrome).toBe('hidden');
 });
 
 it('updates system tint as controls open and close, including theme and brightness changes and leaving the reader', async () => {
@@ -952,7 +967,7 @@ it('updates system tint as controls open and close, including theme and brightne
   const reader = env.screen as unknown as { setChromeVisible(visible: boolean): void; updateSetting(patch: Partial<AppSettings>): Promise<void> };
   try {
     serve(env.transport, content(['a'])); await env.screen.open(book);
-    expect(meta.content).toBe('#747974');
+    expect(env.screen.element.dataset.chrome).toBe('hidden');
     reader.setChromeVisible(false);
     expect(meta.content).toBe('#6b766c');
     reader.setChromeVisible(true);
@@ -1016,4 +1031,12 @@ it('remembers each settings section independently across reopening and reload', 
   expect(details.map(item => item.open)).toEqual([true, true, false]);
   const readout = details[2]!; readout.open = true; readout.dispatchEvent(new Event('toggle'));
   await vi.waitFor(() => expect(next.onSettingsChange).toHaveBeenCalledWith({ readerSections: { readout: true, text: true, theme: true, paging: true } }));
+});
+
+
+it('keeps the back control available when opening an uncached book fails', async () => {
+  const env = await setup(); env.transport.failWith(new Error('offline'));
+  await env.screen.open(book);
+  expect(env.screen.element.dataset.chrome).toBe('visible');
+  expect(env.screen.element.querySelector('.topbar')?.hasAttribute('hidden')).toBe(false);
 });

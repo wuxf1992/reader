@@ -291,6 +291,7 @@ const FLOW_STYLESHEET = `
  * time, and the reader's own page-margin control moves both together.
  */
 :host([data-paginated='true'][data-page-layout='columns']) .book-flow {
+  touch-action: pinch-zoom;
   height: 100%;
   max-inline-size: none;
   padding-block: 0;

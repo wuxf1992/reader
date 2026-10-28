@@ -812,3 +812,71 @@ it('does not let an older chapter fetch overwrite a newer explicit jump', async 
     expect(view.position().sectionId).toBe('ch2.xhtml');
   } finally {view.dispose();container.remove();}
 });
+
+
+describe('paged drag previews', () => {
+  afterEach(() => document.body.replaceChildren());
+
+  async function dragView(format: 'epub' | 'txt') {
+    const container = document.createElement('div'); document.body.append(container);
+    const doc = reflowableDoc(2); doc.format = format;
+    const position = vi.fn();
+    const view = new ReaderView({ container, doc, onPositionChange: position });
+    view.applySettings({ mode: 'paged', pageAnimation: 'slide' });
+    await view.open(0);
+    for (const [element, sizes] of [[view.elementHost, {clientWidth: 300, clientHeight: 600, scrollHeight: 1800}],
+      [view.elementHost.flow, {clientWidth: 300, clientHeight: 600, scrollWidth: 900}]] as const) {
+      for (const [key, value] of Object.entries(sizes)) Object.defineProperty(element, key, { value, configurable: true });
+    }
+    position.mockClear();
+    return { view, container, position };
+  }
+
+  it.each(['epub', 'txt'] as const)('previews %s without writing a tentative position, and restores on cancel', async format => {
+    const {view, container, position} = await dragView(format);
+    const initial = view.position().locator;
+    expect(view.beginDrag()).toBe(true);
+    view.dragTo(-100);
+    expect(container.querySelectorAll('.reader-page-snapshot')).toHaveLength(2);
+    expect(container.querySelector<HTMLElement>('.reader-page-snapshot')!.style.transform).toContain('200px');
+    expect(view.position().locator).toBe(initial);
+    expect(position).not.toHaveBeenCalled();
+    expect(await view.endDrag(null)).toBe(false);
+    expect(container.querySelector('.reader-page-drag')).toBeNull();
+    expect(view.position().locator).toBe(initial);
+    view.dispose();
+  });
+
+  it('keeps the preview until the queued page turn commits and removes it on dispose', async () => {
+    const {view, container, position} = await dragView('epub');
+    expect(view.beginDrag()).toBe(true); view.dragTo(-100);
+    expect(await view.endDrag('next')).toBe(true);
+    expect(position).not.toHaveBeenCalled();
+    await view.next(); view.cancelDrag();
+    expect(view.position().pageInChapter).toBe(2);
+    expect(position).toHaveBeenCalledOnce();
+    expect(container.querySelector('.reader-page-drag')).toBeNull();
+    expect(view.beginDrag()).toBe(true); view.dragTo(50);
+    view.dispose();
+    expect(container.querySelector('.reader-page-drag')).toBeNull();
+  });
+
+  it('drops tentative preview on a reflow without turning a page', async () => {
+    const {view, container} = await dragView('txt');
+    expect(view.beginDrag()).toBe(true); view.dragTo(-100);
+    view.applySettings({ fontScale: 1.2 });
+    expect(container.querySelector('.reader-page-drag')).toBeNull();
+    expect(await view.endDrag('next')).toBe(false);
+    expect(view.currentSectionIndex()).toBe(0);
+    view.dispose();
+  });
+
+  it('honours disabled animation and keeps fixed layouts on their existing swipe path', async () => {
+    const {view} = await dragView('txt');
+    view.applySettings({ pageAnimation: 'none' });
+    expect(view.beginDrag()).toBe(false); view.dispose();
+    const container = document.createElement('div'); document.body.append(container);
+    const fixed = make(container, fixedDoc(2)); await fixed.open(0);
+    expect(fixed.beginDrag()).toBe(false); fixed.dispose();
+  });
+});

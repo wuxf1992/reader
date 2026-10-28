@@ -34,7 +34,7 @@ async function chapterVisible(page, index) {
     await page.waitForFunction(text => document.querySelector('book-content')?.shadowRoot?.textContent?.includes(text), CHAPTERS[index].title, { timeout: 8000 });
   } catch (error) {
     console.error('Offline failure diagnostics', { mode, expected: CHAPTERS[index].title, state: await page.evaluate(book => ({
-      screen: document.body.innerText.slice(-1000),
+      url: location.href, screen: document.body.innerText.slice(-1000),
       chapter: document.querySelector('book-content')?.shadowRoot?.textContent?.slice(-300),
       progress: window.readerApp?.offline.progressFor(book),
       cachedBooks: window.readerApp?.offline.books().length,
@@ -43,8 +43,9 @@ async function chapterVisible(page, index) {
   }
 }
 async function readCachedNovel(page) {
-  await page.evaluate(book => { location.hash = '#/book/' + book; }, BOOK_ID);
+  await page.getByText('剑来 第1卷', { exact: true }).first().click();
   await chapterVisible(page, 1);
+  if (await page.locator('.reader-screen').getAttribute('data-chrome') === 'hidden') await page.locator('.stage').click({ position: { x: 195, y: 350 } });
   await page.getByRole('button', { name: '上一章', exact: true }).click();
   await chapterVisible(page, 0);
   await page.getByRole('button', { name: '下一章', exact: true }).click();
@@ -79,6 +80,7 @@ try {
       await page.evaluate(async () => { await window.readerApp.updateSettings({ autoCache: false }); });
       await page.evaluate(book => { location.hash = '#/book/' + book; }, BOOK_ID);
       await chapterVisible(page, 0);
+      if (await page.locator('.reader-screen').getAttribute('data-chrome') === 'hidden') await page.locator('.stage').click({ position: { x: 195, y: 350 } });
       await page.getByRole('button', { name: '下一章', exact: true }).click();
       await chapterVisible(page, 1);
       await page.evaluate(async () => { await window.__readerFlush(); });

@@ -34,6 +34,7 @@ function pointer(type: string, init: PointerEventInit): PointerEvent {
     composed: true,
     cancelable: true,
     pointerType: 'touch',
+    isPrimary: true,
     ...init,
   });
 }
@@ -267,5 +268,40 @@ describe('selection and long press', () => {
     h.stage.dispatchEvent(pointer('pointermove', { clientX: 260, clientY: 400 }));
     vi.advanceTimersByTime(600);
     expect(h.saw.longPresses).toBe(0);
+  });
+});
+
+
+describe('followed drag release', () => {
+  it('consumes a followed drag exactly once without also swiping or tapping', () => {
+    const h = harness();
+    h.handlers.onRelease = vi.fn(() => true);
+    press(h.stage, [250, 300], [100, 300]);
+    expect(h.handlers.onRelease).toHaveBeenCalledOnce();
+    expect(h.handlers.onRelease).toHaveBeenCalledWith(-150, 0, 40, false);
+    expect(h.saw.swipes).toEqual([]);
+    expect(h.saw.zones).toEqual([]);
+  });
+
+  it.each(['pointercancel', 'lostpointercapture', 'blur'])('cancels a followed drag on %s without a page turn', type => {
+    const h = harness();
+    h.handlers.onRelease = vi.fn(() => true);
+    h.stage.dispatchEvent(pointer('pointerdown', { clientX: 250, clientY: 300 }));
+    h.stage.dispatchEvent(pointer('pointermove', { clientX: 200, clientY: 300 }));
+    (type === 'blur' ? window : h.stage).dispatchEvent(new Event(type));
+    h.stage.dispatchEvent(pointer('pointerup', { clientX: 50, clientY: 300 }));
+    expect(h.handlers.onRelease).toHaveBeenCalledOnce();
+    expect(h.handlers.onRelease).toHaveBeenCalledWith(0, 0, 0, true);
+    expect(h.saw.swipes).toEqual([]);
+  });
+
+  it('cancels preview when a second touch starts', () => {
+    const h = harness();
+    h.handlers.onRelease = vi.fn(() => true);
+    h.stage.dispatchEvent(pointer('pointerdown', { pointerId: 1, clientX: 250, clientY: 300 }));
+    h.stage.dispatchEvent(pointer('pointermove', { pointerId: 1, clientX: 200, clientY: 300 }));
+    h.stage.dispatchEvent(pointer('pointerdown', { pointerId: 2, isPrimary: false, clientX: 100, clientY: 300 }));
+    expect(h.handlers.onRelease).toHaveBeenCalledWith(0, 0, 0, true);
+    expect(h.saw.swipes).toEqual([]);
   });
 });

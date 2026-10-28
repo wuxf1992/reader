@@ -118,7 +118,7 @@ export class ReaderScreen {
   private chrome: ChromeState = {
     title: '',
     author: '',
-    chromeVisible: true,
+    chromeVisible: false,
     statusText: '',
     statusState: 'idle',
     progress: 0,
@@ -183,7 +183,7 @@ export class ReaderScreen {
   private content: BookContent | null = null;
   private book: Book | null = null;
   private manifest: Manifest | null = null;
-  private chromeVisible = true;
+  private chromeVisible = false;
   /**
    * True while a window is being fetched for a chapter jump.
    *
@@ -249,12 +249,13 @@ export class ReaderScreen {
 
     this.element = document.createElement('div');
     this.element.className = 'reader-screen';
+    this.element.tabIndex = -1;
     this.element.style.cssText = 'flex:1 1 auto;min-height:0;display:flex;flex-direction:column;position:relative;';
     // Whether the chrome is on screen, as an attribute rather than a class per band.
     // The topbar and the footer are one state (see the stylesheet), and one attribute
     // is what makes "cannot be half-hidden" true by construction rather than by two
     // rules that have to be kept in agreement.
-    this.element.dataset['chrome'] = 'visible';
+    this.element.dataset['chrome'] = 'hidden';
     // The reading theme (the app's, or 黑白灰) and the reading paper, on this
     // container only; see resolveReaderSurface.
     this.applyReadingTheme();
@@ -433,7 +434,7 @@ export class ReaderScreen {
     this.content = null; this.book = book;
     this.patch({ title: book.title, author: book.author, description: book.description, bookInfoOpen: false, canRefresh: book.format === 'chapters', canSwitch: false, alternatives: null, refreshingChapter: false, sourceName: '', chapterUrl: '', toc: [] });
     this.setStatus('loading', '正在载入…');
-    this.setChromeVisible(true);
+    this.setChromeVisible(false);
 
     try {
       this.manifest = await this.loadManifest(book, budget);
@@ -1258,10 +1259,12 @@ export class ReaderScreen {
       );
     }
 
+    let following = false;
     this.detachGestures = attachGestures(this.stage, {
       onTapZone: (zone) => this.onTapZone(zone),
       onSwipe: (direction) => {
-        if (this.chromeVisible) return;
+        if (this.bodyGesturesBlocked()) return;
+        if (this.chromeVisible) this.setChromeVisible(false);
         // Swiping is only a page turn in fixed layout or paged mode. In scroll
         // mode a horizontal swipe has no meaning and hijacking it would fight
         // the reader's own scrolling.
@@ -1269,7 +1272,31 @@ export class ReaderScreen {
         if (direction === 'left') void this.turnPage('next');
         else if (direction === 'right') void this.turnPage('previous');
       },
-      onDragDelta: () => undefined,
+      onDragDelta: (deltaX, deltaY, pointerType) => {
+        if (pointerType === 'mouse' || this.bodyGesturesBlocked() || hasTextSelection(this.stage)) return;
+        if (Math.hypot(deltaX, deltaY) <= 12) return;
+        if (this.chromeVisible) this.setChromeVisible(false);
+        const view = this.view;
+        if (!view || this.navigating || this.chrome.switching || this.chrome.refreshing) return;
+        if (!following) {
+          if (Math.abs(deltaX) <= Math.abs(deltaY) || !view.beginDrag()) return;
+          following = true;
+        }
+        view.dragTo(deltaX);
+      },
+      onRelease: (deltaX, _deltaY, duration, cancelled) => {
+        if (!following) return false;
+        following = false;
+        const view = this.view;
+        if (!view) return true;
+        if (cancelled || this.bodyGesturesBlocked()) { view.cancelDrag(); return true; }
+        view.dragTo(deltaX);
+        const turn = Math.abs(deltaX) > this.stage.clientWidth * 0.3
+          || (Math.abs(deltaX) >= 48 && duration < 300);
+        if (turn) void this.turnPage(deltaX < 0 ? 'next' : 'previous', true);
+        else void view.endDrag(null);
+        return true;
+      },
       onLongPress: () => this.setChromeVisible(true),
       hasSelection: () => hasTextSelection(this.stage),
     });
@@ -1279,6 +1306,7 @@ export class ReaderScreen {
     // the desktop convention and costs nothing.
     this.viewListeners.push(
       bindKeys(this.element, (key) => {
+        if (['ArrowRight', 'ArrowLeft', 'PageDown', 'PageUp'].includes(key) && this.chromeVisible) this.setChromeVisible(false);
         if (key === 'ArrowRight' || key === 'PageDown') void this.turnPage('next');
         else if (key === 'ArrowLeft' || key === 'PageUp') void this.turnPage('previous');
         else if (key === ' ') this.toggleSpeech();
@@ -1322,15 +1350,20 @@ export class ReaderScreen {
     this.view?.cancelPendingOpen();
   }
 
-  private turnPage(direction: 'next' | 'previous'): Promise<void> {
+  private turnPage(direction: 'next' | 'previous', dragged = false): Promise<void> {
     const view = this.view;
-    if (!view || this.chrome.refreshing || this.navigating || this.chrome.switching) return Promise.resolve();
+    if (!view || this.chrome.refreshing || this.navigating || this.chrome.switching) {
+      if (dragged) view?.cancelDrag();
+      return Promise.resolve();
+    }
     const epoch = this.pageTurnEpoch;
     // A chapter fetch is asynchronous. Preserve tap order instead of letting
     // the next tap act on the old chapter while the first one is still loading.
     const turn = async () => {
       if (epoch !== this.pageTurnEpoch || this.disposed || view !== this.view || this.chrome.refreshing || this.navigating) return;
-      view.preparePageAnimation();
+      if (dragged) {
+        if (!await view.endDrag(direction) || epoch !== this.pageTurnEpoch || this.disposed || view !== this.view) return;
+      } else view.preparePageAnimation();
       let moved: boolean;
       try {
         moved = direction === 'next' ? await view.next() : await view.previous();
@@ -1348,7 +1381,8 @@ export class ReaderScreen {
         return;
       }
       const saved = this.flushProgress();
-      view.animatePage(direction);
+      if (dragged) view.cancelDrag();
+      else view.animatePage(direction);
       this.pendingSpeechAnchor = null;
       // Commit local progress now; SyncEngine still batches network writes.
       await saved.catch(() => undefined);
@@ -1358,47 +1392,22 @@ export class ReaderScreen {
     return pending;
   }
 
-  /**
-   * Tap zones, in priority order.
-   *
-   * The order is the whole content of this method, and getting it wrong is the
-   * difference between a reader and a puzzle:
-   *
-   *   1. **A panel that is open owns the tap.** The contents and settings panels
-   *      are half-screen sheets over the text; a tap in the strip of text still
-   *      visible beside one is a tap on the panel's backdrop, and turning the page
-   *      behind an open panel is the bug the reader reports as "翻页和设置抢事件".
-   *      The gesture layer cannot enforce this — it sees the stage, and the panel
-   *      is a sibling — so it is enforced here.
-   *   2. **The middle third toggles the chrome**, in both directions.
-   *   3. **The outer thirds turn the page only while controls are hidden.**
-   *
-   * The third rule is the one that changed, and the report behind it is the whole
-   * of it: "在点击左右两边时只需要翻页、不需要显示工具栏，只有在中间点击时才需要切换
-   * 工具栏显隐". The outer thirds used to page-turn *and* force the chrome back on
-   * whenever it was hidden, on the reasoning that a hidden bar leaves the reader no
-   * other way back. The reasoning was sound and the result fights the gesture: a
-   * reader who tapped the right third to go forward got the next page *and* a
-   * toolbar across the text they had just turned to, so the immersive state was
-   * impossible to stay in — every page turn undid it. And the reader who *did* want
-   * the toolbar back had a dedicated, discoverable way to ask for it: the middle
-   * third.
-   *
-   * So the two gestures are now disjoint, one meaning each, which is the property
-   * the old version lacked: 左/右 = 翻页, 中 = 显隐工具栏. Nothing is revealed by a
-   * page turn, and nothing is turned by a tap that asked for the controls.
-   */
+  private bodyGesturesBlocked(): boolean {
+    return this.chrome.tocOpen || this.chrome.settingsOpen || this.toolsOpen
+      || !!this.element.querySelector('dialog[open]');
+  }
+
+  /** The centre toggles controls; outer taps continue reading in either state. */
   private onTapZone(zone: 'previous' | 'toggle-chrome' | 'next'): void {
-    if (this.chrome.tocOpen || this.chrome.settingsOpen) return;
+    if (this.bodyGesturesBlocked()) return;
 
     if (zone === 'toggle-chrome') {
       this.setChromeVisible(!this.chromeVisible);
       return;
     }
-    if (this.chromeVisible) return;
+    if (this.chromeVisible) this.setChromeVisible(false);
 
-    // The page turn, and nothing else: the chrome's visibility is the middle
-    // third's business alone (see the doc comment above). `tapZone` decides which
+    // `tapZone` decides which
     // physical side is *forward*, so a left-handed reader can put next-page under
     // the thumb that holds the phone.
     const reversed = this.settings.tapZone === 'reversed';
@@ -1547,6 +1556,7 @@ export class ReaderScreen {
       // header is a panel the reader cannot dismiss.
       ...(visible ? {} : { tocOpen: false, settingsOpen: false }),
     });
+    if (!visible) this.element.focus({ preventScroll: true });
   }
 
   private toggleToc(): void {
@@ -2290,6 +2300,7 @@ export class ReaderScreen {
   }
 
   private handleLoadError(err: unknown): void {
+    this.setChromeVisible(true);
     if (err instanceof ApiError) {
       if (err.isAuthFailure) {
         this.options.onSignedOut();
@@ -2490,10 +2501,6 @@ function bindKeys(target: HTMLElement, handler: (key: string) => void): () => vo
     // A panel that is open owns the keyboard: the arrow keys are how a range
     // input is adjusted, and the settings panel is a column of range inputs.
     if (target.querySelector('.panel:not([hidden]), dialog[open]')) return;
-    if (target.dataset.chrome === 'visible' && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'].includes(event.key)) {
-      event.preventDefault();
-      return;
-    }
     handler(event.key);
   };
   target.addEventListener('keydown', onKeyDown);

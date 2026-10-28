@@ -190,6 +190,8 @@ export class ReaderView {
   private currentObjectUrl: string | null = null;
   private animationTimer: ReturnType<typeof setTimeout> | null = null;
   private fadingPage: HTMLElement | null = null;
+  private drag: { overlay: HTMLDivElement; current: HTMLDivElement; preview: HTMLDivElement | null;
+    width: number; page: number; neighbour: number; settling: boolean } | null = null;
   private animationRun = 0;
   private pageTurnDistance: number | null = null;
   private spokenChunks: SpokenChunk[] = [];
@@ -462,11 +464,15 @@ export class ReaderView {
     this.animatePage('none');
     if (this.settings.pageAnimation !== 'fade' || !this.usesTextPages()) return;
     if (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    this.fadingPage = this.snapshotPage('reader-page-fade');
+  }
+
+  private snapshotPage(className: string): HTMLDivElement {
     const frame = document.createElement('div');
     for (const attribute of this.host.attributes) {
       if (!['class', 'style', 'data-animating', 'id'].includes(attribute.name)) frame.setAttribute(attribute.name, attribute.value);
     }
-    frame.className = 'reader-page-fade';
+    frame.className = className;
     frame.setAttribute('aria-hidden', 'true');
     frame.setAttribute('inert', '');
     frame.style.cssText = this.host.style.cssText;
@@ -482,12 +488,15 @@ export class ReaderView {
     shadow.append(...[...this.host.shadow.childNodes].map(node => node.cloneNode(true)));
     this.container.append(frame);
     frame.scrollTop = this.host.scrollTop;
-    this.fadingPage = frame;
+    const flow = shadow.querySelector<HTMLElement>('.book-flow');
+    if (flow) flow.scrollLeft = this.host.flow.scrollLeft;
+    return frame;
   }
 
   /** Restart each turn, including repeated turns in the same direction. */
   animatePage(direction: 'next' | 'previous' | 'none'): void {
     if (this.settings.pageAnimation === 'none' || direction === 'none') {
+      this.cancelDrag();
       this.animationRun++;
       if (this.animationTimer !== null) clearTimeout(this.animationTimer);
       this.animationTimer = null;
@@ -571,6 +580,84 @@ export class ReaderView {
     // report, one layer down.
     await this.open(local, 0);
     return true;
+  }
+
+  /** Preview pages without changing the live scroller or publishing tentative progress. */
+  beginDrag(): boolean {
+    if (this.drag || this.doc.layout !== 'reflowable' || this.settings.mode !== 'paged'
+      || this.settings.direction === 'rtl' || this.settings.pageAnimation !== 'slide') return false;
+    if (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) return false;
+    const width = this.host.clientWidth;
+    if (width <= 0) return false;
+    this.animatePage('none');
+    const current = this.snapshotPage('reader-page-snapshot');
+    const overlay = document.createElement('div');
+    overlay.className = 'reader-page-drag';
+    overlay.setAttribute('aria-hidden', 'true');
+    overlay.setAttribute('inert', '');
+    for (const key of ['left', 'top', 'width', 'height'] as const) overlay.style[key] = current.style[key];
+    this.container.append(overlay);
+    overlay.append(current);
+    current.style.left = '0'; current.style.top = '0';
+    current.scrollTop = this.host.scrollTop;
+    current.shadowRoot!.querySelector<HTMLElement>('.book-flow')!.scrollLeft = this.host.flow.scrollLeft;
+    this.drag = { overlay, current, preview: null, width,
+      page: this.usesColumns() ? this.columnIndex() : this.scrollPage(), neighbour: 0, settling: false };
+    return true;
+  }
+
+  dragTo(deltaX: number): void {
+    const drag = this.drag;
+    if (!drag || drag.settling) return;
+    const neighbour = deltaX < 0 ? 1 : -1;
+    if (neighbour !== drag.neighbour) {
+      drag.preview?.remove(); drag.preview = null; drag.neighbour = neighbour;
+      const target = drag.page + neighbour;
+      const total = this.usesColumns() ? this.columnCount() : this.screenCount();
+      // shortcut: previews stay within a chapter; extend them when adjacent chapters are preloaded.
+      if (target >= 0 && target < total) {
+        const preview = this.snapshotPage('reader-page-snapshot');
+        drag.overlay.prepend(preview);
+        preview.style.left = '0'; preview.style.top = '0';
+        if (this.usesColumns()) preview.shadowRoot!.querySelector<HTMLElement>('.book-flow')!.scrollLeft = target * this.columnStride(total);
+        else {
+          preview.scrollTop = this.screenOffset(target);
+          const slice = this.textPages()?.[target];
+          if (slice) preview.style.clipPath = `inset(0 0 ${Math.max(0, this.host.clientHeight - slice.visibleHeight)}px 0)`;
+        }
+        drag.preview = preview;
+      }
+    }
+    const x = Math.max(-drag.width, Math.min(drag.width, drag.preview ? deltaX : deltaX * 0.2));
+    drag.current.style.transform = `translateX(${x}px)`;
+    if (drag.preview) drag.preview.style.transform = `translateX(${x + neighbour * drag.width}px)`;
+  }
+
+  async endDrag(direction: 'next' | 'previous' | null): Promise<boolean> {
+    const drag = this.drag;
+    if (!drag || drag.settling) return false;
+    drag.settling = true;
+    const x = direction && drag.preview ? (direction === 'next' ? -drag.width : drag.width) : 0;
+    const frames = [drag.current, ...(drag.preview ? [drag.preview] : [])];
+    await Promise.all(frames.map(async (frame, index) => {
+      const transform = `translateX(${x + (index ? drag.neighbour * drag.width : 0)}px)`;
+      if (typeof frame.animate === 'function') {
+        const animation = frame.animate([{ transform: frame.style.transform }, { transform }],
+          { duration: 180, easing: 'cubic-bezier(0.22, 0.61, 0.36, 1)', fill: 'forwards' });
+        await animation.finished.catch(() => undefined);
+      } else frame.style.transform = transform;
+    }));
+    if (this.drag !== drag) return false;
+    if (!direction) this.cancelDrag();
+    return direction !== null;
+  }
+
+  cancelDrag(): void {
+    const drag = this.drag;
+    this.drag = null;
+    if (!drag) return;
+    for (const animation of drag.overlay.getAnimations?.({ subtree: true }) ?? []) animation.cancel();
+    drag.overlay.remove();
   }
 
   private usesColumns(): boolean {

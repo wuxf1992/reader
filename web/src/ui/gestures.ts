@@ -34,8 +34,10 @@
 export interface GestureHandlers {
   onTapZone(zone: 'previous' | 'toggle-chrome' | 'next'): void;
   onSwipe(direction: 'left' | 'right' | 'up' | 'down'): void;
-  /** Fires continuously while a finger is down and moving, for scroll mode. */
-  onDragDelta(deltaX: number, deltaY: number): void;
+  /** Fires continuously while a pointer is down and moving, for page feedback. */
+  onDragDelta(deltaX: number, deltaY: number, pointerType: string): void;
+  /** Return true when a followed drag consumed the release. */
+  onRelease?(deltaX: number, deltaY: number, duration: number, cancelled: boolean): boolean;
   onLongPress(x: number, y: number): void;
   /** True when a text selection is active: gestures must then stand aside. */
   hasSelection(): boolean;
@@ -142,6 +144,7 @@ export function attachGestures(element: HTMLElement, handlers: GestureHandlers):
   let startY = 0;
   let startTime = 0;
   let tracking = false;
+  let pointerId: number | undefined;
   let longPressTimer: ReturnType<typeof setTimeout> | null = null;
   let suppressClick = false;
   /**
@@ -166,6 +169,8 @@ export function attachGestures(element: HTMLElement, handlers: GestureHandlers):
 
   const onPointerDown = (event: PointerEvent): void => {
     if (event.pointerType === 'mouse' && event.button !== 0) return;
+    if (tracking || event.isPrimary === false) { onPointerCancel(); return; }
+    pointerId = event.pointerId;
     tracking = true;
     suppressClick = false;
     startX = event.clientX;
@@ -194,15 +199,16 @@ export function attachGestures(element: HTMLElement, handlers: GestureHandlers):
   };
 
   const onPointerMove = (event: PointerEvent): void => {
-    if (!tracking || owned) return;
+    if (!tracking || owned || event.pointerId !== pointerId) return;
+    if (handlers.hasSelection()) { onPointerCancel(); return; }
     const deltaX = event.clientX - startX;
     const deltaY = event.clientY - startY;
     if (Math.hypot(deltaX, deltaY) > TAP_MAX_DISTANCE) clearLongPress();
-    handlers.onDragDelta(deltaX, deltaY);
+    handlers.onDragDelta(deltaX, deltaY, event.pointerType);
   };
 
   const onPointerUp = (event: PointerEvent): void => {
-    if (!tracking) return;
+    if (!tracking || event.pointerId !== pointerId) return;
     tracking = false;
     const wasOwned = owned;
     owned = false;
@@ -214,7 +220,14 @@ export function attachGestures(element: HTMLElement, handlers: GestureHandlers):
     const duration = Date.now() - startTime;
     const distance = Math.hypot(deltaX, deltaY);
 
-    if (suppressClick || handlers.hasSelection()) return;
+    if (suppressClick || handlers.hasSelection()) {
+      handlers.onRelease?.(deltaX, deltaY, duration, true);
+      return;
+    }
+    if (handlers.onRelease?.(deltaX, deltaY, duration, false)) {
+      suppressClick = true;
+      return;
+    }
 
     const horizontal = Math.abs(deltaX) > Math.abs(deltaY) * SWIPE_MAX_OFF_AXIS;
     if (distance >= SWIPE_MIN_DISTANCE && duration < 800) {
@@ -274,6 +287,7 @@ export function attachGestures(element: HTMLElement, handlers: GestureHandlers):
   };
 
   const onPointerCancel = (): void => {
+    if (tracking && !owned) handlers.onRelease?.(0, 0, 0, true);
     tracking = false;
     owned = false;
     clearLongPress();
@@ -294,14 +308,18 @@ export function attachGestures(element: HTMLElement, handlers: GestureHandlers):
   element.addEventListener('pointermove', onPointerMove);
   element.addEventListener('pointerup', onPointerUp);
   element.addEventListener('pointercancel', onPointerCancel);
+  element.addEventListener('lostpointercapture', onPointerCancel);
+  window.addEventListener('blur', onPointerCancel);
   element.addEventListener('click', onClickCapture, true);
 
   return () => {
-    clearLongPress();
+    onPointerCancel();
     element.removeEventListener('pointerdown', onPointerDown);
     element.removeEventListener('pointermove', onPointerMove);
     element.removeEventListener('pointerup', onPointerUp);
     element.removeEventListener('pointercancel', onPointerCancel);
+    element.removeEventListener('lostpointercapture', onPointerCancel);
+    window.removeEventListener('blur', onPointerCancel);
     element.removeEventListener('click', onClickCapture, true);
   };
 }

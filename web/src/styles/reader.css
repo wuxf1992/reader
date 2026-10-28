@@ -378,7 +378,11 @@ html[data-reader-chrome] body {
   -webkit-overflow-scrolling: auto;
 }
 
+.book-host[data-layout='reflowable']:not([data-paginated='true']) { touch-action: pan-y; }
+.book-host[data-layout='reflowable'][data-paginated='true'] { touch-action: pinch-zoom; }
+
 .book-host[data-layout='fixed'] {
+  touch-action: pinch-zoom;
   overflow: hidden;
   display: grid;
   place-items: center;
@@ -3743,14 +3747,6 @@ svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; verti
 .reader-screen .stage-host {
   inset: var(--reader-inset-top, 0px) var(--reader-inset-right, 0px) var(--reader-inset-bottom, 0px) var(--reader-inset-left, 0px);
 }
-/* Intercept body gestures without resizing its scroll container or page columns. */
-.reader-screen[data-chrome='visible'] .stage { touch-action: none; }
-.reader-screen[data-chrome='visible'] .stage::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: calc(var(--reader-layer-page) + 1);
-}
 .reader-screen .book-host {
   inset-block-start: calc(1.8rem + var(--safe-top));
   inset-block-end: calc(1.8rem + var(--safe-bottom) + var(--reader-page-trim, 0px));
@@ -4239,13 +4235,17 @@ svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; verti
 .source-capabilities dd { margin: 4px 0 0; }
 
 /* A frozen outgoing page; its shadow contents retain the original typography. */
-.reader-page-fade {
+.reader-page-fade,
+.reader-page-snapshot,
+.reader-page-drag {
   position: absolute;
   overflow: hidden;
   pointer-events: none;
   background: var(--reader-paper);
   z-index: calc(var(--reader-layer-page, 1) + 1);
 }
+.reader-page-drag { z-index: calc(var(--reader-layer-page, 1) + 2); }
+.reader-page-snapshot { z-index: auto; }
 .reader-page-fade[data-fading] {
   animation: reader-page-fade-out 260ms ease-in-out both;
 }
