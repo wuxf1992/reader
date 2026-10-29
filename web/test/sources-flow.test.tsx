@@ -55,6 +55,17 @@ async function mount(capabilities = ['search', 'browse', 'content.manifest']) {
   return api;
 }
 
+it('supports arrow, Home and End keys in the source tabs', async () => {
+  await mount();
+  const tabs = [...root.querySelectorAll<HTMLButtonElement>('[role=tab]')];
+  tabs[0]!.focus();
+  for (const [key, index] of [['ArrowRight', 1], ['End', tabs.length - 1], ['Home', 0]] as const) {
+    await act(async () => { document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })); });
+    expect(tabs[index]!.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(tabs[index]);
+  }
+});
+
 it('keeps discovery closed on entry, loads it on demand and avoids book counts for navigation-only pages', async () => {
   const api = await mount();
   expect(api.sourceCatalog).not.toHaveBeenCalled();

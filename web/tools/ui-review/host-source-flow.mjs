@@ -36,11 +36,17 @@ async function shot(name) {
   await page.screenshot({ path: join(shots, 'sources-e2e-' + name + '.png'), animations: 'disabled' });
 }
 async function addSource(name) {
-  await button('添加来源').click(); await page.getByLabel('来源类型').selectOption('reader.source.demo/demo-chapters');
-  await page.getByLabel('名称', { exact: true }).fill(name); await button('保存来源').click();
+  await page.getByRole('link', { name: '添加来源', exact: true }).click(); await page.getByLabel('来源类型').selectOption('reader.source.demo/demo-chapters');
+  await page.getByLabel('名称', { exact: true }).fill(name); await button('保存').click();
+  await tab('书源管理').click();
   await page.locator('.sources-row').getByText(name, { exact: true }).waitFor(); await idle();
   assert.equal(await page.getByRole('dialog').count(), 0);
-  assert.equal(await button('添加来源').evaluate(el => el === document.activeElement), true);
+  assert.equal(new URL(page.url()).hash, '#/sources');
+}
+async function openInstaller(mode) {
+  await button('安装插件').click();
+  await page.getByRole('dialog', { name: '安装插件', exact: true }).waitFor();
+  await button(mode).click();
 }
 try {
   await Promise.all([mkdir(config.booksDir), mkdir(config.dataDir), mkdir(shots, { recursive: true })]);
@@ -67,19 +73,25 @@ try {
   browser = await chromium.launch({ headless: true, ...(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {}) });
   page = await browser.newPage({ viewport: { width: 390, height: 844 } }); page.setDefaultTimeout(12000);
   const errors = []; page.on('pageerror', error => errors.push(error.message));
-  await page.goto(base); await page.getByText('这是一个全新的实例，第一个注册的账号会成为管理员。', { exact: true }).waitFor();
+  await page.route('https://wuxf.top/**', route => route.abort());
+  await page.goto(base);
+  await page.getByText('更换服务地址', { exact: true }).click();
+  await page.locator('input[type=url]').fill(base);
+  await page.getByText('这是一个全新的实例，第一个注册的账号会成为管理员。', { exact: true }).waitFor();
   if (!await button('注册并登录').isVisible()) await button('注册新账号').click();
   await page.locator('input[autocomplete=username]').fill('e2e-admin'); await page.locator('input[type=password]').fill('password123');
-  await button('注册并登录').click(); await page.locator('.shelf-screen').waitFor();
+  await button('注册并登录').click(); await page.locator('.app-shell').waitFor();
   await page.goto(base + '/#/sources'); await tab('插件管理').click();
+  await openInstaller('本地文件');
   for (const width of [320, 390, 1280]) { await page.setViewportSize({ width, height: 844 }); await shot('plugin-install-' + width); }
-  await tab('上传安装包').click();
   for (const width of [320, 1280]) { await page.setViewportSize({ width, height: 844 }); await shot('plugin-upload-' + width); }
-  await page.getByLabel('npm pack 安装包').setInputFiles(archive);
-  assert.equal(await button('上传并启用').isDisabled(), true);
-  await page.getByLabel('我信任这个插件的代码').check();
-  await button('上传并启用').click(); await page.getByText('Demo chapter source', { exact: true }).waitFor();
-  assert.ok((await page.locator('[role=status]').innerText()).includes('插件已安装并启用'));
+  await page.getByLabel('插件包（.tgz）', { exact: true }).setInputFiles(archive);
+  assert.equal(await button('安装并启用').isDisabled(), true);
+  await button('我信任这个插件').click();
+  await button('安装并启用').click();
+  await page.getByRole('dialog', { name: '安装插件', exact: true }).waitFor({ state: 'detached' });
+  await page.getByText('Demo chapter source', { exact: true }).waitFor();
+  await page.getByRole('status').filter({ hasText: '已安装 Demo chapter source' }).waitFor();
   for (const width of [390, 1920]) {
     await page.setViewportSize({ width, height: 900 });
     const bounds = await page.locator('.global-notice').evaluate(node => {
@@ -93,18 +105,22 @@ try {
   const beforeDismiss = await page.locator('.sources-body').boundingBox();
   await button('关闭提示').click(); await page.locator('.global-notice').waitFor({ state: 'hidden' });
   assert.deepEqual(await page.locator('.sources-body').boundingBox(), beforeDismiss, 'dismissing feedback does not move the page');
-  assert.equal(await page.getByLabel('npm pack 安装包').inputValue(), '');
-  await tab('从 npm 安装').click();
-  await page.getByLabel('npm 包名', { exact: true }).fill('reader-source-example@latest');
-  await page.getByLabel('我信任这个插件的代码').check();
-  await button('安装并启用').click(); await page.getByText('Upload example', { exact: true }).waitFor();
+  await openInstaller('本地文件');
+  assert.equal(await page.getByLabel('插件包（.tgz）', { exact: true }).inputValue(), '');
+  await button('npm 包').click();
+  await page.getByPlaceholder('例如 reader-source-example', { exact: true }).fill('reader-source-example@latest');
+  await button('我信任这个插件').click();
+  await button('安装并启用').click();
+  await page.getByRole('dialog', { name: '安装插件', exact: true }).waitFor({ state: 'detached' });
+  await page.getByText('Upload example', { exact: true }).waitFor();
   // Upload another version of the same plugin; no uninstall or source deletion.
-  await tab('上传安装包').click();
-  await page.getByLabel('npm pack 安装包').setInputFiles({ name: 'example-1.1.0.tgz', mimeType: 'application/gzip',
+  await openInstaller('本地文件');
+  await page.getByLabel('插件包（.tgz）', { exact: true }).setInputFiles({ name: 'example-1.1.0.tgz', mimeType: 'application/gzip',
     buffer: pluginArchive('reader-source-example', 'test.registry', true, '1.1.0') });
-  await page.getByLabel('我信任这个插件的代码').check();
-  await button('上传并启用').click();
-  await page.getByRole('status').filter({ hasText: '插件已更新至 1.1.0 并启用' }).waitFor();
+  await button('我信任这个插件').click();
+  await button('安装并启用').click();
+  await page.getByRole('dialog', { name: '安装插件', exact: true }).waitFor({ state: 'detached' });
+  await page.getByRole('status').filter({ hasText: '已安装 Upload example' }).last().waitFor();
   assert.equal(await page.locator('.sources-row').filter({ hasText: 'Upload example' }).count(), 1);
   assert.ok((await page.locator('.sources-row').filter({ hasText: 'Upload example' }).innerText()).includes('1.1.0'));
   await shot('plugins-enabled-desktop');
@@ -132,7 +148,7 @@ try {
   await page.waitForFunction(() => document.querySelector('[aria-label="选择来源"]')?.selectedOptions[0]?.textContent === '示例章节源（默认）');
   await page.getByLabel('搜索书籍').waitFor();
   const searchAlignment = await button('搜索').evaluate(node => {
-    const icon = node.querySelector('.icon').getBoundingClientRect();
+    const icon = node.querySelector('svg').getBoundingClientRect();
     const text = document.createRange(); text.selectNodeContents(node.lastChild); const rect = text.getBoundingClientRect();
     return Math.abs((icon.top + icon.bottom) / 2 - (rect.top + rect.bottom) / 2);
   });
@@ -143,7 +159,9 @@ try {
   await button('1 条书源').click();
   const sourceList = page.getByRole('dialog', { name: '书源列表', exact: true });
   await sourceList.getByRole('button', { name: '加入书架', exact: true }).click();
-  await sourceList.getByRole('button', { name: '阅读《插件示例书》', exact: true }).click();
+  await sourceList.getByRole('button', { name: '关闭', exact: true }).click();
+  await sourceList.waitFor({ state: 'detached' });
+  await button('阅读《插件示例书》').click();
   await page.locator('book-content').getByText('这是通过独立 Node 进程提供的示例章节。',{exact:false}).waitFor();
   await page.setViewportSize({width:390,height:844}); await shot('reader-mobile');
 
@@ -222,7 +240,7 @@ try {
     }
   }
   await page.goto(base + '/#/sources'); await tab('书源管理').click();
-  await button('添加来源').click();
+  await page.getByRole('link', { name: '添加来源', exact: true }).click();
   await page.getByLabel('来源类型').selectOption('reader.source.demo/demo-chapters');
   await page.getByLabel('名称', { exact: true }).fill('保留的草稿');
   await page.route('**/api/v1/sources', route => route.request().method() === 'POST'
@@ -230,15 +248,15 @@ try {
     : route.continue());
   for (const width of [390, 1920]) {
     await page.setViewportSize({ width, height: 900 });
-    const before = await page.getByRole('dialog').boundingBox();
-    await button('保存来源').click();
-    await page.locator('dialog .notyf [role=alert]').waitFor();
+    const before = await page.locator('.sources-body').boundingBox();
+    await button('保存').click();
+    await page.locator('.notyf [role=alert]').waitFor();
     assert.equal(await page.locator('.notyf').count(), 1);
-    assert.deepEqual(await page.getByRole('dialog').boundingBox(), before);
+    assert.deepEqual(await page.locator('.sources-body').boundingBox(), before);
     assert.equal(await page.getByLabel('名称', { exact: true }).inputValue(), '保留的草稿');
     await shot('global-notice-dialog-' + width);
     await button('关闭提示').click(); await page.locator('.global-notice').waitFor({ state: 'hidden' });
-    assert.deepEqual(await page.getByRole('dialog').boundingBox(), before);
+    assert.deepEqual(await page.locator('.sources-body').boundingBox(), before);
   }
   await button('取消').click();
   assert.equal(await page.locator('body > .notyf').count(), 1);

@@ -6,6 +6,7 @@ import { FloatingNotice } from '../../../ui/floating-notice.tsx';
 import { ConfirmSheet } from '../../../ui/sheet.tsx';
 import { Button, Callout } from '../../../ui/toolkit.tsx';
 import { SourcesHeader } from '../components/SourcesHeader.tsx';
+import { notify } from '../../../ui/notifications.ts';
 
 export function SourceEditorPage() {
   const navigate = useNavigate();
@@ -37,8 +38,12 @@ export function SourceEditorPage() {
       try { value = JSON.parse(raw) as Record<string, unknown>; setJsonError(''); }
       catch { setJsonError('配置 JSON 格式不正确'); return; }
     }
-    await mutations.save.mutateAsync({ id: sourceId ?? null, input: { name: name.trim(), config: value, ...(sourceId ? {} : { pluginId: type?.pluginId, sourceType: type?.id }) } });
-    navigate('/sources');
+    try {
+      await mutations.save.mutateAsync({ id: sourceId ?? null, input: { name: name.trim(), config: value, ...(sourceId ? {} : { pluginId: type?.pluginId, sourceType: type?.id }) } });
+      navigate('/sources');
+    } catch (reason) {
+      notify(reason instanceof Error ? reason.message : '保存失败，请稍后重试。', { kind: 'error' });
+    }
   };
   const setField = (key: string, value: unknown) => setConfig(previous => ({ ...previous, [key]: value }));
   return <div className="sources-screen">

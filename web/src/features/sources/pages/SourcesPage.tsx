@@ -133,8 +133,16 @@ export function SourcesPage() {
   const detailInShelf = !!detail && (acquired?.ref === detail.ref || !!detail.shelfBookId);
   return <div className="sources-screen sources-hub">
     <SourcesHeader title="书源与追更" backTo="/shelf" />
-    <nav className="sources-tabs" role="tablist" aria-label="书源功能">
-      {([['search', '搜书'], ['sources', '书源管理'], ['updates', '自动追更'], ...(admin ? [['plugins', '插件管理']] : [])] as Array<[SourceTab, string]>).map(([id, label]) => <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)}>{label}{id === 'updates' && (subscriptions.data ?? []).some(item => item.newChapters > 0) && <span className="sources-tab-dot" aria-label="有更新" />}</button>)}
+    <nav className="sources-tabs" role="tablist" aria-label="书源功能" onKeyDown={event => {
+      if (event.altKey || event.ctrlKey || event.metaKey) return;
+      const tabs = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role=tab]')];
+      const index = tabs.indexOf(document.activeElement as HTMLButtonElement);
+      if (index < 0) return;
+      const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index - 1 + tabs.length) % tabs.length : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : -1;
+      if (next < 0) return;
+      event.preventDefault(); tabs[next]!.click(); tabs[next]!.focus();
+    }}>
+      {([['search', '搜书'], ['sources', '书源管理'], ['updates', '自动追更'], ...(admin ? [['plugins', '插件管理']] : [])] as Array<[SourceTab, string]>).map(([id, label]) => <button key={id} type="button" role="tab" tabIndex={tab === id ? 0 : -1} aria-selected={tab === id} onClick={() => setTab(id)}>{label}{id === 'updates' && (subscriptions.data ?? []).some(item => item.newChapters > 0) && <span className="sources-tab-dot" aria-label="有更新" />}</button>)}
     </nav>
     <main className="sources-body" role="tabpanel">
       {tab === 'search' && <>
