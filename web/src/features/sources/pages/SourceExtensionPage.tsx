@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import type { ExtensionContent, ExtensionField, ExtensionForm, ExtensionPage } from '../../../api/sources.ts';
 import { ApiError } from '../../../api/errors.ts';
@@ -118,6 +118,9 @@ export function SourceExtensionPage() {
   const tabs = page?.tabs ?? []; const selectedTab = useMemo(() => tabs.find(tab => tab.id === activeTab), [tabs, activeTab]);
   useEffect(() => { setActiveTab(''); setValues({}); setSelected(new Set()); setEditing(null); setError(''); setNoticeTab(''); setConfirmation(null); }, [owner, pageId]);
   useEffect(() => { if (!page) return; setActiveTab(current => page.activeTab && !current ? page.activeTab : (current && tabs.some(tab => tab.id === current) ? current : tabs[0]?.id ?? '')); setNoticeTab(current => current || page.activeTab || tabs[0]?.id || ''); }, [page, tabs]);
+  useLayoutEffect(() => {
+    document.getElementById(`extension-tab-${activeTab}`)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+  }, [activeTab, page]);
   const updateValue = (key: string, field: string, value: unknown) => setValues(previous => {
     const form = findForm(page, key);
     const base = previous[key] ?? (form ? initialValues(form) : {});

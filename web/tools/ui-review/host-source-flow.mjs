@@ -146,14 +146,14 @@ try {
   for (const width of [320,390,1280]) { await page.setViewportSize({width,height:844}); await shot('hub-'+width); }
   await page.reload(); await tab('搜书').click();
   await page.waitForFunction(() => document.querySelector('[aria-label="选择来源"]')?.selectedOptions[0]?.textContent === '示例章节源（默认）');
-  await page.getByLabel('搜索书籍').waitFor();
+  await page.getByLabel('搜索书籍', { exact: true }).waitFor();
   const searchAlignment = await button('搜索').evaluate(node => {
     const icon = node.querySelector('svg').getBoundingClientRect();
     const text = document.createRange(); text.selectNodeContents(node.lastChild); const rect = text.getBoundingClientRect();
     return Math.abs((icon.top + icon.bottom) / 2 - (rect.top + rect.bottom) / 2);
   });
   assert.ok(searchAlignment < 3, 'search icon and text align vertically');
-  await page.getByLabel('搜索书籍').fill('示例'); await button('搜索').click();
+  await page.getByLabel('搜索书籍', { exact: true }).fill('示例'); await button('搜索').click();
   await page.getByText('插件示例书',{exact:true}).waitFor();
   await shot('search-desktop');
   await button('1 条书源').click();
@@ -220,6 +220,7 @@ try {
     const toolbarBounds = await page.locator('.extension-toolbar').boundingBox();
     for (const failed of [true, false]) {
       failAction = failed;
+      const feedback = page.locator('.global-notice').filter({ hasText: failed ? '插件暂时不可用，请重启后重试。' : '配置已保存' });
       await button('保存配置').click();
       await page.locator('.global-notice').getByText('正在处理…', { exact: true }).waitFor();
       assert.deepEqual(await page.locator('.sources-body').boundingBox(), bodyBounds);
@@ -231,10 +232,10 @@ try {
       assert.equal(await page.locator('.sources-body').evaluate(node => node.scrollTop), scrollTop);
       assert.deepEqual(await page.locator('.sources-body').boundingBox(), bodyBounds);
       assert.deepEqual(await page.locator('.extension-toolbar').boundingBox(), toolbarBounds);
-      const notice = await page.locator('.global-notice').evaluate(node => ({ width: node.getBoundingClientRect().width, position: getComputedStyle(node.closest('.notyf')).position }));
+      const notice = await feedback.evaluate(node => ({ width: node.getBoundingClientRect().width, position: getComputedStyle(node.closest('.notyf')).position }));
       assert.equal(notice.position, 'fixed'); assert.ok(notice.width <= Math.min(448, width - 32));
       await shot('extension-feedback-' + (failed ? 'error-' : 'success-') + width);
-      await button('关闭提示').click(); await page.locator('.global-notice').waitFor({ state: 'hidden' });
+      await feedback.getByRole('button', { name: '关闭提示', exact: true }).click(); await feedback.waitFor({ state: 'hidden' });
       assert.deepEqual(await page.locator('.sources-body').boundingBox(), bodyBounds);
       assert.equal(await page.locator('.sources-body').evaluate(node => node.scrollTop), scrollTop);
     }
@@ -249,13 +250,14 @@ try {
   for (const width of [390, 1920]) {
     await page.setViewportSize({ width, height: 900 });
     const before = await page.locator('.sources-body').boundingBox();
+    const feedback = page.locator('.global-notice:not(.notyf__toast--disappear)').filter({ hasText: '保存失败，请稍后重试。' });
     await button('保存').click();
-    await page.locator('.notyf [role=alert]').waitFor();
+    await feedback.getByRole('alert').waitFor();
     assert.equal(await page.locator('.notyf').count(), 1);
     assert.deepEqual(await page.locator('.sources-body').boundingBox(), before);
     assert.equal(await page.getByLabel('名称', { exact: true }).inputValue(), '保留的草稿');
     await shot('global-notice-dialog-' + width);
-    await button('关闭提示').click(); await page.locator('.global-notice').waitFor({ state: 'hidden' });
+    await feedback.getByRole('button', { name: '关闭提示', exact: true }).click(); await feedback.waitFor({ state: 'hidden' });
     assert.deepEqual(await page.locator('.sources-body').boundingBox(), before);
   }
   await button('取消').click();
