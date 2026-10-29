@@ -35,4 +35,17 @@ describe('book links survive offline reopening', () => {
     const cache = { books: () => [], replaceBooks: async () => { throw new Error('quota'); } };
     expect(await resolve(cache as unknown as OfflineStore, async () => ({ book }))).toEqual(book);
   });
+  it('does not write a late book response into a newly selected account', async () => {
+    const kv = storage(), offline = new OfflineStore(kv);
+    await offline.setScope('server:one');
+    let finish!: (value: { book: Book }) => void;
+    const pending = resolve(offline, () => new Promise(done => { finish = done; }));
+    await offline.setScope('server:two');
+    finish({ book });
+    expect(await pending).toBeNull();
+    expect(offline.books()).toEqual([]);
+    const reopened = new OfflineStore(kv);
+    await reopened.setScope('server:two');
+    expect(reopened.books()).toEqual([]);
+  });
 });
