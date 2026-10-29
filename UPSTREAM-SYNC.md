@@ -7,7 +7,7 @@
 | 名称 | 用途 | 规则 |
 | --- | --- | --- |
 | `upstream` | 原作者仓库，只获取更新 | 本机设置了无效 push URL 防止误推；不修改原作者分支 |
-| `origin` | 自己的 GitHub fork | 当前待创建/接入；接入后用于备份 main、custom 和回退标签 |
+| `origin` | [wuxf1992/reader](https://github.com/wuxf1992/reader) | 已连接；仓库专用 SSH 部署公钥待用户添加后，推送 custom/main 和回退标签 |
 | `main` | 纯上游镜像，跟踪 `upstream/main` | 只做 fast-forward，不放个人修改 |
 | `custom` | 日常开发和验证后的定制版本 | 功能分别提交，长期采用 merge，不重写已共享历史 |
 | `sync/upstream-YYYYMMDD` | 一次同步的临时整合分支 | 独立 worktree 解决冲突、验证后 fast-forward 回 custom |
@@ -149,22 +149,14 @@ git rev-list --left-right --count custom...upstream/main
 7. 线上回滚使用对应发布备份，源码共享后的撤销使用新提交（必要时 `git revert -m 1 <mergeSHA>`），不重写远端历史，不覆盖当前账号、书架或进度。
 8. 整合记录和本地证据保存后，可移除干净 worktree 和已合入的临时分支。回退标签按实际保留策略处理，不在例行同步时批量删备份。
 
-## 首次接入个人 fork
+## 个人 fork 接入：2026-10-29
 
-当前 GitHub 账号为 `wuxf1992`，已连接的插件仓库可写。工具尚无创建仓库/fork 能力，当前未找到 `wuxf1992/reader`；Reader 的 origin 接入与远端备份单列为待办。
-
-通过 GitHub 创建原仓库的 fork 后，确认仓库地址和访问权限，再执行：
-
-```sh
-git remote add origin https://github.com/<自己的账号>/<Reader仓库名>.git
-git remote -v
-git fetch origin
-git push -u origin custom
-git push origin main
-git push origin custom-before-upstream-20261028
-```
-
-若 origin 已存在，先核对地址再决定是否修改，不重复 add。当前机器没有 Git HTTPS 推送凭据，可使用已授权 GitHub 工具写入现有仓库；不要在文档或 remote URL 中保存 token。接入前有完整 Git bundle 本机备份，但不等同于异机备份。
+- 用户已创建 [wuxf1992/reader](https://github.com/wuxf1992/reader)，GitHub 连接器确认当前账号具备 push/admin 权限。
+- `origin` 读取地址为 `https://github.com/wuxf1992/reader.git`，推送地址为 `git@github.com:wuxf1992/reader.git`；原作者 `upstream` 的禁止推送设置保持不变。
+- 已读取 origin/main（`8ec588b7742ad77f8143f690ea392775c7c9c776`），纯主线 `main` 从 `6c274a7` 快进到该点。custom 暂未合并本次新增的 12 个主线提交；本次仅接入个人备份，不改变线上源码。
+- HTTPS 推送预检因缺少 Git 认证失败；连接器权限不能自动提供给本机命令行。已生成本仓库专用 SSH 密钥，私钥在仓库之外的受限目录，未纳入 Git；仓库本地 core.sshCommand 只选用该身份，并使用已核对官方指纹的 GitHub 主机公钥。
+- 待用户在仓库 Settings → Deploy keys 添加提供的公钥并勾选 Allow write access。添加后执行普通 push，不重写历史；先核对 main 远端，再推送 custom 与非 v* 的 custom 回退/发布标签。完整推送并核对 SHA 后，才能将 custom 设置为跟踪 origin/custom，并标记远端备份完成。
+- 当前仍只有本机 Git/bundle 的定制完整历史备份，尚未将 custom 上传到 GitHub；不把已连接 origin 视为远端备份成功。
 
 ## 同步记录：2026-10-28
 
