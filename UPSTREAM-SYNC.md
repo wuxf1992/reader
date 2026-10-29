@@ -262,6 +262,17 @@ git rev-list --left-right --count custom...upstream/main
 - 入口：`assets/client-DCuTYYCW.js`。证据、发布回执与源码备份位于 `../reader-assessment-20261029/offline-feedback/`。本次只发布前端，未重启容器或修改正式账号、书籍、插件数据。
 - 未测 iPhone 真机、完整 APK、公网 CDN 与公开证书链；HTTPS 校验使用本机回环。
 
+## 发布记录：2026-10-29 手动下载跨页面继续
+
+- 发布源码：`3b7ac55af4943934c31a3ed0d950e30607a5ec5e`，标签 `custom-release-background-download-20261029`；北京时间 22:42 发布前端。开发回退点 `custom-before-background-download-20261029` 为 `4c5629a`，保留已同步主线 `8ec588b` 与插件 1.6.5。
+- OfflineDownloads 由 AppRuntime 统一持有；收起阅读工具、返回书架或进入其他页面后任务继续，重开面板订阅同一任务和进度。任务仍按账号/服务隔离；切换账号或退出取消，同账号令牌更新保留。暂停、取消、清理与目录修订均等待或丢弃迟到响应，清理后不补回缓存。
+- 重载或系统中断后保留章节范围，点“下载 / 继续”复用已缓存资源。WebKit 重载有时先记录网络中断错误，仍可按原范围续传；已完成任务不会因退出而变成暂停。工具文案明确浏览器锁屏/后台限制，维护与合并契约见 [后台下载说明](docs/reader-background-downloads.md)。
+- 完整前端测试：135 个文件、1,285 项 Vitest 与 29 项 Node 检查通过；类型检查、生产构建及 Android shell 契约通过。新增失败→通过回归证明关闭工具不再中止下载；覆盖运行中重取、范围恢复、资源复用、账号/服务切换、取消/清理/目录修订及已完成状态保留。
+- 9 组浏览器验收通过：手动后台下载、自动预缓存、翻页/取消、封面缓存、小说缓存开书和位置确认、离线同步提示、PWA 根路径/子路径更新、离线浏览器进程重启、整站 40 张截图。覆盖 Chromium/WebKit 手机及相关桌面流程；旧脚本适配默认沉浸操作，并在上下文关闭后释放迟到 fixture 响应。
+- 旧前端备份：`/opt/reader/backups/web-custom-background-download-20261029-144223/web`。57 个构建文件逐一匹配 HTTP 源站，HTML/SW/入口/CSS/manifest 的本机 HTTPS `/reader/` 摘要匹配，健康接口正常；发布异常路径自动恢复。保留旧静态资源供已有页面更新。
+- 入口 `assets/client-CfgJPzCn.js`；样式 `assets/index-qIPFf6_R.css`。证据、源码/产物摘要、截图、发布回执和发布源码归档位于 `../reader-assessment-20261029/background-download/`。仅替换前端，未重启容器、未修改正式账号、书籍、插件或媒体数据。
+- 未做 iPhone 真机锁屏、完整 Android APK 或公网 CDN/证书链检查；HTTPS 校验使用本机回环。系统挂起网页后不能承诺继续执行，原生持续后台下载不在本次范围；服务端没有改动，未重复执行完整服务端测试。
+
 ## 历史：2026-10-09 同步记录
 
 以下是当时从 `5c59cae0` 合并到 `875fec84` 的交付记录，不表示当前分支或当前依赖状态。
