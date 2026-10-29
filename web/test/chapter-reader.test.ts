@@ -15,7 +15,7 @@ import { App } from '../src/app.ts';
 import type { SyncEngine } from '../src/core/sync.ts';
 import { FakeTransport, MemoryBlobs, MemoryKv, makePlatform } from './helpers/env.ts';
 import { anchorFor } from '../src/ui/text-anchor.ts';
-import { applyTheme } from '../src/ui/settings.ts';
+import { ThemeController } from '../src/shared/theme/theme.ts';
 
 const book: Book = {
   id: 'book-1', title: '远程小说', author: '作者', publisher: '', language: 'zh', isbn: '',
@@ -891,20 +891,20 @@ it('applies brightness to the whole reading screen on load and slider updates', 
 it('matches the saved page theme and system tint before the first content loads', async () => {
   const root = document.documentElement;
   const meta = document.createElement('meta'); meta.name = 'theme-color'; document.head.append(meta);
-  applyTheme(root, 'light');
+  const appTheme = new ThemeController('theme-before-reader');
   const env = await setup(undefined, undefined, 'u1', 'http://one.test', { theme: 'dark', brightness: 0.5 });
   try {
     expect(env.screen.element.style.getPropertyValue('--color-surface')).toBe('#1e2024');
     expect(env.screen.element.style.getPropertyValue('--reader-browser-paper')).toBe('');
     expect(env.screen.element.dataset.readingTheme).toBe('local-dark');
     expect(env.screen.element.dataset.paper).toBeUndefined();
-    expect(root.dataset.theme).toBe('light');
+    expect(root.dataset.theme).toBe('warm');
     expect(meta.content).toBe('#0b0c0d');
     const reader = env.screen as unknown as { updateSetting(patch: Partial<AppSettings>): Promise<void> };
     await reader.updateSetting({ theme: 'green' });
     expect(env.screen.element.style.getPropertyValue('--color-surface')).toBe('#e8f2e8');
     expect(meta.content).toBe('#6b766c');
-  } finally { meta.remove(); }
+  } finally { appTheme.dispose(); meta.remove(); }
 });
 
 it('toggles glass without reapplying body settings or changing its saved palette', async () => {

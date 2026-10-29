@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest';
 import { SettingsStore } from '../src/store/settings.ts';
-import { applyBrowserTheme, applyTheme, loadSettings, saveSettings } from '../src/ui/settings.ts';
+import { applyBrowserTheme } from '../src/ui/settings.ts';
 import { DEFAULT_SETTINGS, readerCss } from '../src/render/theme.ts';
 import { PALETTES, type ThemeMode } from '../src/render/theme.ts';
 import { readFileSync } from 'node:fs';
@@ -38,13 +38,9 @@ describe('Legado themes', () => {
     await store.load();
     await store.update({ theme, fontScale: 1.3 });
     expect(await new SettingsStore(kv).load()).toMatchObject({ theme, fontScale: 1.3 });
-    saveSettings({ ...DEFAULT_SETTINGS, theme });
-    expect(loadSettings().theme).toBe(theme);
     document.head.innerHTML = '<meta name="theme-color" content="#ffffff"><meta name="apple-mobile-web-app-status-bar-style" content="default">';
-    applyTheme(document.documentElement, theme);
-    expect(document.documentElement.dataset.theme).toBe(theme);
+    applyBrowserTheme(document.documentElement, theme);
     expect(document.documentElement.style.colorScheme).toBe(PALETTES[theme].scheme);
-    expect(document.documentElement.style.getPropertyValue('--reader-paper')).toBe(background);
     expect(document.querySelector('meta')?.getAttribute('content')).toBe(background);
     expect(readerCss('.book', { ...DEFAULT_SETTINGS, theme })).toContain(`--reader-bg: ${background};`);
   });
@@ -52,8 +48,6 @@ describe('Legado themes', () => {
   it.each([{ theme: 'unknown' }, { theme: 'toString' }, { theme: '__proto__' }, { theme: null }, { theme: ['dark'] }])('falls back for invalid stored theme $theme', async ({ theme }) => {
     const store = new SettingsStore({ get: async () => JSON.stringify({ theme, fontScale: 1.3 }), set: async () => {}, remove: async () => {} });
     expect(await store.load()).toMatchObject({ theme: 'light', fontScale: 1.3 });
-    localStorage.setItem('reader.settings', JSON.stringify({ theme }));
-    expect(loadSettings().theme).toBe('light');
   });
 });
 
@@ -61,11 +55,12 @@ it('keeps browser tint dimmed through theme updates and restores it outside the 
   document.head.innerHTML = '<meta name="theme-color" content="#ffffff">';
   const root = document.documentElement;
   root.dataset.readerBrightness = '0.5';
-  applyTheme(root, 'kraft-day');
+  root.style.setProperty('--reader-paper', PALETTES['kraft-day'].background);
+  applyBrowserTheme(root, 'kraft-day');
   expect(document.querySelector('meta')?.content).toBe('#6d614e');
   expect(root.style.getPropertyValue('--reader-paper')).toBe('#d9c29b');
   expect(root.style.getPropertyValue('--reader-browser-paper')).toBe('#6d614e');
-  applyTheme(root, 'wechat-soft-night');
+  applyBrowserTheme(root, 'wechat-soft-night');
   expect(document.querySelector('meta')?.content).toBe('#0e0e0e');
   delete root.dataset.readerBrightness;
   applyBrowserTheme(root, 'wechat-soft-night');
@@ -77,7 +72,8 @@ it('matches the visible header, returns to the page when hidden, and resets outs
   const root = document.documentElement;
   root.dataset.readerBrightness = '0.5';
   root.dataset.readerChrome = 'visible';
-  applyTheme(root, 'green');
+  root.style.setProperty('--reader-paper', PALETTES.green.background);
+  applyBrowserTheme(root, 'green');
   expect(document.querySelector('meta')?.content).toBe('#747974');
   expect(root.style.getPropertyValue('--reader-browser-paper')).toBe('#747974');
   expect(root.style.getPropertyValue('--reader-paper')).toBe('#d5ecd7');
@@ -85,7 +81,7 @@ it('matches the visible header, returns to the page when hidden, and resets outs
   applyBrowserTheme(root, 'green');
   expect(document.querySelector('meta')?.content).toBe('#6b766c');
   root.dataset.readerChrome = 'visible';
-  applyTheme(root, 'dark');
+  applyBrowserTheme(root, 'dark');
   expect(document.querySelector('meta')?.content).toBe('#0f1012');
   delete root.dataset.readerChrome; delete root.dataset.readerBrightness;
   applyBrowserTheme(root, 'dark');
@@ -97,7 +93,7 @@ it('matches the visible header under the settings backdrop and restores it when 
   const root = document.documentElement;
   root.dataset.readerChrome = 'visible'; root.dataset.readerBrightness = '0.5'; root.dataset.readerScrim = 'visible';
   root.style.setProperty('--reader-scrim-color', '#000000'); root.style.setProperty('--reader-scrim-opacity', '0.42');
-  applyTheme(root, 'green');
+  applyBrowserTheme(root, 'green');
   expect(document.querySelector('meta')?.content).toBe('#434643');
   root.dataset.readerScrim = 'hidden'; applyBrowserTheme(root, 'green');
   expect(document.querySelector('meta')?.content).toBe('#747974');
@@ -160,14 +156,14 @@ it('restores a night background before the application bundle and ignores invali
   document.head.innerHTML = '<meta name="theme-color" content="#ffffff"><meta name="apple-mobile-web-app-status-bar-style" content="default">';
   const html = readFileSync('index.html', 'utf8');
   const script = html.match(/<script>([\s\S]*?)<\/script>/)![1]!;
-  applyTheme(document.documentElement, 'nord-night');
+  applyBrowserTheme(document.documentElement, 'nord-night');
   document.documentElement.removeAttribute('style');
   new Function(script)();
   expect(document.documentElement.style.getPropertyValue('--reader-paper')).toBe('#2e3440');
   expect(document.documentElement.style.colorScheme).toBe('dark');
   expect(document.querySelector('meta[name="theme-color"]')?.getAttribute('content')).toBe('#2e3440');
   document.documentElement.removeAttribute('style');
-  localStorage.setItem('reader.theme-color', 'url(https://example.com)');
+  localStorage.setItem('reader.browser-color', 'url(https://example.com)');
   new Function(script)();
   expect(document.documentElement.style.getPropertyValue('--reader-paper')).toBe('');
 });
@@ -176,14 +172,15 @@ it('restores the dimmed browser background at startup and rejects an invalid cac
   document.head.innerHTML = '<meta name="theme-color" content="#ffffff"><meta name="apple-mobile-web-app-status-bar-style" content="default">';
   const script = readFileSync('index.html', 'utf8').match(/<script>([\s\S]*?)<\/script>/)![1]!;
   document.documentElement.dataset.readerBrightness = '0.5';
-  applyTheme(document.documentElement, 'kraft-day');
+  applyBrowserTheme(document.documentElement, 'kraft-day');
   document.documentElement.removeAttribute('style');
   new Function(script)();
   expect(document.documentElement.style.getPropertyValue('--reader-browser-paper')).toBe('#6d614e');
   expect(document.querySelector('meta[name="theme-color"]')?.getAttribute('content')).toBe('#6d614e');
   localStorage.setItem('reader.browser-color', 'url(https://example.com)');
+  document.documentElement.removeAttribute('style');
   new Function(script)();
-  expect(document.documentElement.style.getPropertyValue('--reader-browser-paper')).toBe('#d9c29b');
+  expect(document.documentElement.style.getPropertyValue('--reader-browser-paper')).toBe('');
 });
 
 

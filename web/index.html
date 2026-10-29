@@ -77,14 +77,17 @@
     <title>reader</title>
     <script>
       try {
-        const color = localStorage.getItem('reader.theme-color');
+        const color = localStorage.getItem('reader.browser-color');
         if (/^#[\da-f]{6}$/i.test(color || '')) {
           document.documentElement.style.setProperty('--reader-paper', color);
-          document.documentElement.style.colorScheme = localStorage.getItem('reader.theme-scheme') === 'dark' ? 'dark' : 'light';
-          const cachedBrowserColor = localStorage.getItem('reader.browser-color');
-          const browserColor = /^#[\da-f]{6}$/i.test(cachedBrowserColor || '') ? cachedBrowserColor : color;
-          document.documentElement.style.setProperty('--reader-browser-paper', browserColor);
-          document.querySelector('meta[name="theme-color"]').setAttribute('content', browserColor);
+          // Match the running reader before its module and saved settings load.
+          const luminance = color.slice(1).match(/../g).map(channel => {
+            const value = parseInt(channel, 16) / 255;
+            return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+          }).reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
+          document.documentElement.style.colorScheme = luminance > 0.179 ? 'light' : 'dark';
+          document.documentElement.style.setProperty('--reader-browser-paper', color);
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', color);
         }
       } catch { /* Browser storage may be disabled. */ }
     </script>
