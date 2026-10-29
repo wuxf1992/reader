@@ -4,10 +4,10 @@ import { PALETTES, type ThemeMode as ReaderPalette } from '../../render/theme.ts
  *
  * A theme is one set of semantic token values. Components only read the tokens
  * (`--color-*`, declared per theme and mode in styles/theme-tokens.css); switching
- * theme only switches attributes:
+ * theme switches attributes and semantic tokens:
  *
  *   <html data-theme="warm|blue|green" data-mode="light|dark">
- *   <div class="reader-screen" data-theme="gray" data-mode="…">   (reading theme only)
+ *   <div class="reader-screen" data-theme="gray" data-mode="…">
  *
  * The values below are the same as the stylesheet's; test/theme-tokens.test.ts keeps
  * the two in step and holds every palette to the spec's contrast pairs.
@@ -59,7 +59,7 @@ export const themes = {
       [['#6ED6A8', '#1A3B2E', '#6ED6A8'], ['#8ED67A', '#243A1E', '#8ED67A'], ['#6CCBC6', '#173A38', '#6CCBC6'], ['#A6CF72', '#2C3818', '#A6CF72']]),
   },
   gray: {
-    id: 'gray', name: '黑白灰', readingOnly: true,
+    id: 'gray', name: '黑白灰', readingOnly: false,
     light: palette(['#F5F5F5', '#FFFFFF', '#EBEBEB', '#1A1A1A', '#666666', '#E0E0E0', '#3D3D3D', '#EDEDED', '#FFFFFF', '#3D3D3D', '#FFFFFF', 'rgba(26,26,26,.40)'],
       [['#3D3D3D', '#EDEDED', '#3D3D3D'], ['#4A4A4A', '#EDEDED', '#4A4A4A'], ['#575757', '#EDEDED', '#575757'], ['#666666', '#EDEDED', '#666666']]),
     dark: palette(['#121212', '#1B1B1B', '#262626', '#E6E6E6', '#9E9E9E', '#2E2E2E', '#E6E6E6', '#2A2A2A', '#121212', '#E6E6E6', '#121212', 'rgba(0,0,0,.60)'],
@@ -68,32 +68,27 @@ export const themes = {
 } as const satisfies Record<string, { id: string; name: string; readingOnly: boolean; light: ThemeTokens; dark: ThemeTokens }>;
 
 export type ThemeId = keyof typeof themes;
-/** The themes the whole app can wear. 黑白灰 is for the reader only. */
-export type AppThemeId = Exclude<ThemeId, 'gray'>;
+export type AppThemeId = ThemeId | ReadingPreset;
 export type ThemeMode = 'light' | 'dark';
 export type ModePreference = 'system' | ThemeMode;
-/** Reading-only presets never change the app theme or its light/dark preference. */
+/** Saved reading colours are now available throughout the app. */
 export type ReadingPreset = `local-${ReaderPalette}` | `paper-${PaperId}`;
 export type ReadingTheme = 'app' | 'gray' | ReadingPreset;
-
-export const appThemeIds: readonly AppThemeId[] = ['warm', 'blue', 'green'];
-export const appThemes = appThemeIds.map(id => themes[id]);
-export const themeName = (id: ThemeId) => themes[id].name;
 
 export interface ThemePreference {
   theme: AppThemeId;
   mode: ModePreference;
   /** 跟随系统: the theme used while the device is light, and the one while it is dark. */
   system: { light: AppThemeId; dark: AppThemeId };
-  reading: ReadingTheme;
 }
 export interface ResolvedTheme { theme: ThemeId; mode: ThemeMode; preset?: ReadingPreset }
 
-export const defaultThemePreference: ThemePreference = { theme: 'warm', mode: 'system', system: { light: 'warm', dark: 'warm' }, reading: 'app' };
+export const defaultThemePreference: ThemePreference = { theme: 'warm', mode: 'system', system: { light: 'warm', dark: 'warm' } };
 const defaults = (): ThemePreference => ({ ...defaultThemePreference, system: { ...defaultThemePreference.system } });
 
-const isAppTheme = (value: unknown): value is AppThemeId => appThemeIds.includes(value as AppThemeId);
-const preferenceKey = (scope: string) => 'reader.theme.v2:' + scope;
+const isAppTheme = (value: unknown): value is AppThemeId => typeof value === 'string' && (Object.hasOwn(themes, value) || isReadingPreset(value));
+const preferenceKey = (scope: string) => 'reader.appearance.v1:' + scope;
+const previousKey = (scope: string) => 'reader.theme.v2:' + scope;
 /** V3 storage, read once to carry an existing choice over (spec §8). */
 const legacyThemeKey = (scope: string) => 'reader.media.theme.v1:' + scope;
 const legacyPairKey = (scope: string) => 'reader.media.theme.system.v1:' + scope;
@@ -103,14 +98,15 @@ export const themeChangeEvent = 'reader-theme-change';
 export function validThemePreference(value: unknown): ThemePreference {
   const raw = (value && typeof value === 'object' ? value : {}) as Partial<Record<keyof ThemePreference, unknown>>;
   const system = (raw.system && typeof raw.system === 'object' ? raw.system : {}) as { light?: unknown; dark?: unknown };
+  const theme = isAppTheme(raw.theme) ? raw.theme : defaultThemePreference.theme;
+  const mode = raw.mode === 'light' || raw.mode === 'dark' || raw.mode === 'system' ? raw.mode : defaultThemePreference.mode;
   return {
-    theme: isAppTheme(raw.theme) ? raw.theme : defaultThemePreference.theme,
-    mode: raw.mode === 'light' || raw.mode === 'dark' || raw.mode === 'system' ? raw.mode : defaultThemePreference.mode,
+    theme,
+    mode: mode === 'system' ? mode : presetMode(theme) ?? mode,
     system: {
-      light: isAppTheme(system.light) ? system.light : defaultThemePreference.system.light,
-      dark: isAppTheme(system.dark) ? system.dark : defaultThemePreference.system.dark,
+      light: isAppTheme(system.light) && presetMode(system.light) !== 'dark' ? system.light : defaultThemePreference.system.light,
+      dark: isAppTheme(system.dark) && presetMode(system.dark) !== 'light' ? system.dark : defaultThemePreference.system.dark,
     },
-    reading: validReadingTheme(raw.reading),
   };
 }
 
@@ -130,26 +126,47 @@ const legacyThemes: Record<string, { theme: AppThemeId; mode: ThemeMode }> = {
 
 export function migrateLegacyTheme(choice: string | null, pair: unknown): ThemePreference {
   const oldPair = (pair && typeof pair === 'object' ? pair : {}) as { light?: unknown; dark?: unknown };
-  const slot = (value: unknown) => legacyThemes[String(value)]?.theme ?? 'warm';
+  const slot = (value: unknown) => (Object.hasOwn(legacyThemes, String(value)) ? legacyThemes[String(value)]?.theme : undefined) ?? 'warm';
   const system = { light: slot(oldPair.light), dark: slot(oldPair.dark) };
-  const chosen = choice ? legacyThemes[choice] : undefined;
+  const chosen = choice && Object.hasOwn(legacyThemes, choice) ? legacyThemes[choice] : undefined;
   if (chosen) return { ...defaults(), theme: chosen.theme, mode: chosen.mode, system };
   return { ...defaults(), theme: system.light, mode: 'system', system };
+}
+
+function readPreviousPreference(scope: string): ThemePreference {
+  const stored = localStorage.getItem(previousKey(scope));
+  if (stored !== null) {
+    const raw = JSON.parse(stored);
+    const preference = validThemePreference(raw);
+    const reading = validReadingTheme(raw?.reading);
+    return reading === 'app' ? preference : selectTheme(preference, reading);
+  }
+  const choice = localStorage.getItem(legacyThemeKey(scope));
+  let pair: unknown;
+  try { pair = JSON.parse(localStorage.getItem(legacyPairKey(scope)) ?? 'null'); } catch { /* use defaults */ }
+  return migrateLegacyTheme(choice, pair);
 }
 
 export function readThemePreference(scope: string): ThemePreference {
   try {
     const stored = localStorage.getItem(preferenceKey(scope));
-    if (stored !== null) return validThemePreference(JSON.parse(stored));
-    const choice = localStorage.getItem(legacyThemeKey(scope));
-    const pair = localStorage.getItem(legacyPairKey(scope));
-    if (choice === null && pair === null) return defaults();
-    let oldPair: unknown;
-    try { oldPair = pair ? JSON.parse(pair) : undefined; } catch { oldPair = undefined; }
-    return migrateLegacyTheme(choice, oldPair);
-  } catch {
-    return defaults();
-  }
+    return stored !== null ? validThemePreference(JSON.parse(stored)) : readPreviousPreference(scope);
+  } catch { return defaults(); }
+}
+
+/** Import the old device choice once; later app choices must never be overridden by it. */
+export function migrateAppearance(scope: string, settings: { readingTheme?: ReadingTheme; paper?: ReaderPaper; lastDayTheme?: ReaderPalette; lastNightTheme?: ReaderPalette }): void {
+  try {
+    if (localStorage.getItem(preferenceKey(scope)) !== null) return;
+    let preference = readThemePreference(scope);
+    const reading = settings.readingTheme ?? (settings.paper && settings.paper !== 'theme' ? readingThemeForPaper(settings.paper) : 'app');
+    if (reading !== 'app') {
+      const light = settings.lastDayTheme && PALETTES[settings.lastDayTheme]?.scheme === 'light' ? `local-${settings.lastDayTheme}` as AppThemeId : preference.system.light;
+      const dark = settings.lastNightTheme && PALETTES[settings.lastNightTheme]?.scheme === 'dark' ? `local-${settings.lastNightTheme}` as AppThemeId : preference.system.dark;
+      preference = selectTheme({ ...preference, system: { light, dark } }, reading);
+    }
+    saveThemePreference(scope, preference);
+  } catch { /* A storage failure must not prevent opening a cached book. */ }
 }
 
 export function saveThemePreference(scope: string, patch: Partial<ThemePreference>): ThemePreference {
@@ -166,18 +183,31 @@ export function systemPrefersDark(): boolean {
 }
 
 /** What the app wears: the pair when following the system, otherwise the one theme and mode. */
-export function resolveAppTheme(preference: ThemePreference, systemDark: boolean): { theme: AppThemeId; mode: ThemeMode } {
-  if (preference.mode === 'system') return systemDark ? { theme: preference.system.dark, mode: 'dark' } : { theme: preference.system.light, mode: 'light' };
-  return { theme: preference.theme, mode: preference.mode };
+export function resolveAppTheme(preference: ThemePreference, systemDark: boolean): ResolvedTheme {
+  const mode = preference.mode === 'system' ? (systemDark ? 'dark' : 'light') : preference.mode;
+  const id = preference.mode === 'system' ? preference.system[mode] : preference.theme;
+  return resolveTheme(id, mode);
 }
 
-/** Follow the app mode, except for presets that carry their own fixed mode. */
-export function resolveReadingTheme(preference: ThemePreference, systemDark: boolean): ResolvedTheme {
-  const app = resolveAppTheme(preference, systemDark);
-  if (isReadingPreset(preference.reading)) {
-    return { theme: 'gray', mode: readingPresetTokens(preference.reading).mode, preset: preference.reading };
-  }
-  return preference.reading === 'gray' ? { theme: 'gray', mode: app.mode } : app;
+export function resolveTheme(id: AppThemeId, mode: ThemeMode): ResolvedTheme {
+  return isReadingPreset(id) ? { theme: 'gray', mode: readingPresetTokens(id).mode, preset: id } : { theme: id, mode };
+}
+
+export const resolveReadingTheme = resolveAppTheme;
+const presetMode = (id: AppThemeId): ThemeMode | undefined => isReadingPreset(id) ? readingPresetTokens(id).mode : undefined;
+export const selectedTheme = (preference: ThemePreference, systemDark: boolean): AppThemeId => preference.mode === 'system' ? preference.system[systemDark ? 'dark' : 'light'] : preference.theme;
+
+/** A fixed-colour preset selects its own mode and remembers the opposite mode's choice. */
+export function selectTheme(preference: ThemePreference, theme: AppThemeId): ThemePreference {
+  const fixed = presetMode(theme);
+  if (fixed) return { ...preference, theme, mode: fixed, system: { ...preference.system, [fixed]: theme } };
+  return { ...preference, theme, system: preference.mode === 'system' ? { light: theme, dark: theme } : { ...preference.system, [preference.mode]: theme } };
+}
+
+export function selectThemeMode(preference: ThemePreference, mode: ModePreference): ThemePreference {
+  if (mode === 'system') return { ...preference, mode };
+  const theme = preference.system[mode];
+  return { ...preference, theme, mode, system: { ...preference.system, [mode]: theme } };
 }
 
 export const themeTokens = ({ theme, mode, preset }: ResolvedTheme): ThemeTokens => preset ? readingPresetTokens(preset).tokens : themes[theme][mode];
@@ -233,35 +263,42 @@ function readingPresetTokens(id: ReadingPreset): { mode: ThemeMode; tokens: Them
   return { mode, tokens: { ...themes.gray[mode], bg: p.bg, ink: p.ink, muted: p.muted, line: p.line } };
 }
 
-export const readingThemeOptions: ReadonlyArray<{ value: ReadingTheme; label: string }> = [
-  { value: 'app', label: '跟随应用' }, { value: 'gray', label: '黑白灰' },
+export const themeOptions: ReadonlyArray<{ value: AppThemeId; label: string }> = [
+  ...Object.values(themes).map(theme => ({ value: theme.id, label: theme.name })),
   ...Object.entries(PALETTES).map(([id, p]) => ({ value: `local-${id}` as ReadingPreset, label: p.label })),
   ...paperIds.map(id => ({ value: `paper-${id}` as ReadingPreset, label: readerPapers[id].name + (id === 'green' || id === 'night' ? '纸色' : '') })),
 ];
+export const themeName = (id: AppThemeId): string => themeOptions.find(option => option.value === id)?.label ?? themes.warm.name;
+
+/** Both the shell and the reader consume these same semantic colours. */
+export function applyThemeTokens(element: HTMLElement, resolved: ResolvedTheme | null): void {
+  const tokens = themeTokens(resolved ?? { theme: 'warm', mode: 'light' });
+  const colors: Record<string, string> = {};
+  for (const [key, value] of Object.entries(tokens)) {
+    if (key !== 'ch') colors[key === 'surface2' ? 'surface-2' : key.replace(/[A-Z]/g, letter => '-' + letter.toLowerCase())] = value as string;
+  }
+  for (const [channel, values] of Object.entries(tokens.ch)) {
+    colors[`ch-${channel}`] = values.fill;
+    colors[`ch-${channel}-soft`] = values.soft;
+    colors[`ch-${channel}-text`] = values.text;
+  }
+  for (const [key, value] of Object.entries(colors)) {
+    if (resolved) element.style.setProperty(`--color-${key}`, value);
+    else element.style.removeProperty(`--color-${key}`);
+  }
+}
 
 /** What the reading screen wears: a theme and mode for its chrome, and the paper (if any) for its page. */
 export interface ReaderSurface extends ResolvedTheme { paper: Exclude<ReaderPaper, 'theme'> | null }
 
-/**
- * - No paper: the reading theme, in the app's mode.
- * - 夜间: a dark page, so the reader's chrome goes dark with it.
- * - A light paper: shown in light mode. When the app is dark and the paper follows
- *   the system's dark mode (the default), the page gives way to the theme's dark
- *   values; otherwise the reader stays light around the paper.
- */
-export function resolveReaderSurface(preference: ThemePreference, systemDark: boolean, paper: ReaderPaper, followDark: boolean): ReaderSurface {
-  const reading = resolveReadingTheme(preference, systemDark);
-  if (reading.preset) return { ...reading, paper: null };
-  if (paper === 'theme') return { ...reading, paper: null };
-  if (paperColors(paper).dark) return { theme: reading.theme, mode: 'dark', paper };
-  if (reading.mode === 'dark' && followDark) return { ...reading, paper: null };
-  return { theme: reading.theme, mode: 'light', paper };
+export function resolveReaderSurface(preference: ThemePreference, systemDark: boolean): ReaderSurface {
+  return { ...resolveAppTheme(preference, systemDark), paper: null };
 }
 
 /** One subscription for every place that shows the theme: same-tab saves, other tabs, the OS. */
 export function subscribeTheme(scope: string, notify: () => void): () => void {
   const query = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-color-scheme: dark)') : undefined;
-  const keys = [preferenceKey(scope), legacyThemeKey(scope), legacyPairKey(scope)];
+  const keys = [preferenceKey(scope), previousKey(scope), legacyThemeKey(scope), legacyPairKey(scope)];
   const onStorage = (event: StorageEvent) => { if (event.key === null || keys.includes(event.key)) notify(); };
   const onChange = (event: Event) => { if ((event as CustomEvent<{ scope?: unknown }>).detail?.scope === scope) notify(); };
   query?.addEventListener('change', notify);
@@ -274,9 +311,9 @@ export function subscribeTheme(scope: string, notify: () => void): () => void {
   };
 }
 
-/** Writes the app theme onto <html>; the stylesheet does the rest. */
+/** Writes the shared theme and semantic colours onto <html>. */
 export class ThemeController {
-  current: { theme: AppThemeId; mode: ThemeMode };
+  current: ResolvedTheme;
   private readonly scope: string;
   private readonly unsubscribe: () => void;
   constructor(scope: string, onChanged: () => void = () => undefined) {
@@ -293,11 +330,13 @@ export class ThemeController {
     root.style.removeProperty('color-scheme');
     root.dataset.theme = resolved.theme;
     root.dataset.mode = resolved.mode;
+    applyThemeTokens(root, resolved);
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', themeTokens(resolved).bg);
     return resolved;
   }
   dispose() {
     this.unsubscribe();
+    applyThemeTokens(document.documentElement, null);
     delete document.documentElement.dataset.theme;
     delete document.documentElement.dataset.mode;
   }
@@ -306,5 +345,5 @@ export class ThemeController {
 /** The summary shown on 我的 and the settings home: "跟随系统", or "雾蓝 · 深色". */
 export function themeSummary(preference: ThemePreference): string {
   if (preference.mode === 'system') return '跟随系统';
-  return themeName(preference.theme) + ' · ' + (preference.mode === 'dark' ? '深色' : '浅色');
+  return themeName(selectedTheme(preference, systemPrefersDark())) + ' · ' + (preference.mode === 'dark' ? '深色' : '浅色');
 }

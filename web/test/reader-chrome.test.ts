@@ -18,7 +18,7 @@ import { render } from '../src/shared/ui/render-root.ts';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createElement as h } from 'react';
 import { ReaderChrome, type ChromeState, type ChromeHandlers, type ReaderThemeState } from '../src/ui/reader-chrome.tsx';
-import { defaultThemePreference, resolveReadingTheme, readingThemeOptions, type ThemePreference } from '../src/shared/theme/theme.ts';
+import { defaultThemePreference, resolveReadingTheme, themeOptions, selectTheme, selectThemeMode, type ThemePreference } from '../src/shared/theme/theme.ts';
 
 const themeState = (preference: Partial<ThemePreference> = {}, dark = false): ReaderThemeState => {
   const merged = { ...defaultThemePreference, ...preference };
@@ -241,19 +241,19 @@ describe('ReaderChrome', () => {
     }
   });
 
-  it.each(Object.keys(PALETTES) as ThemeMode[])('selects %s as one complete reading theme', theme => {
-    const callbacks = { ...handlers(themeState({ reading: `local-${theme}` })), onTheme: vi.fn() };
+  it.each(Object.keys(PALETTES) as ThemeMode[])('selects %s as one shared theme', theme => {
+    const callbacks = { ...handlers(themeState(selectTheme(defaultThemePreference, `local-${theme}`))), onTheme: vi.fn() };
     render(h(ReaderChrome, { state: chromeState({ theme, settingsOpen: true, settingsTab: 'appearance',
       lastDayTheme: 'rose-pine-dawn-day', lastNightTheme: 'nord-night' }), stage: document.createElement('div'), handlers: callbacks }), container);
     const palette = PALETTES[theme];
-    const selected = container.querySelector<HTMLButtonElement>(`[aria-label="主题"] [aria-label="${palette.label}"]`)!;
+    const selected = container.querySelector<HTMLButtonElement>(`[aria-label="主题配色"] [aria-label="${palette.label}"]`)!;
     expect(selected.getAttribute('aria-pressed')).toBe('true');
     selected.click();
-    expect(callbacks.onTheme).toHaveBeenLastCalledWith({ reading: `local-${theme}` });
+    expect(callbacks.onTheme).toHaveBeenLastCalledWith(selectTheme(defaultThemePreference, `local-${theme}`));
     const rail = container.querySelector<HTMLButtonElement>('.reader-rail .rail-button')!;
     expect(rail.getAttribute('aria-label')).toBe(palette.scheme === 'light' ? '夜间' : '日间');
     rail.click();
-    expect(callbacks.onTheme).toHaveBeenLastCalledWith({ reading: `local-${palette.scheme === 'light' ? 'nord-night' : 'rose-pine-dawn-day'}` });
+    expect(callbacks.onTheme).toHaveBeenLastCalledWith(selectThemeMode(selectTheme(defaultThemePreference, `local-${theme}`), palette.scheme === 'light' ? 'dark' : 'light'));
   });
 
   it('offers refresh only in the chapter publication contents panel and disables it while busy', () => {
@@ -310,41 +310,41 @@ describe('ReaderChrome', () => {
     );
     // Size, spacing, theme and brightness fill the first screen; the readouts that
     // used to come first are behind a fold, closed by default.
-    expect(order).toEqual(['', 'fold:主题', '字号', '行距', '页面亮度', 'fold:更多排版', 'fold:页眉页脚']);
-    for (const fold of body.querySelectorAll<HTMLDetailsElement>('details.panel-fold')) expect(fold.open).toBe(true);
+    expect(order).toEqual(['字号', '行距', '页面亮度', 'fold:主题', '', 'fold:更多排版', 'fold:页眉页脚']);
+    expect([...body.querySelectorAll<HTMLDetailsElement>('details.panel-fold')].map(fold => fold.open)).toEqual([false, true, true]);
     expect(body.querySelector('details.panel-fold input[aria-label="页边距"]')).not.toBeNull();
     expect(body.querySelector('details.panel-fold select[aria-label="顶部左侧"]')).not.toBeNull();
   });
 
-  it('offers the reading themes as swatches, follow-app or 黑白灰, and marks the current one', () => {
+  it('offers all shared themes as swatches, and marks the current one', () => {
     const tree = paint({ settingsOpen: true, settingsTab: 'appearance' });
-    const swatches = [...tree.querySelectorAll<HTMLButtonElement>('[aria-label="主题"] .theme-swatch')];
-    expect(swatches.map((button) => button.querySelector('.theme-swatch-label')?.textContent)).toEqual(readingThemeOptions.map(option => option.label));
-    expect(swatches.filter((button) => button.getAttribute('aria-pressed') === 'true').map((button) => button.querySelector('.theme-swatch-label')?.textContent)).toEqual(['跟随应用']);
+    const swatches = [...tree.querySelectorAll<HTMLButtonElement>('[aria-label="主题配色"] .theme-swatch')];
+    expect(swatches.map((button) => button.querySelector('.theme-swatch-label')?.textContent)).toEqual(themeOptions.map(option => option.label));
+    expect(swatches.filter((button) => button.getAttribute('aria-pressed') === 'true').map((button) => button.querySelector('.theme-swatch-label')?.textContent)).toEqual(['暖陶']);
     // Each chip is drawn in that theme's own background (light mode here): 黑白灰 #F5F5F5.
-    const chip = swatches[1]!.querySelector<HTMLElement>('.theme-swatch-chip')!;
+    const chip = swatches[3]!.querySelector<HTMLElement>('.theme-swatch-chip')!;
     expect(chip.style.backgroundColor).toContain('rgb(245, 245, 245)');
-    expect(tree.querySelector('[aria-label="明暗"]')).toBeNull();
+    expect(tree.querySelector('[aria-label="明暗"]')).not.toBeNull();
     expect(tree.querySelector('[aria-label="纸色"]')).toBeNull();
     expect(tree.textContent).not.toContain('跟随系统深色模式');
   });
 
   it('keeps each theme preview fixed while the active palette and mode change', () => {
-    const preview = (reading: ThemePreference['reading'], dark: boolean) => {
+    const preview = (reading: ThemePreference['theme'], dark: boolean) => {
       render(h(ReaderChrome, { state: chromeState({ settingsOpen: true, settingsTab: 'appearance' }),
-        stage: document.createElement('div'), handlers: handlers(themeState({ reading }, dark)) }), container);
-      return [...container.querySelectorAll<HTMLElement>('[data-reading-theme-option]:not([data-reading-theme-option="app"]) .theme-swatch-chip')]
+        stage: document.createElement('div'), handlers: handlers(themeState(selectTheme(defaultThemePreference, reading), dark)) }), container);
+      return [...container.querySelectorAll<HTMLElement>('[data-reading-theme-option^="local-"] .theme-swatch-chip')]
         .map(chip => [chip.style.backgroundColor, chip.style.color]);
     };
     expect(preview('local-wechat-night', true)).toEqual(preview('local-kraft-day', false));
   });
 
-  it('changes only the reading theme from the chooser and day/night shortcut', () => {
+  it('changes the shared theme from the chooser and day/night shortcut', () => {
     const patches: Array<Partial<ThemePreference>> = [];
     render(h(ReaderChrome, { state: chromeState({ settingsOpen: true, settingsTab: 'appearance' }), stage: document.createElement('div'), handlers: handlers(themeState({}, true), patch => patches.push(patch)) }), container);
-    container.querySelector<HTMLButtonElement>('[aria-label="主题"] [aria-label="黑白灰"]')!.click();
+    container.querySelector<HTMLButtonElement>('[aria-label="主题配色"] [aria-label="黑白灰"]')!.click();
     container.querySelector<HTMLButtonElement>('.reader-rail button')!.click();
-    expect(patches).toEqual([{ reading: 'gray' }, { reading: 'local-light' }]);
+    expect(patches).toEqual([selectTheme(defaultThemePreference, 'gray'), selectThemeMode(defaultThemePreference, 'light')]);
   });
 
   it('keeps typography folded away for fixed layouts and offers only the readouts', () => {

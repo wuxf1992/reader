@@ -1,8 +1,8 @@
 import { BusyIndicator } from './busy.tsx';
 import { MIN_BRIGHTNESS } from '../render/theme.ts';
 import { CHINESE_VARIANTS } from '../shared/chinese-variant.ts';
-import type { CSSProperties } from 'react';
-import { defaultThemePreference, readingThemeOptions, resolveReadingTheme, themeTokens, type AppThemeId, type ReaderPaper, type ReaderSurface, type ResolvedTheme, type ThemeMode, type ThemePreference } from '../shared/theme/theme.ts';
+import { selectTheme, selectThemeMode, systemPrefersDark, type ReaderPaper, type ReaderSurface, type ResolvedTheme, type ThemePreference } from '../shared/theme/theme.ts';
+import { ThemePicker } from '../shared/theme/theme-picker.tsx';
 import type { ChapterQuality } from '../api/sources.ts';
 import { Sheet } from './sheet.tsx';
 import type { SourcePage } from '../api/sources.ts';
@@ -235,10 +235,7 @@ export function ReaderChrome({ state, stage, handlers, tools }: ReaderChromeProp
   const tab = state.settingsTab ?? 'behavior';
   const theme = handlers.theme();
   const dark = theme.surface.mode === 'dark';
-  const toggleNight = () => {
-    const next = dark ? state.lastDayTheme ?? 'light' : state.lastNightTheme ?? 'dark';
-    handlers.onTheme({ reading: `local-${next}` });
-  };
+  const toggleNight = () => handlers.onTheme(selectThemeMode(theme.preference, dark ? 'light' : 'dark'));
   return (
     <>
       {tools}
@@ -397,11 +394,6 @@ function SettingsBody({ state, handlers }: { state: ChromeState; handlers: Chrom
       {/* Most-used first. Size, spacing, theme and brightness are what a reader opens
           this sheet to change, so they fill its first screen; the rows that are set once
           and left alone are folded underneath instead of pushing these below the fold. */}
-      <SwitchRow label="液态玻璃" hint="控制栏和面板呈现半透明玻璃效果" checked={state.liquidGlass ?? false}
-        onChange={liquidGlass => handlers.onSetting({ liquidGlass })} />
-      <FoldSection state={state} handlers={handlers} section="theme" title="主题">
-        <ReadingThemeRow label="主题" state={handlers.theme()} onChange={reading => handlers.onTheme({ reading })} />
-      </FoldSection>
       {state.layout !== 'fixed' ? <>
       <SliderRow
         label="字号"
@@ -431,6 +423,12 @@ function SettingsBody({ state, handlers }: { state: ChromeState; handlers: Chrom
         format={(value) => `${Math.round(value * 100)}%`}
         onChange={(value) => handlers.onSetting({ brightness: value })}
       />
+
+      <FoldSection state={state} handlers={handlers} section="theme" title="主题" hint="与书架和设置共用">
+        <ThemePicker preference={handlers.theme().preference} systemDark={systemPrefersDark()} onChange={handlers.onTheme} />
+      </FoldSection>
+      <SwitchRow label="液态玻璃" hint="控制栏和面板呈现半透明玻璃效果" checked={state.liquidGlass ?? false}
+        onChange={liquidGlass => handlers.onSetting({ liquidGlass })} />
 
       {/* Plain text is the one format with no typography of its own, so its indent, gap
           and encoding rows live with the other typography rows. They are absent for every
@@ -536,7 +534,7 @@ function SettingsBody({ state, handlers }: { state: ChromeState; handlers: Chrom
         onChange={(value) => handlers.onSetting({ mode: value as AppSettings['mode'] })}
       />
       : null}
-      <Button onClick={() => { handlers.onSetting({ pageAnimation: 'none', mode: 'paged', paper: 'theme' }); handlers.onTheme({ reading: 'paper-white' }); }}>应用电纸书预设</Button>
+      <Button onClick={() => { handlers.onSetting({ pageAnimation: 'none', mode: 'paged' }); handlers.onTheme(selectTheme(handlers.theme().preference, 'paper-white')); }}>应用电纸书预设</Button>
       <p className="muted">白纸主题、分页、无翻页动画；仅保存到当前设备，可继续单独调整。屏幕刷新由设备控制。</p>
       <SegmentedRow
         label="点击区域"
@@ -786,31 +784,10 @@ function SegmentedRow({
 
 export interface ReaderThemeState {
   preference: ThemePreference;
-  app: { theme: AppThemeId; mode: ThemeMode };
+  app: ResolvedTheme;
   reading: ResolvedTheme;
   /** The reading theme and paper together: what the reading screen actually wears. */
   surface: ReaderSurface;
-}
-
-/** Complete reading presets share the V3 semantic tokens. */
-function ReadingThemeRow({ label, state, onChange }: { label: string; state: ReaderThemeState; onChange(reading: ThemePreference['reading']): void }): JSX.Element {
-  return (
-    <div className="field is-stacked">
-      <div className="theme-swatches" role="group" aria-label={label}>
-        {readingThemeOptions.map((option) => {
-          const preview = option.value === 'app' ? state.app : resolveReadingTheme({ ...defaultThemePreference, reading: option.value }, false);
-          const current = themeTokens(preview);
-          return (
-            <button type="button" key={option.value} className="theme-swatch" data-reading-theme-option={option.value} aria-label={option.label} aria-pressed={state.preference.reading === option.value} onClick={() => onChange(option.value)}>
-              <span className="theme-swatch-chip" aria-hidden="true"
-                style={{ backgroundColor: current.bg, color: current.ink, '--chip-line': current.line } as CSSProperties}>Aa</span>
-              <span className="theme-swatch-label">{option.label}</span>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
 }
 
 /** Rows that are set once and left alone. A native <details>: keyboard and screen-reader behaviour for free. */

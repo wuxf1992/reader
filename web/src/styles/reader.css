@@ -4414,3 +4414,16 @@ body, .reader-screen .stage, .reader-screen .stage::before,
 
 /* Native dialogs enter the top layer above the screen's brightness overlay. */
 .reader-screen .sheet { filter: brightness(var(--reader-brightness, 1)); }
+
+/* The same compact palette picker appears in settings and the reader. */
+.theme-chips { display: flex; gap: 3px; padding: 3px; border-radius: var(--radius-md); background: var(--color-surface-2); }
+.theme-settings .theme-swatches { color: var(--color-ink); }
+.theme-settings .theme-swatch { color: inherit; }
+.theme-settings .theme-swatch[aria-pressed='true'] .theme-swatch-chip { border-color: var(--color-brand-text); }
+.theme-settings .theme-chips, .panel-fold-body .theme-chips { margin-bottom: var(--space-4); }
+.theme-system-pair { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-4); }
+.theme-system-pair label { display: flex; flex: 1 1 10rem; flex-direction: column; gap: var(--space-2); }
+.theme-system-pair select { min-height: 44px; max-width: 100%; color: var(--color-ink); background: var(--color-surface); border: 1px solid var(--color-line); border-radius: var(--radius-sm); padding: var(--space-2); font: inherit; }
+.reader-screen .theme-chips button, .theme-settings .theme-chips button { flex: 1; min-height: 44px; padding: 0 var(--space-3); border: 0; border-radius: var(--radius-sm); background: var(--color-surface-2); color: var(--color-muted); font: inherit; cursor: pointer; }
+.reader-screen .theme-chips button[aria-pressed='true'], .theme-settings .theme-chips button[aria-pressed='true'] { background: var(--color-surface); color: var(--color-ink); font-weight: 600; outline: 1px solid var(--color-brand-text); outline-offset: -1px; }
+.theme-settings > .theme-settings-note { margin-bottom: var(--space-4); }

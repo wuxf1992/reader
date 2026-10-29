@@ -61,7 +61,7 @@ try {
         const toggle = page.getByRole('button', { name: '液态玻璃', exact: true });
         await toggle.waitFor(); assert.equal(await toggle.getAttribute('aria-pressed'), 'false');
         await toggle.click(); await page.waitForFunction(() => document.documentElement.dataset.liquidGlass === 'true');
-        await page.evaluate(async palette => { await window.readerApp.updateSettings({ theme: palette, readingTheme: 'local-' + palette, paper: 'theme' }); }, palette);
+        await page.getByRole('button', { name: paletteLabel, exact: true }).click();
         await page.screenshot({ path: output + `${engine}-${width}-settings.png` });
         await page.evaluate(book => { location.hash = '#/book/' + book; }, BOOK_ID);
         await page.locator('book-content .book-flow p').first().waitFor();
@@ -75,20 +75,23 @@ try {
         const frozen = await page.locator('book-content').evaluate(el => el.scrollTop);
         await page.mouse.move(width / 2, 400); await page.mouse.wheel(0, 400);
         await page.waitForTimeout(100); assert.equal(await page.locator('book-content').evaluate(el => el.scrollTop), frozen);
+        if (await page.locator('.reader-screen').getAttribute('data-chrome') === 'hidden') await page.mouse.click(width / 2, 422);
         await page.getByRole('button', { name: '外观', exact: true }).click();
+        const themeFold = page.locator('details').filter({ has: page.locator('[aria-label="主题配色"]') });
+        if (!await themeFold.evaluate(el => el.open)) await themeFold.locator('summary').click();
         assert.equal(await page.getByRole('button', { name: '液态玻璃', exact: true }).getAttribute('aria-pressed'), 'true');
-        const previews = () => page.locator('[aria-label="主题"] .theme-swatch').evaluateAll(buttons => buttons.filter(button => button.dataset.readingThemeOption !== 'app').map(button => {
+        const previews = () => page.locator('[aria-label="主题配色"] .theme-swatch').evaluateAll(buttons => buttons.filter(button => button.dataset.readingThemeOption.startsWith('local-')).map(button => {
           const chip = getComputedStyle(button.querySelector('.theme-swatch-chip'));
           return { id: button.dataset.readingThemeOption, background: chip.backgroundColor, color: chip.color, image: chip.backgroundImage };
         }));
         const beforePreviews = await previews();
         assert.ok(beforePreviews.find(p => p.id === 'local-kraft-day').image.includes('kraft-paper'));
         assert.ok(beforePreviews.find(p => p.id === 'local-parchment-day').image.includes('parchment-paper'));
-        await page.locator('[aria-label="主题"]').getByRole('button', { name: '微信夜间', exact: true }).click();
+        await page.locator('[aria-label="主题配色"]').getByRole('button', { name: '微信夜间', exact: true }).click();
         await page.waitForFunction(() => document.querySelector('.reader-screen').dataset.readingTheme === 'local-wechat-night');
         assert.deepEqual(await previews(), beforePreviews, 'every preview keeps its own colours and texture');
         await page.screenshot({ path: output + `${engine}-${width}-fixed-previews.png` });
-        await page.locator('[aria-label="主题"]').getByRole('button', { name: paletteLabel, exact: true }).click();
+        await page.locator('[aria-label="主题配色"]').getByRole('button', { name: paletteLabel, exact: true }).click();
 
         assert.equal(await page.locator('.reader-glass-surface').count(), 0);
         await page.getByRole('button', { name: '液态玻璃', exact: true }).click();
@@ -100,7 +103,10 @@ try {
         const offShot = await page.screenshot({ path: output + `${engine}-${width}-solid.png` });
         const visibleDifference = await pixelDifference(page, onShot, offShot, on.footer);
         assert.ok(visibleDifference > 8, 'glass must visibly change the control surface: ' + visibleDifference);
+        if (await page.locator('.reader-screen').getAttribute('data-chrome') === 'hidden') await page.mouse.click(width / 2, 422);
         await page.getByRole('button', { name: '外观', exact: true }).click();
+        const themeFold = page.locator('details').filter({ has: page.locator('[aria-label="主题配色"]') });
+        if (!await themeFold.evaluate(el => el.open)) await themeFold.locator('summary').click();
         await page.getByRole('button', { name: '液态玻璃', exact: true }).click(); await closeDialog(page);
         await page.waitForFunction(() => document.documentElement.dataset.liquidGlass === 'true');
         await page.mouse.click(width / 2, 400); await page.waitForFunction(() => document.querySelector('.reader-screen').dataset.chrome === 'hidden');

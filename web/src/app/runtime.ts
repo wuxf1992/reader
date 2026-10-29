@@ -14,6 +14,7 @@ import { useAuthStore } from '../shared/stores/auth.store.ts';
 import { useSettingsStore } from '../shared/stores/settings.store.ts';
 import { useSyncStore } from '../shared/stores/sync.store.ts';
 import { PlaybackService } from '../features/media/services/PlaybackService.ts';
+import { migrateAppearance } from '../shared/theme/theme.ts';
 import { withOfflineTimeout } from '../core/offline-timeout.ts';
 
 export function validServerUrl(value?: string): string {
@@ -59,6 +60,7 @@ export async function createAppRuntime(defaultServerUrl = '') {
   useSettingsStore.getState().replace(loadedSettings);
   api.setBaseUrl(validServerUrl(await settings.serverUrl()) || validServerUrl(defaultServerUrl) || inferDefaultUrl());
   const restored = await api.restore();
+  if (restored) migrateAppearance(mediaApi.preferenceScope(), loadedSettings);
   useAuthStore.getState().setSession(restored);
   if (restored) {
     await offline.setScope(publicationScope(api.baseUrl, restored.user.id), { claimLegacy: true });
@@ -74,6 +76,7 @@ export async function createAppRuntime(defaultServerUrl = '') {
       if (!session) { useAuthStore.getState().setSession(null); return; }
       await offline.setScope(publicationScope(api.baseUrl, session.user.id));
       const user = await api.me();
+      migrateAppearance(mediaApi.preferenceScope(), await settings.load());
       useAuthStore.getState().setSession(session);
       useAuthStore.getState().verify(user);
       queryClient.clear();

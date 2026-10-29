@@ -31,7 +31,7 @@ function AuthenticatedShell() {
     document.documentElement.dataset.liquidGlass = String(liquidGlass);
     return () => { delete document.documentElement.dataset.liquidGlass; };
   }, [liquidGlass]);
-  // One app theme for every page; the reader may wear its own reading theme on top.
+  // One theme for every page, including the reader.
   useEffect(() => {
     const theme = new ThemeController(runtime.mediaApi.preferenceScope());
     return () => theme.dispose();

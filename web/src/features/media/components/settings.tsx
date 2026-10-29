@@ -3,7 +3,7 @@ import { ConfirmSheet } from '../../../ui/sheet.tsx';
 import { Icon } from '../../../ui/toolkit.tsx';
 import { MediaSelect } from './select.tsx';
 import { PlaybackSettings } from './playback-settings.tsx';
-import { MediaThemeSettings } from './theme-settings.tsx';
+import { ThemeSettings } from '../../../shared/theme/theme-settings.tsx';
 import type { AppSettings } from '../../../store/settings.ts';
 import type { MediaPlayer } from '../services/player.ts';
 import type { MediaAccount } from '../api/media-api.ts';
@@ -72,7 +72,7 @@ export function MediaSettings({ scope, preferences, player, account, onSaved, on
     {leaving && <ConfirmSheet danger title="放弃浏览偏好修改？" text="浏览偏好尚未保存，离开后将丢弃本次修改。" confirmText="放弃修改" cancelText="继续编辑"
       onCancel={() => setLeaving(false)}
       onConfirm={() => { setLeaving(false); setDraft({ ...preferences }); onBack(); }} />}
-    {panel === 'theme' && <MediaThemeSettings scope={scope} {...(onReaderSettings ? { onReaderSettings } : {})} />}
+    {panel === 'theme' && <ThemeSettings scope={scope} {...(onReaderSettings ? { onReaderSettings } : {})} />}
     {panel === 'browse' && <form className="media-form media-settings-panel" onSubmit={event => { event.preventDefault(); save(); }}>
       <p>仅影响影音页面，在当前设备为此服务器和账号保存</p>
       <label className="media-setting-field">封面密度

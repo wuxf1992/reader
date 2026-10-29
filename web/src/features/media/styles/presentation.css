@@ -960,10 +960,8 @@ body:has(>#app>.media-screen) { background: var(--color-bg); }
 
 /* 外观与主题 (V3.1, prototype 23). */
 .theme-settings {max-width:640px;margin:16px auto}
-.theme-settings h2 {margin:22px 0 10px;font-size:var(--text-label);font-weight:600;color:var(--muted)}
 .theme-settings-card {overflow:hidden;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--media-paper)}
 .media-screen .theme-follow {display:flex;align-items:center;gap:12px;width:100%;min-height:64px;padding:14px;border-radius:0;text-align:left;color:var(--text)}
-.theme-follow-icon {display:grid;place-items:center;flex:none;width:36px;height:36px;border-radius:var(--radius-md);background:var(--media-selection);color:var(--media-accent)}
 .theme-follow-text {flex:1;min-width:0}
 .theme-follow-text strong,.theme-follow-text small {display:block}
 .theme-follow-text strong {font-size:var(--text-body);font-weight:600}
@@ -972,31 +970,8 @@ body:has(>#app>.media-screen) { background: var(--color-bg); }
 .theme-switch::after {content:'';position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:var(--color-surface);box-shadow:0 1px 2px color-mix(in srgb,var(--color-ink) 25%,transparent);transition:left var(--motion-duration) var(--motion-ease)}
 .theme-follow[aria-pressed=true] .theme-switch {background:var(--media-fill);box-shadow:none}
 .theme-follow[aria-pressed=true] .theme-switch::after {left:21px}
-.theme-settings-row {display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;min-height:48px;padding:8px 14px;border-top:1px solid var(--border);font-size:var(--text-ui)}
-.theme-settings-row>span {flex:1;color:var(--muted)}
-.theme-chips {display:flex;gap:2px;padding:3px;border-radius:var(--radius-md);background:var(--surface)}
-.media-screen .theme-chips button {min-height:34px;padding:0 12px;border-radius:var(--radius-sm);color:var(--muted);font-size:var(--text-label)}
-.media-screen .theme-chips button[aria-pressed=true] {background:var(--media-paper);color:var(--text);font-weight:600;box-shadow:0 1px 3px color-mix(in srgb,var(--color-ink) 18%,transparent)}
-.theme-grid {display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
-.media-screen .theme-card {display:block;min-width:0;padding:10px;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--media-paper);color:var(--text);text-align:left}
-.media-screen .theme-card[aria-pressed=true] {border-color:var(--media-accent);box-shadow:0 0 0 1px var(--media-accent)}
-@media (hover: hover) and (pointer: fine) { .media-screen .theme-card:hover:not(:disabled) {background:var(--media-paper);border-color:var(--media-accent)}}
-.theme-preview {display:flex;height:64px;overflow:hidden;border:1px solid var(--border);border-radius:var(--radius-md)}
-.theme-preview>span {flex:1;padding:10px 8px;box-sizing:border-box}
-.theme-preview-title {display:block;width:28px;height:6px;border-radius:var(--radius-xs)}
-.theme-preview-chips {display:flex;gap:4px;margin-top:10px}
-.theme-preview-chips i {width:16px;height:16px;border-radius:var(--radius-xs)}
-.theme-card-label {display:flex;align-items:center;justify-content:space-between;gap:4px;margin-top:8px;font-size:var(--text-ui)}
-.theme-card-label strong {font-weight:600}
-.theme-card-label svg {color:var(--media-accent)}
-.theme-card>small {display:block;font-size:var(--text-meta);color:var(--muted)}
 .theme-settings-note {margin:12px 0 0;font-size:var(--text-meta);line-height:1.6;color:var(--muted)}
 .theme-settings>p[role] {margin:12px 0 0;font-size:var(--text-meta)}
-.theme-papers {display:flex;flex-wrap:wrap;gap:12px 8px;justify-content:space-between}
-.media-screen .theme-papers>button {display:flex;flex-direction:column;align-items:center;gap:6px;min-height:0;padding:0;font-size:var(--text-meta);color:var(--text)}
-.theme-papers>button>span {display:grid;place-items:center;width:48px;height:48px;box-sizing:border-box;border:1px solid var(--border);border-radius:50%;font-family:'Songti SC','Noto Serif SC','Source Han Serif SC',serif;font-size:var(--text-title);font-weight:700}
-.theme-papers>button[aria-pressed=true]>span {border:3px solid var(--media-accent)}
-.theme-paper-follow {margin-top:12px}
 
 /* ---- 字幕与音轨 sheet (prototype 12) ---- */
 .media-video-tabs {display:flex;gap:2px;padding:4px;margin:0 0 14px;border-radius:var(--radius-lg);background:var(--surface)}

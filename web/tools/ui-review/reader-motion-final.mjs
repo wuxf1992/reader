@@ -153,7 +153,7 @@ try {
         for (const theme of themes) {
           await page.evaluate(async theme => {
             const scope = window.readerApp.mediaApi.preferenceScope();
-            localStorage.setItem('reader.theme.v2:' + scope, JSON.stringify({ theme: 'warm', mode: theme.mode, system: { light: 'warm', dark: 'warm' }, reading: 'app' }));
+            localStorage.setItem('reader.appearance.v1:' + scope, JSON.stringify({ theme: 'warm', mode: theme.mode, system: { light: 'warm', dark: 'warm' } }));
             dispatchEvent(new CustomEvent('reader-theme-change', { detail: { scope } }));
             await window.readerApp.updateSettings({ ...theme, readoutTopLeft: 'chapter', readoutTopRight: 'time', readoutBottomLeft: 'progress', readoutBottomRight: 'time' });
           }, theme);

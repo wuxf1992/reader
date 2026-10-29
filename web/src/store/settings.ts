@@ -122,7 +122,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   theme: 'light',
   lastDayTheme: 'light',
   lastNightTheme: 'dark',
-  readerSections: { readout: true, text: true, theme: true, paging: true },
+  readerSections: { readout: true, text: true, theme: false, paging: true },
   fit: 'contain',
   direction: 'ltr',
   fontFamily: 'inherit',

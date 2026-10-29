@@ -15,7 +15,7 @@ import { App } from '../src/app.ts';
 import type { SyncEngine } from '../src/core/sync.ts';
 import { FakeTransport, MemoryBlobs, MemoryKv, makePlatform } from './helpers/env.ts';
 import { anchorFor } from '../src/ui/text-anchor.ts';
-import { ThemeController } from '../src/shared/theme/theme.ts';
+import { readThemePreference, saveThemePreference, selectTheme, ThemeController } from '../src/shared/theme/theme.ts';
 
 const book: Book = {
   id: 'book-1', title: '远程小说', author: '作者', publisher: '', language: 'zh', isbn: '',
@@ -61,6 +61,7 @@ const screens: ReaderScreen[] = [];
 afterEach(() => {
   for (const screen of screens.splice(0)) screen.dispose();
   document.body.replaceChildren();
+  localStorage.clear();
 });
 
 async function setup(kv = new MemoryKv(), blobs = new MemoryBlobs(), userId = 'u1', server = 'http://one.test', settings: Partial<AppSettings> = {}) {
@@ -891,14 +892,14 @@ it('applies brightness to the whole reading screen on load and slider updates', 
 it('matches the saved page theme and system tint before the first content loads', async () => {
   const root = document.documentElement;
   const meta = document.createElement('meta'); meta.name = 'theme-color'; document.head.append(meta);
-  const appTheme = new ThemeController('theme-before-reader');
+  const appTheme = new ThemeController('default');
   const env = await setup(undefined, undefined, 'u1', 'http://one.test', { theme: 'dark', brightness: 0.5 });
   try {
     expect(env.screen.element.style.getPropertyValue('--color-surface')).toBe('#1e2024');
     expect(env.screen.element.style.getPropertyValue('--reader-browser-paper')).toBe('');
     expect(env.screen.element.dataset.readingTheme).toBe('local-dark');
     expect(env.screen.element.dataset.paper).toBeUndefined();
-    expect(root.dataset.theme).toBe('warm');
+    expect(root.dataset.theme).toBe('gray');
     expect(meta.content).toBe('#0b0c0d');
     const reader = env.screen as unknown as { updateSetting(patch: Partial<AppSettings>): Promise<void> };
     await reader.updateSetting({ theme: 'green' });
@@ -983,22 +984,36 @@ it('updates system tint as controls open and close, including theme and brightne
     expect(meta.content).toBe('#1e2024');
     env.screen.dispose(); screens.splice(screens.indexOf(env.screen), 1);
     expect(document.documentElement.dataset.readerChrome).toBeUndefined();
-    expect(meta.content).toBe('#FDF9F6');
+    expect(meta.content).toBe('#16171a');
   } finally { meta.remove(); }
 });
 
-it.each(['sepia', 'green'] as const)('restores %s after a night toggle and reopening the reader', async theme => {
+it.each(['sepia', 'green'] as const)('restores %s after a global night toggle and reopening the reader without reflow', async theme => {
   const env = await setup(undefined, undefined, 'u1', 'http://one.test', { theme });
   serve(env.transport, content(['a'])); await env.screen.open(book);
+  const reader = env.screen as unknown as { view: ReaderView };
+  const apply = vi.spyOn(reader.view, 'applySettings'), position = reader.view.position();
   await click(env.screen, '夜间');
-  expect(env.onSettingsChange).toHaveBeenLastCalledWith({ theme: 'dark', readingTheme: 'local-dark', paper: 'theme', paperFollowsDark: false, lastDayTheme: theme, lastNightTheme: 'dark' });
-  const kv = new MemoryKv(), store = new SettingsStore(kv);
-  await store.load(); await store.update(env.onSettingsChange.mock.calls.at(-1)![0]);
-  const restored = await new SettingsStore(kv).load();
-  const next = await setup(undefined, undefined, 'u1', 'http://one.test', restored);
+  expect(readThemePreference('default').theme).toBe('local-dark');
+  expect(apply).not.toHaveBeenCalled();
+  expect(reader.view.position()).toEqual(position);
+  const next = await setup(undefined, undefined, 'u1', 'http://one.test', { theme });
   serve(next.transport, content(['a'])); await next.screen.open(book);
+  expect(next.screen.element.dataset.readingTheme).toBe('local-dark');
   await click(next.screen, '日间');
-  expect(next.onSettingsChange).toHaveBeenLastCalledWith({ theme, readingTheme: `local-${theme}`, paper: 'theme', paperFollowsDark: false, lastDayTheme: theme, lastNightTheme: 'dark' });
+  expect(readThemePreference('default').theme).toBe(`local-${theme}`);
+  expect(env.screen.element.dataset.readingTheme).toBe(`local-${theme}`);
+});
+
+it('applies global settings to an open reader and keeps the location, pagination and device typography', async () => {
+  const env = await setup(undefined, undefined, 'u1', 'http://one.test', { theme: 'kraft-day', fontScale: 1.2 });
+  serve(env.transport, content(['a'])); await env.screen.open(book);
+  const reader = env.screen as unknown as { view: ReaderView };
+  const apply = vi.spyOn(reader.view, 'applySettings'), position = reader.view.position();
+  await act(() => saveThemePreference('default', selectTheme(readThemePreference('default'), 'local-wechat-night')));
+  expect(env.screen.element.dataset.readingTheme).toBe('local-wechat-night');
+  expect(apply).not.toHaveBeenCalled(); expect(reader.view.position()).toEqual(position);
+  expect(env.onSettingsChange).not.toHaveBeenCalled();
 });
 
 it('keeps automatic sync quiet while preserving failures and offline feedback', async () => {
@@ -1023,7 +1038,7 @@ it('remembers each settings section independently across reopening and reload', 
   section.dispatchEvent(new Event('toggle'));
   await vi.waitFor(() => expect(env.onSettingsChange).toHaveBeenCalled());
   const saved = env.onSettingsChange.mock.calls.at(-1)![0];
-  expect(saved.readerSections).toEqual({ readout: false, text: true, theme: true, paging: true });
+  expect(saved.readerSections).toEqual({ readout: false, text: true, theme: false, paging: true });
   await click(env.screen, '外观'); await click(env.screen, '外观');
   expect([...env.screen.element.querySelectorAll<HTMLDetailsElement>('details')]
     .find(details => details.querySelector('summary')?.textContent === '页眉页脚顶部与底部显示的信息')?.open).toBe(false);
@@ -1032,10 +1047,10 @@ it('remembers each settings section independently across reopening and reload', 
   const next = await setup(undefined, undefined, 'u1', 'http://one.test', await new SettingsStore(kv).load());
   serve(next.transport, content(['a'])); await next.screen.open(book); await click(next.screen, '外观');
   const details = [...next.screen.element.querySelectorAll<HTMLDetailsElement>('details')];
-  expect(details.map(item => item.querySelector('summary')?.textContent)).toEqual(['主题', '更多排版页边距 · 对齐 · 字体', '页眉页脚顶部与底部显示的信息']);
-  expect(details.map(item => item.open)).toEqual([true, true, false]);
+  expect(details.map(item => item.querySelector('summary')?.textContent)).toEqual(['主题与书架和设置共用', '更多排版页边距 · 对齐 · 字体', '页眉页脚顶部与底部显示的信息']);
+  expect(details.map(item => item.open)).toEqual([false, true, false]);
   const readout = details[2]!; readout.open = true; readout.dispatchEvent(new Event('toggle'));
-  await vi.waitFor(() => expect(next.onSettingsChange).toHaveBeenCalledWith({ readerSections: { readout: true, text: true, theme: true, paging: true } }));
+  await vi.waitFor(() => expect(next.onSettingsChange).toHaveBeenCalledWith({ readerSections: { readout: true, text: true, theme: false, paging: true } }));
 });
 
 

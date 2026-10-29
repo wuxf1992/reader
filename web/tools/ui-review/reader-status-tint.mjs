@@ -55,7 +55,7 @@ try {
         await page.evaluate(() => document.querySelector('meta[name="theme-color"]')?.remove());
         if (width === 390) await page.addStyleTag({ content: ':root { --safe-top: 47px; --safe-bottom: 34px; }' });
         for (const theme of ['green', 'dark', 'kraft-day', 'parchment-day']) {
-          await page.evaluate(async theme => { await window.readerApp.updateSettings({ theme, brightness: 1 }); }, theme);
+          await page.evaluate(async theme => { await window.readerApp.updateSettings({ brightness: 1 }); const scope = window.readerApp.mediaApi.preferenceScope(); localStorage.setItem('reader.appearance.v1:' + scope, JSON.stringify({ theme: 'local-' + theme, mode: theme === 'dark' ? 'dark' : 'light', system: { light: 'warm', dark: 'warm' } })); window.dispatchEvent(new CustomEvent('reader-theme-change', { detail: { scope } })); }, theme);
           await page.evaluate(book => { location.hash = '#/book/' + book; }, BOOK_ID);
           await page.locator('book-content .book-flow p').first().waitFor();
           if (await page.locator('.reader-screen').getAttribute('data-chrome') === 'hidden') await toggleChrome(page, width, 'visible', false);

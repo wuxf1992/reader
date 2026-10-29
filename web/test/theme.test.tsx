@@ -1,212 +1,126 @@
-import { render } from '../src/shared/ui/render-root.ts';
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { render } from '../src/shared/ui/render-root.ts';
+import { afterEach, expect, it, vi } from 'vitest';
 import { act } from 'react';
-import {
-  ThemeController, defaultThemePreference, migrateLegacyTheme, readThemePreference, resolveAppTheme,
-  resolveReaderSurface, resolveReadingTheme, saveThemePreference, themeSummary,
-  themeTokens, readingThemeOptions, type ReadingTheme,
-} from '../src/shared/theme/theme.ts';
+import { ThemeController, defaultThemePreference, migrateLegacyTheme, migrateAppearance, readThemePreference, resolveAppTheme, resolveReadingTheme, saveThemePreference, selectTheme, selectedTheme, selectThemeMode, themeOptions, themeSummary, themeTokens, type AppThemeId } from '../src/shared/theme/theme.ts';
 import { PALETTES } from '../src/render/theme.ts';
-import { MediaThemeSettings } from '../src/features/media/components/theme-settings.tsx';
+import { ThemeSettings } from '../src/shared/theme/theme-settings.tsx';
 import { useSettingsStore } from '../src/shared/stores/settings.store.ts';
 import { DEFAULT_APP_SETTINGS } from '../src/store/settings.ts';
 
-const root = document.createElement('div');
-document.body.append(root);
+const root = document.createElement('div'); document.body.append(root);
 afterEach(() => {
-  act(() => render(null, root));
-  localStorage.clear();
-  vi.restoreAllMocks();
-  vi.unstubAllGlobals();
+  act(() => render(null, root)); localStorage.clear(); vi.restoreAllMocks(); vi.unstubAllGlobals();
   useSettingsStore.getState().replace({ ...DEFAULT_APP_SETTINGS });
-  delete document.documentElement.dataset.theme;
-  delete document.documentElement.dataset.mode;
+  document.documentElement.removeAttribute('style');
+  delete document.documentElement.dataset.theme; delete document.documentElement.dataset.mode;
 });
-
-/** A controllable prefers-color-scheme. */
 function stubSystem(initial: boolean) {
-  const events = new EventTarget();
-  const state = { dark: initial };
+  const events = new EventTarget(), state = { dark: initial };
   vi.stubGlobal('matchMedia', () => ({ get matches() { return state.dark; }, addEventListener: events.addEventListener.bind(events), removeEventListener: events.removeEventListener.bind(events) }));
   return { set(dark: boolean) { state.dark = dark; events.dispatchEvent(new Event('change')); } };
 }
 const pressed = (label: string) => root.querySelector(`[aria-label="${label}"]`)?.getAttribute('aria-pressed');
 const click = (label: string) => act(() => root.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)!.click());
 
-describe('theme preference', () => {
-  it('defaults to 暖陶, following the system with 暖陶 for both, and the app theme for reading', () => {
-    expect(readThemePreference('new')).toEqual({ theme: 'warm', mode: 'system', system: { light: 'warm', dark: 'warm' }, reading: 'app' });
-    expect(themeSummary(readThemePreference('new'))).toBe('跟随系统');
-  });
-
-  it('carries every V3 choice over as the spec table says, keeping its light/dark mode', () => {
-    const migrated = (choice: string) => { const { theme, mode } = migrateLegacyTheme(choice, undefined); return [theme, mode]; };
-    expect(migrated('sand')).toEqual(['warm', 'light']);
-    expect(migrated('midnight')).toEqual(['warm', 'dark']);
-    expect(migrated('ocean')).toEqual(['blue', 'light']);
-    expect(migrated('forest')).toEqual(['green', 'light']);
-    expect(migrated('graphite')).toEqual(['blue', 'dark']);
-    // 蔷薇 was removed with no successor: 暖陶, still light.
-    expect(migrated('rose')).toEqual(['warm', 'light']);
-    // Follow-system keeps its pair, slot by slot.
-    expect(migrateLegacyTheme('system', { light: 'ocean', dark: 'graphite' })).toEqual({ ...defaultThemePreference, theme: 'blue', mode: 'system', system: { light: 'blue', dark: 'blue' } });
-    expect(migrateLegacyTheme('system', { light: 'forest', dark: 'midnight' }).system).toEqual({ light: 'green', dark: 'warm' });
-  });
-
-  it('reads the V3 keys only until a V3.1 choice is saved, per server and account', () => {
-    localStorage.setItem('reader.media.theme.v1:a', 'graphite');
-    localStorage.setItem('reader.media.preferences.v1:a', '{"density":"comfortable"}');
-    expect(resolveAppTheme(readThemePreference('a'), false)).toEqual({ theme: 'blue', mode: 'dark' });
-    expect(readThemePreference('b')).toEqual(defaultThemePreference);
-    saveThemePreference('a', { theme: 'green', mode: 'light' });
-    expect(resolveAppTheme(readThemePreference('a'), false)).toEqual({ theme: 'green', mode: 'light' });
-    expect(localStorage.getItem('reader.media.preferences.v1:a')).toBe('{"density":"comfortable"}');
-  });
-
-  it('rejects unknown or reading-only values and unreadable storage', () => {
-    localStorage.setItem('reader.theme.v2:a', JSON.stringify({ theme: 'gray', mode: 'dim', system: { light: 'rose', dark: 'blue' }, reading: 'sepia' }));
-    expect(readThemePreference('a')).toEqual({ ...defaultThemePreference, system: { light: 'warm', dark: 'blue' } });
-    localStorage.setItem('reader.theme.v2:a', '{not json');
-    expect(readThemePreference('a')).toEqual(defaultThemePreference);
-  });
-
-  it('resolves the pair when following the system, and 黑白灰 for reading in the app mode', () => {
-    const preference = { ...defaultThemePreference, system: { light: 'green', dark: 'blue' } as const, reading: 'gray' as const };
-    expect(resolveAppTheme(preference, false)).toEqual({ theme: 'green', mode: 'light' });
-    expect(resolveAppTheme(preference, true)).toEqual({ theme: 'blue', mode: 'dark' });
-    expect(resolveReadingTheme(preference, true)).toEqual({ theme: 'gray', mode: 'dark' });
-    expect(resolveReadingTheme({ ...preference, reading: 'app' }, true)).toEqual({ theme: 'blue', mode: 'dark' });
-    expect(resolveAppTheme({ ...preference, mode: 'light', theme: 'warm' }, true)).toEqual({ theme: 'warm', mode: 'light' });
-  });
+it('defaults to one system-following theme for the app and reader', () => {
+  expect(readThemePreference('new')).toEqual(defaultThemePreference);
+  expect(themeSummary(readThemePreference('new'))).toBe('跟随系统');
+  expect(resolveAppTheme(defaultThemePreference, true)).toEqual(resolveReadingTheme(defaultThemePreference, true));
 });
-
-describe('reading paper', () => {
-  const light = { ...defaultThemePreference, mode: 'light' as const };
-  const dark = { ...defaultThemePreference, mode: 'dark' as const };
-  it('tints only light mode by default, gives way to the theme when the app is dark, and 夜间 is dark', () => {
-    expect(resolveReaderSurface(light, false, 'theme', true)).toEqual({ theme: 'warm', mode: 'light', paper: null });
-    expect(resolveReaderSurface(light, false, 'warm', true)).toEqual({ theme: 'warm', mode: 'light', paper: 'warm' });
-    expect(resolveReaderSurface(dark, false, 'warm', true)).toEqual({ theme: 'warm', mode: 'dark', paper: null });
-    // Not following the system's dark mode: the paper stays, and the reader stays light around it.
-    expect(resolveReaderSurface(dark, false, 'warm', false)).toEqual({ theme: 'warm', mode: 'light', paper: 'warm' });
-    expect(resolveReaderSurface(light, false, 'night', true)).toEqual({ theme: 'warm', mode: 'dark', paper: 'night' });
-    expect(resolveReaderSurface({ ...light, reading: 'gray' }, false, 'green', true)).toEqual({ theme: 'gray', mode: 'light', paper: 'green' });
-  });
+it('carries old app theme choices and pairs over without touching other preferences', () => {
+  for (const [old, theme, mode] of [['sand', 'warm', 'light'], ['midnight', 'warm', 'dark'], ['ocean', 'blue', 'light'], ['forest', 'green', 'light'], ['graphite', 'blue', 'dark'], ['rose', 'warm', 'light']])
+    expect(migrateLegacyTheme(old!, undefined)).toMatchObject({ theme, mode });
+  expect(migrateLegacyTheme('system', { light: 'forest', dark: 'graphite' }).system).toEqual({ light: 'green', dark: 'blue' });
+  expect(migrateLegacyTheme('toString', { light: '__proto__' })).toEqual(defaultThemePreference);
+  localStorage.setItem('reader.media.theme.v1:a', 'graphite');
+  localStorage.setItem('reader.media.preferences.v1:a', '{"density":"comfortable"}');
+  expect(resolveAppTheme(readThemePreference('a'), false)).toEqual({ theme: 'blue', mode: 'dark' });
+  expect(readThemePreference('b')).toEqual(defaultThemePreference);
+  expect(localStorage.getItem('reader.media.preferences.v1:a')).toBe('{"density":"comfortable"}');
 });
-
-describe('unified reading themes', () => {
-  it.each(Object.entries(PALETTES))('%s preserves every saved colour and its own mode', (id, palette) => {
-    const reading = `local-${id}` as ReadingTheme;
-    const preference = { ...defaultThemePreference, reading };
-    const day = resolveReadingTheme(preference, false);
-    expect(resolveReadingTheme(preference, true)).toEqual(day);
-    expect(day.mode).toBe(palette.scheme);
-    expect(themeTokens(day)).toMatchObject({ bg: palette.background, ink: palette.text, surface: palette.surface,
-      muted: palette.muted, line: palette.line, brand: palette.accent, onBrand: palette.onAccent,
-      ch: { read: { fill: palette.accent, text: palette.accent, soft: palette.surface } } });
-    expect(resolveReaderSurface(preference, false, 'night', true)).toEqual({ ...day, paper: null });
-    expect(resolveAppTheme(preference, false)).toEqual({ theme: 'warm', mode: 'light' });
-    saveThemePreference('presets', { reading });
-    expect(readThemePreference('presets').reading).toBe(reading);
-    expect(readingThemeOptions.filter(option => option.value === reading)).toHaveLength(1);
-  });
-
-  it('keeps old paper colours as complete presets and returns to the app theme', () => {
-    const resolved = resolveReadingTheme({ ...defaultThemePreference, reading: 'paper-warm' }, true);
-    expect(resolved.mode).toBe('light');
-    expect(themeTokens(resolved)).toMatchObject({ bg: '#F4ECD8', ink: '#3B3226' });
-    expect(themeTokens(resolveReadingTheme(defaultThemePreference, false)).bg).toBe('#FDF9F6');
-    saveThemePreference('invalid', { reading: 'local-toString' as ReadingTheme });
-    expect(readThemePreference('invalid').reading).toBe('app');
-  });
+it('imports the actual old reading choice once and keeps day/night memory', () => {
+  localStorage.setItem('reader.theme.v2:a', JSON.stringify({ ...defaultThemePreference, reading: 'gray' }));
+  migrateAppearance('a', { readingTheme: 'local-nord-night', lastDayTheme: 'kraft-day', lastNightTheme: 'nord-night' });
+  expect(readThemePreference('a')).toMatchObject({ theme: 'local-nord-night', mode: 'dark', system: { light: 'local-kraft-day', dark: 'local-nord-night' } });
+  saveThemePreference('a', selectTheme(readThemePreference('a'), 'blue'));
+  migrateAppearance('a', { readingTheme: 'local-dark' });
+  expect(readThemePreference('a').theme).toBe('blue');
+  expect(readThemePreference('b')).toEqual(defaultThemePreference);
 });
-
-describe('ThemeController', () => {
-  it('writes data-theme and data-mode on <html>, follows the system, and cleans up', () => {
-    const system = stubSystem(false);
-    const changed = vi.fn();
-    const controller = new ThemeController('a', changed);
-    expect([document.documentElement.dataset.theme, document.documentElement.dataset.mode]).toEqual(['warm', 'light']);
-    system.set(true);
-    expect(document.documentElement.dataset.mode).toBe('dark');
-    saveThemePreference('a', { system: { light: 'warm', dark: 'green' } });
-    expect(document.documentElement.dataset.theme).toBe('green');
-    // Another account's choice is not this page's.
-    saveThemePreference('b', { theme: 'blue', mode: 'light' });
-    expect(document.documentElement.dataset.theme).toBe('green');
-    controller.dispose();
-    changed.mockClear();
-    system.set(false);
-    expect(changed).not.toHaveBeenCalled();
-    expect(document.documentElement.dataset.theme).toBeUndefined();
-    expect(document.documentElement.dataset.mode).toBeUndefined();
-  });
-
-  it('applies a choice saved in another tab', () => {
-    const controller = new ThemeController('a');
-    localStorage.setItem('reader.theme.v2:a', JSON.stringify({ ...defaultThemePreference, theme: 'blue', mode: 'dark' }));
-    window.dispatchEvent(new StorageEvent('storage', { key: 'reader.theme.v2:a' }));
-    expect(controller.current).toEqual({ theme: 'blue', mode: 'dark' });
-    controller.dispose();
-  });
+it('imports old global reading/paper choices and does not let stale device data override later choices', () => {
+  localStorage.setItem('reader.theme.v2:a', JSON.stringify({ ...defaultThemePreference, reading: 'paper-warm' }));
+  migrateAppearance('a', {});
+  expect(readThemePreference('a')).toMatchObject({ theme: 'paper-warm', mode: 'light' });
+  migrateAppearance('b', { paper: 'night' });
+  expect(readThemePreference('b').theme).toBe('paper-night');
+  saveThemePreference('a', selectTheme(readThemePreference('a'), 'local-wechat-night'));
+  localStorage.setItem('reader.theme.v2:a', JSON.stringify({ reading: 'paper-white' }));
+  expect(readThemePreference('a').theme).toBe('local-wechat-night');
 });
-
-describe('外观与主题', () => {
-  it('saves the glass switch independently of the theme', async () => {
-    const onReaderSettings = vi.fn(patch => useSettingsStore.getState().update(patch));
-    await act(async () => render(<MediaThemeSettings scope="a" onReaderSettings={onReaderSettings} />, root));
-    expect(pressed('液态玻璃')).toBe('false');
-    await click('液态玻璃');
-    expect(onReaderSettings).toHaveBeenLastCalledWith({ liquidGlass: true });
-    expect(pressed('液态玻璃')).toBe('true');
-    expect(readThemePreference('a')).toEqual(defaultThemePreference);
-  });
-
-  it('follows the system by default with one theme for light and one for dark', async () => {
-    stubSystem(false);
-    await act(async () => render(<MediaThemeSettings scope="a" />, root));
-    expect(pressed('跟随系统')).toBe('true');
-    expect(pressed('浅色时使用 暖陶')).toBe('true');
-    expect(pressed('深色时使用 暖陶')).toBe('true');
-    await click('深色时使用 雾蓝');
-    expect(readThemePreference('a').system).toEqual({ light: 'warm', dark: 'blue' });
-    // With a split pair, no single app-theme card describes the choice.
-    expect([pressed('暖陶'), pressed('雾蓝'), pressed('青绿')]).toEqual(['false', 'false', 'false']);
-    // Picking a card while following the system uses it for both.
-    await click('青绿');
-    expect(readThemePreference('a').system).toEqual({ light: 'green', dark: 'green' });
-    expect(pressed('青绿')).toBe('true');
-    expect(root.querySelector('[role=status]')?.textContent).toBe('主题已保存');
-  });
-
-  it('leaving follow-system keeps what is on screen, then offers light or dark', async () => {
-    stubSystem(true);
-    saveThemePreference('a', { system: { light: 'warm', dark: 'blue' } });
-    await act(async () => render(<MediaThemeSettings scope="a" />, root));
-    await click('跟随系统');
-    expect(readThemePreference('a')).toMatchObject({ mode: 'dark', theme: 'blue' });
-    expect(root.querySelector('[aria-label="浅色时使用 暖陶"]')).toBeNull();
-    const light = [...root.querySelectorAll<HTMLButtonElement>('[aria-label="明暗"] button')].find(button => button.textContent === '浅色')!;
-    await act(async () => light.click());
-    expect(readThemePreference('a')).toMatchObject({ mode: 'light', theme: 'blue' });
-  });
-
-  it('offers 黑白灰 only as the reading theme, apart from the app theme', async () => {
-    await act(async () => render(<MediaThemeSettings scope="a" />, root));
-    const appCards = [...root.querySelectorAll('[aria-label="应用主题"] .theme-card')].map(card => card.getAttribute('aria-label'));
-    expect(appCards).toEqual(['暖陶', '雾蓝', '青绿']);
-    expect(pressed('跟随应用')).toBe('true');
-    await click('黑白灰');
-    expect(readThemePreference('a')).toMatchObject({ reading: 'gray', theme: 'warm' });
-    expect(pressed('黑白灰')).toBe('true');
-  });
-
-  it('reports a device that refuses to store the choice', async () => {
-    await act(async () => render(<MediaThemeSettings scope="a" />, root));
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('full'); });
-    await click('雾蓝');
-    expect(root.querySelector('[role=alert]')?.textContent).toContain('无法保存主题');
-    expect(readThemePreference('a').system.light).toBe('warm');
-  });
+it.each(Object.entries(PALETTES))('%s preserves all colours throughout the app and reader', (id, palette) => {
+  const theme = `local-${id}` as AppThemeId;
+  const preference = selectTheme(defaultThemePreference, theme);
+  const resolved = resolveAppTheme(preference, false);
+  expect(resolveReadingTheme(preference, true)).toEqual(resolved);
+  expect(resolved.mode).toBe(palette.scheme);
+  expect(themeTokens(resolved)).toMatchObject({ bg: palette.background, ink: palette.text, surface: palette.surface, muted: palette.muted, line: palette.line, brand: palette.accent, onBrand: palette.onAccent });
+  saveThemePreference('palettes', preference);
+  expect(readThemePreference('palettes').theme).toBe(theme);
+  expect(themeOptions.filter(option => option.value === theme)).toHaveLength(1);
+});
+it('switches remembered day/night colours and follows OS changes without a fixed-colour mismatch', () => {
+  let preference = selectTheme(defaultThemePreference, 'local-kraft-day');
+  preference = selectTheme(preference, 'local-wechat-night');
+  expect(selectedTheme(selectThemeMode(preference, 'light'), true)).toBe('local-kraft-day');
+  preference = selectThemeMode(preference, 'system');
+  expect(themeTokens(resolveAppTheme(preference, false)).bg).toBe(PALETTES['kraft-day'].background);
+  expect(themeTokens(resolveAppTheme(preference, true)).bg).toBe(PALETTES['wechat-night'].background);
+});
+it('rejects malformed values, prototype keys and fixed-colour presets in the wrong system slot', () => {
+  localStorage.setItem('reader.appearance.v1:a', JSON.stringify({ theme: 'toString', mode: 'dim', system: { light: 'local-dark', dark: 'paper-white' } }));
+  expect(readThemePreference('a')).toEqual(defaultThemePreference);
+  saveThemePreference('a', { theme: 'local-kraft-day', mode: 'dark' });
+  expect(readThemePreference('a').mode).toBe('light');
+  localStorage.setItem('reader.appearance.v1:a', '{bad json');
+  expect(readThemePreference('a')).toEqual(defaultThemePreference);
+});
+it('updates root tokens, follows the OS, handles other tabs and clears colours on account teardown', () => {
+  const system = stubSystem(false), changed = vi.fn(), controller = new ThemeController('a', changed);
+  saveThemePreference('a', selectTheme(defaultThemePreference, 'local-kraft-day'));
+  expect(document.documentElement.style.getPropertyValue('--color-bg')).toBe(PALETTES['kraft-day'].background);
+  saveThemePreference('a', selectTheme(readThemePreference('a'), 'local-wechat-night'));
+  saveThemePreference('a', { mode: 'system' }); system.set(true);
+  expect(controller.current.preset).toBe('local-wechat-night');
+  saveThemePreference('b', { theme: 'blue', mode: 'light' });
+  expect(controller.current.preset).toBe('local-wechat-night');
+  localStorage.setItem('reader.appearance.v1:a', JSON.stringify({ ...defaultThemePreference, theme: 'blue', mode: 'dark' }));
+  window.dispatchEvent(new StorageEvent('storage', { key: 'reader.appearance.v1:a' }));
+  expect(controller.current).toEqual({ theme: 'blue', mode: 'dark' });
+  controller.dispose(); changed.mockClear(); system.set(false);
+  expect(changed).not.toHaveBeenCalled();
+  expect(document.documentElement.style.getPropertyValue('--color-bg')).toBe('');
+  expect(document.documentElement.dataset.theme).toBeUndefined();
+});
+it('offers all custom colours from the global entry and keeps mode and selection in agreement', async () => {
+  stubSystem(false);
+  await act(async () => render(<ThemeSettings scope="a" />, root));
+  expect(pressed('跟随系统')).toBe('true');
+  expect(root.querySelectorAll('.theme-swatch')).toHaveLength(themeOptions.length);
+  await click('牛皮纸'); expect(pressed('日间')).toBe('true');
+  expect(readThemePreference('a').theme).toBe('local-kraft-day');
+  await click('微信夜间'); expect(pressed('夜间')).toBe('true');
+  await click('日间'); expect(pressed('牛皮纸')).toBe('true');
+  await click('跟随系统');
+  expect(root.querySelector('select[aria-label="夜间配色"]')).not.toBeNull();
+  expect(root.querySelector('[role=status]')?.textContent).toBe('主题已保存');
+});
+it('keeps glass separate and reports storage failures without changing the selected theme', async () => {
+  const update = vi.fn(patch => useSettingsStore.getState().update(patch));
+  await act(async () => render(<ThemeSettings scope="a" onReaderSettings={update} />, root));
+  await click('液态玻璃'); expect(update).toHaveBeenLastCalledWith({ liquidGlass: true });
+  vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('full'); });
+  await click('牛皮纸');
+  expect(root.querySelector('[role=alert]')?.textContent).toContain('无法保存主题');
+  expect(readThemePreference('a')).toEqual(defaultThemePreference);
 });

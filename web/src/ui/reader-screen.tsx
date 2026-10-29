@@ -1,4 +1,4 @@
-import { localPaper, readingThemeForPaper, themeTokens, readThemePreference, resolveAppTheme, resolveReaderSurface, resolveReadingTheme, saveThemePreference, subscribeTheme, systemPrefersDark } from '../shared/theme/theme.ts';
+import { applyThemeTokens, migrateAppearance, readingThemeForPaper, selectTheme, selectedTheme, themeTokens, readThemePreference, resolveAppTheme, resolveReaderSurface, resolveReadingTheme, saveThemePreference, subscribeTheme, systemPrefersDark } from '../shared/theme/theme.ts';
 import { applyCorrections, emptyOverrides, type ReadingOverrides } from './reading-overrides.ts';
 import { loadTxt } from '../formats/txt.ts';
 import { ApiError } from '../api/errors.ts';
@@ -234,10 +234,7 @@ export class ReaderScreen {
 
   constructor(private readonly options: ReaderScreenOptions) {
     this.settings = { ...options.settings };
-    if (this.settings.readingTheme === undefined && this.settings.paper && this.settings.paper !== 'theme') {
-      this.settings.readingTheme = readingThemeForPaper(this.settings.paper);
-    }
-    this.settings.paper = 'theme';
+    migrateAppearance(this.themeScope(), this.settings);
     this.publicationCache = new PublicationCache(
       options.platform.kv,
       options.platform.blobs,
@@ -259,8 +256,7 @@ export class ReaderScreen {
     // is what makes "cannot be half-hidden" true by construction rather than by two
     // rules that have to be kept in agreement.
     this.element.dataset['chrome'] = 'hidden';
-    // The reading theme (the app's, or 黑白灰) and the reading paper, on this
-    // container only; see resolveReaderSurface.
+    // The reader subscribes to the same appearance state as the app shell.
     this.applyReadingTheme();
     this.themeOff = subscribeTheme(this.themeScope(), () => { this.applyReadingTheme(); if (!this.disposed) this.patch({}); });
     this.ui = createRoot(this.element);
@@ -277,35 +273,22 @@ export class ReaderScreen {
   private themeScope(): string { return this.options.themeScope ?? 'default'; }
 
   private readingPreference() {
-    const preference = readThemePreference(this.themeScope());
-    return { ...preference, reading: this.settings.readingTheme ?? preference.reading };
+    return readThemePreference(this.themeScope());
   }
 
   private readerSurface() {
-    return resolveReaderSurface(this.readingPreference(), systemPrefersDark(), 'theme', false);
+    return resolveReaderSurface(this.readingPreference(), systemPrefersDark());
   }
 
   private applyReadingTheme(): void {
     const surface = this.readerSurface();
     this.element.dataset['theme'] = surface.theme;
     this.element.dataset['mode'] = surface.mode;
-    this.element.dataset['readingTheme'] = this.readingPreference().reading;
+    this.element.dataset['readingTheme'] = selectedTheme(this.readingPreference(), systemPrefersDark());
     if (surface.paper) this.element.dataset['paper'] = surface.paper; else delete this.element.dataset['paper'];
     for (const key of ['ink', 'paper', 'surface', 'muted', 'line', 'accent', 'on-accent']) this.element.style.removeProperty(`--reader-${key}`);
     const tokens = themeTokens(surface);
-    const colors: Record<string, string> = {};
-    for (const [key, value] of Object.entries(tokens)) {
-      if (key !== 'ch') colors[key === 'surface2' ? 'surface-2' : key.replace(/[A-Z]/g, letter => '-' + letter.toLowerCase())] = value as string;
-    }
-    for (const [channel, values] of Object.entries(tokens.ch)) {
-      colors[`ch-${channel}`] = values.fill;
-      colors[`ch-${channel}-soft`] = values.soft;
-      colors[`ch-${channel}-text`] = values.text;
-    }
-    for (const [key, value] of Object.entries(colors)) {
-      this.element.style.removeProperty(`--color-${key}`);
-      if (surface.preset) this.element.style.setProperty(`--color-${key}`, value);
-    }
+    applyThemeTokens(this.element, surface);
     this.element.style.removeProperty('--reader-fill');
     this.element.style.removeProperty('--reader-on-fill');
     this.element.style.removeProperty('color-scheme');
@@ -374,13 +357,8 @@ export class ReaderScreen {
               return { preference, app: resolveAppTheme(preference, systemDark), reading: resolveReadingTheme(preference, systemDark), surface: this.readerSurface() };
             },
             onTheme: (patch) => {
-              if (patch.reading !== undefined) {
-                const palette = localPaper(patch.reading as AppSettings['paper']);
-                void this.updateSetting({ ...(palette ? { theme: palette } : {}), readingTheme: patch.reading, paper: 'theme' });
-              } else {
-                try { saveThemePreference(this.themeScope(), patch); } catch { /* the device refused storage */ }
-                this.patch({});
-              }
+              try { saveThemePreference(this.themeScope(), patch); }
+              catch (error) { this.flashStatus(error instanceof Error ? error.message : '主题保存失败', 6000); }
             },
             onSpeechSetting: (patch) => this.updateSpeechSetting(patch),
             onVoice: (voice) => this.updateSpeechSetting({ ttsVoice: voice }),
@@ -2058,12 +2036,17 @@ export class ReaderScreen {
     const textChanged = patch.chineseVariant !== undefined && patch.chineseVariant !== this.settings.chineseVariant;
     const position = textChanged ? this.view?.position() : null;
     if (textChanged) { this.cancelPageTurns(); this.stopSpeech(); this.annotation = null; this.toolsSelection = null; }
+    const legacyTheme = patch.readingTheme ?? (patch.paper && patch.paper !== 'theme' ? readingThemeForPaper(patch.paper) : patch.theme ? `local-${patch.theme}` as const : undefined);
+    if (legacyTheme && legacyTheme !== 'app') {
+      try { saveThemePreference(this.themeScope(), selectTheme(this.readingPreference(), legacyTheme)); }
+      catch (error) { this.flashStatus(error instanceof Error ? error.message : '主题保存失败', 6000); }
+    }
     patch = withThemeMemory(this.settings, patch);
     this.options.onSettingsChange(patch);
     Object.assign(this.settings, patch);
     if ('readingTheme' in patch || 'paper' in patch || 'paperFollowsDark' in patch) this.applyReadingTheme();
     // Reading information changes only the chrome, never the book's pagination.
-    if (Object.keys(patch).some(key => !['liquidGlass', 'autoCache', 'autoCacheChapters', 'lastDayTheme', 'lastNightTheme', 'readerSections'].includes(key) && !READOUT_FIELDS.some(field => field.key === key))) {
+    if (Object.keys(patch).some(key => !['theme', 'readingTheme', 'paper', 'paperFollowsDark', 'liquidGlass', 'autoCache', 'autoCacheChapters', 'lastDayTheme', 'lastNightTheme', 'readerSections'].includes(key) && !READOUT_FIELDS.some(field => field.key === key))) {
       this.view?.applySettings(this.viewSettings());
     }
     this.patch({});
