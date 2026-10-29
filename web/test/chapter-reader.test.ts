@@ -190,7 +190,7 @@ describe('chapter publication reading', () => {
     expect(env.offline.outbox().progress).toEqual([]);
   });
 
-  it.each(['chapters', 'epub'] as const)('opens the newer rereading position from another device in %s', async format => {
+  it.each(['chapters', 'epub'] as const)('asks before moving to the newer rereading position from another device in %s', async format => {
     const env = await setup(); serve(env.transport, content(['a', 'b']));
     const local = { bookId: book.id, locator: 'r1:0.0000:chapter:b', percentage: 0.5,
       chapterTitle: 'b', device: 'phone', updatedAt: 10 };
@@ -199,11 +199,12 @@ describe('chapter publication reading', () => {
     await env.offline.markDelivered(env.offline.outbox(), 1);
     vi.spyOn(env.api, 'getProgress').mockResolvedValue(remote);
     await env.screen.open({ ...book, format });
-    expect(body(env.screen)?.textContent).toContain('resource:r1:a');
-    expect(env.offline.progressFor(book.id)).toEqual(remote);
-    expect(env.offline.outbox().progress).toEqual([]);
-    await env.screen.flushProgress();
-    expect(env.offline.progressFor(book.id)!.updatedAt).toBeGreaterThan(remote.updatedAt + 1);
+    expect(body(env.screen)?.textContent).toContain('resource:r1:b');
+    expect(env.offline.progressFor(book.id)).toEqual(local);
+    expect(env.screen.element.querySelector('[role=alertdialog]')?.textContent).toContain('是否跳到最新位置');
+    await click(env.screen, '跳到最新位置');
+    await vi.waitFor(() => expect(body(env.screen)?.textContent).toContain('resource:r1:a'));
+    expect(env.offline.progressFor(book.id)!.updatedAt).toBeGreaterThan(remote.updatedAt);
   });
 
   it('does not save a temporary opening position while waiting for remote progress', async () => {
@@ -233,7 +234,11 @@ describe('chapter publication reading', () => {
         chapterTitle: 'b', device: 'new phone', updatedAt: 20 } } };
     });
     await env.screen.open(book);
-    expect(body(env.screen)?.textContent).toContain(`resource:r1:${chapter}`);
+    expect(body(env.screen)?.textContent).toContain('resource:r1:a');
+    if (chapter === 'b') {
+      await click(env.screen, '跳到最新位置');
+      await vi.waitFor(() => expect(body(env.screen)?.textContent).toContain('resource:r1:b'));
+    } else expect(env.screen.element.querySelector('[role=alertdialog]')).toBeNull();
   });
 
   it('flushes the visible chapter before app background sync, without waiting for the reading debounce', async () => {
@@ -380,7 +385,7 @@ describe('chapter publication reading', () => {
     expect(body(second.screen)?.textContent).not.toContain('resource:r1:b');
   });
 
-  it('opens cached text within one time budget even when every metadata request hangs', async () => {
+  it('opens cached text immediately without spending a network timeout budget', async () => {
     const kv = new MemoryKv(), blobs = new MemoryBlobs();
     const first = await setup(kv, blobs);
     serve(first.transport, content(['a']));
@@ -392,8 +397,8 @@ describe('chapter publication reading', () => {
     vi.useFakeTimers();
     try {
       const opening = second.screen.open(book);
-      await vi.waitFor(() => expect(second.transport.requests.length).toBeGreaterThan(0));
-      await vi.advanceTimersByTimeAsync(3100);
+      let opened = false; void opening.then(() => { opened = true; });
+      await vi.waitFor(() => expect(opened).toBe(true), { timeout: 200, interval: 5 });
       await opening;
       expect(body(second.screen)?.textContent).toContain('resource:r1:a');
       expect(second.onSignedOut).not.toHaveBeenCalled();
@@ -458,14 +463,14 @@ describe('chapter publication reading', () => {
     expect(body(screen)?.textContent).toContain('resource:r1:a');
   });
 
-  it.each([400, 401, 403, 404])('does not fall back to cached content after an HTTP %i response', async (status) => {
+  it.each([400, 401, 403, 404])('stops displaying cached content once background validation answers HTTP %i', async (status) => {
     const env = await setup();
     const cache = new PublicationCache(env.platform.kv, env.platform.blobs, publicationScope(env.api.baseUrl, 'u1'));
     await cache.putManifest(book.id, manifest(content(['a'])));
     await cache.putResource(book.id, 'resource:r1:a', new TextEncoder().encode('private chapter'));
     env.transport.json({ error: { code: 'DENIED', message: 'Denied' } }, status);
     await env.screen.open(book);
-    expect(body(env.screen)?.textContent ?? '').not.toContain('private chapter');
+    await vi.waitFor(() => expect(body(env.screen)?.textContent ?? '').not.toContain('private chapter'));
     expect(env.transport.requests.some((request) => request.url.includes('/assets?'))).toBe(false);
     if (status === 401) expect(env.onSignedOut).toHaveBeenCalled();
   });
@@ -1039,4 +1044,93 @@ it('keeps the back control available when opening an uncached book fails', async
   await env.screen.open(book);
   expect(env.screen.element.dataset.chrome).toBe('visible');
   expect(env.screen.element.querySelector('.topbar')?.hasAttribute('hidden')).toBe(false);
+});
+
+
+async function cacheNovel(env: Awaited<ReturnType<typeof setup>>, value = content(['a', 'b'])) {
+  const cache = new PublicationCache(env.platform.kv, env.platform.blobs, publicationScope(env.api.baseUrl, env.api.currentSession()!.user.id));
+  await cache.putManifest(book.id, manifest(value));
+  for (const item of value.items) await cache.putResource(book.id, item.resourceRef!, new TextEncoder().encode(item.resourceRef!));
+  return cache;
+}
+
+it('updates metadata and replacement bytes in the background without replacing the visible chapter', async () => {
+  const env = await setup(), cache = await cacheNovel(env);
+  serve(env.transport, content(['a', 'b', 'c'], 'r2'));
+  const overrides = { version: 2, corrections: [], headingPrefix: '' };
+  vi.spyOn(env.api, 'readingOverrides').mockResolvedValue(overrides);
+  await env.screen.open(book);
+  expect(body(env.screen)?.textContent).toContain('resource:r1:a');
+  await vi.waitFor(async () => expect((await cache.manifest(book.id))?.content?.revision).toBe('r2'));
+  expect(await cache.resource(book.id, 'resource:r2:a')).not.toBeNull();
+  expect(await cache.overrides(book.id)).toEqual(overrides);
+  expect(body(env.screen)?.textContent).toContain('resource:r1:a');
+  expect(env.transport.requests.filter(request => request.url.includes('/assets?')).map(request => new URL(request.url, 'http://test').searchParams.get('ref'))).toEqual(['resource:r2:a']);
+});
+
+it('keeps the readable cache if a replacement chapter is unavailable', async () => {
+  const env = await setup(), cache = await cacheNovel(env); serve(env.transport, content(['a', 'b'], 'r2'));
+  vi.spyOn(env.api, 'asset').mockRejectedValue(new ApiError('not_found', 'temporarily missing'));
+  await env.screen.open(book); await vi.waitFor(() => expect(env.api.asset).toHaveBeenCalled());
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect((await cache.manifest(book.id))?.content?.revision).toBe('r1');
+  expect(body(env.screen)?.textContent).toContain('resource:r1:a');
+});
+
+it('keeps the local position on decline and blocks keyboard paging behind the question', async () => {
+  const env = await setup(); await cacheNovel(env); serve(env.transport, content(['a', 'b']));
+  const local = { bookId: book.id, locator: 'r1:0.0000:chapter:b', percentage: 0.5, chapterTitle: '章节 b', device: 'here', updatedAt: 10 };
+  const remote = { ...local, locator: 'r1:0.0000:chapter:a', percentage: 0, chapterTitle: '章节 a', updatedAt: 20 };
+  await env.offline.setProgress(local);
+  let finish!: (value: typeof remote) => void;
+  vi.spyOn(env.api, 'getProgress').mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  await env.screen.open(book); expect(body(env.screen)?.textContent).toContain('resource:r1:b');
+  await vi.waitFor(() => expect(finish).toBeDefined()); finish(remote);
+  await vi.waitFor(() => expect(env.screen.element.querySelector('[role=alertdialog]')).not.toBeNull());
+  expect(env.offline.progressFor(book.id)).toEqual(local);
+  const turn = vi.spyOn(env.screen as unknown as { turnPage(direction: string): Promise<void> }, 'turnPage');
+  env.screen.element.querySelector('[role=alertdialog]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'PageDown', bubbles: true }));
+  expect(turn).not.toHaveBeenCalled(); await click(env.screen, '继续当前阅读');
+  await vi.waitFor(() => expect(env.offline.progressFor(book.id)!.updatedAt).toBeGreaterThan(remote.updatedAt));
+  expect(body(env.screen)?.textContent).toContain('resource:r1:b');
+  expect(env.offline.progressFor(book.id)!.locator).toContain('chapter:b');
+});
+
+it('opens an added remote chapter only after accepting the latest position', async () => {
+  const env = await setup(), cache = await cacheNovel(env); serve(env.transport, content(['a', 'b', 'c'], 'r2'));
+  const local = { bookId: book.id, locator: 'r1:0.0000:chapter:a', percentage: 0, chapterTitle: '章节 a', device: 'here', updatedAt: 10 };
+  const remote = { ...local, locator: 'r1:0.0000:chapter:c', percentage: 0.7, chapterTitle: '章节 c', updatedAt: 20 };
+  await env.offline.setProgress(local); vi.spyOn(env.api, 'getProgress').mockResolvedValue(remote);
+  await env.screen.open(book);
+  await vi.waitFor(() => expect(env.screen.element.querySelector('[role=alertdialog]')).not.toBeNull());
+  expect(body(env.screen)?.textContent).toContain('resource:r1:a');
+  await vi.waitFor(async () => expect((await cache.manifest(book.id))?.content?.revision).toBe('r2'));
+  await click(env.screen, '跳到最新位置');
+  await vi.waitFor(() => expect(body(env.screen)?.textContent).toContain('resource:r2:c'));
+  expect(env.offline.progressFor(book.id)!.locator).toContain('chapter:c');
+  expect(env.screen.element.querySelector('[role=alertdialog]')).toBeNull();
+});
+
+it('cancels validation and discards late metadata after closing and changing accounts', async () => {
+  const env = await setup(), cache = await cacheNovel(env); serve(env.transport, content(['a', 'b']));
+  let finish!: (value: Manifest) => void;
+  vi.spyOn(env.api, 'manifest').mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  await env.screen.open(book); await vi.waitFor(() => expect(finish).toBeDefined());
+  const signal = vi.mocked(env.api.manifest).mock.calls[0]![1]!.signal!;
+  env.screen.dispose(); screens.splice(screens.indexOf(env.screen), 1);
+  await env.offline.setScope('another-account'); finish(manifest(content(['a'], 'r2')));
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(signal.aborted).toBe(true);
+  expect((await cache.manifest(book.id))?.content?.revision).toBe('r1');
+  expect(env.offline.progressFor(book.id)).toBeUndefined();
+});
+
+it('removes cached text after explicit background denial of book access', async () => {
+  const env = await setup(); await cacheNovel(env); serve(env.transport, content(['a', 'b']));
+  let deny!: (error: Error) => void;
+  vi.spyOn(env.api, 'manifest').mockImplementation(() => new Promise((_resolve, reject) => { deny = reject; }));
+  await env.screen.open(book); expect(body(env.screen)?.textContent).toContain('resource:r1:a');
+  await vi.waitFor(() => expect(deny).toBeDefined()); deny(new ApiError('forbidden', 'book permission revoked'));
+  await vi.waitFor(() => expect(env.screen.element.querySelector('book-content')).toBeNull());
+  expect(env.screen.element.dataset.chrome).toBe('visible');
 });
