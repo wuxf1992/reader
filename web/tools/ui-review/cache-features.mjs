@@ -47,7 +47,9 @@ try {
         await page.locator('.app-shell').waitFor();
         await page.evaluate(id => { location.hash = '#/book/' + id; }, BOOK_ID);
         await page.waitForFunction(() => document.querySelector('book-content')?.shadowRoot?.textContent?.includes('预缓存测试正文'));
-        if (await page.locator('.reader-screen').getAttribute('data-chrome') === 'hidden') await page.locator('.stage').click({ position: { x: 195, y: 350 } });
+        if (await page.locator('.reader-screen').getAttribute('data-chrome') === 'hidden') {
+          const box = await page.locator('book-content').boundingBox(); await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+        }
         await page.getByRole('button', { name: '工具', exact: true }).click();
         await page.getByRole('button', { name: '离线缓存', exact: true }).click();
         const dialog = page.getByRole('dialog', { name: '阅读工具' });
@@ -80,7 +82,9 @@ try {
         assert.equal(await count.isDisabled(), true);
         await page.reload();
         await page.waitForFunction(() => document.querySelector('book-content')?.shadowRoot?.textContent?.includes('预缓存测试正文'));
-        if (await page.locator('.reader-screen').getAttribute('data-chrome') === 'hidden') await page.locator('.stage').click({ position: { x: 195, y: 350 } });
+        if (await page.locator('.reader-screen').getAttribute('data-chrome') === 'hidden') {
+          const box = await page.locator('book-content').boundingBox(); await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+        }
         await page.getByRole('button', { name: '工具', exact: true }).click();
         await page.getByRole('button', { name: '离线缓存', exact: true }).click();
         assert.equal(await toggle.isChecked(), false); assert.equal(await count.inputValue(), '5');
