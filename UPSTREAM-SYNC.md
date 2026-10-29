@@ -149,6 +149,19 @@ git rev-list --left-right --count custom...upstream/main
 7. 线上回滚使用对应发布备份，源码共享后的撤销使用新提交（必要时 `git revert -m 1 <mergeSHA>`），不重写远端历史，不覆盖当前账号、书架或进度。
 8. 整合记录和本地证据保存后，可移除干净 worktree 和已合入的临时分支。回退标签按实际保留策略处理，不在例行同步时批量删备份。
 
+## 质量优化与发布：2026-10-29
+
+- 已按“高内聚、低耦合、简单、健壮”复查 custom `0e5dbeb` 相对主线 `8ec588b` 的核心定制。问题、来源和处理依据见 [质量复查](docs/custom-quality-20261029.md)，未把过往已修复问题重复列为待办。
+- 修复阅读链接迟到响应写入已切换账号的离线缓存；书源后台刷新保留编辑草稿；删除失败保留确认与重试，忙碌时阻止重复确认；暂停/设默认失败提示并可重试。新增 5 个用户行为回归，修复前均复现失败（包括未处理 Promise），修复后相关 40 项通过。
+- 将纯结果合并移到已有 source-results，两页面共享使用；来源/类型读取统一使用 sourceQueries；删除无调用的旧详情 Sheet 及无消费者的目录状态/回调。运行源码净减 22 行，新增依赖 0，未引入新的架构层。
+- 发布源码 `76e0b09abe4ed68bee06c0056c09bab4274d168a`，标签 `custom-release-quality-20261029`；上线前 custom 为 `0e5dbeb`，回退标签 `custom-before-quality-20261029`。后续本记录仅变更文档。main 未动，仍是纯上游 `8ec588b`。
+- 最终前端类型检查及生产构建通过；完整 133 文件、1270 项 Vitest 和 29 项 Node 测试通过。使用 Node 22.23.1 和原锁定依赖，未运行 Node 24/远端 CI。
+- 11 套实际浏览器验收全部通过：host-source-flow、source-discovery、host-extension-page、book-cover-cache、novel-cache-open、reader-touch、reader-text-fidelity、offline-sync、react-app、pwa-smoke、pwa-startup。真实本地 HTTP/SQLite/stdio 插件安装配置、目录/换源、手机/桌面 Chromium/WebKit 缓存/翻页/正文实体、离线提示/恢复及 PWA 进程重启均通过；整站 40 张截图、页面错误/溢出检查通过，人工复核手机配置和桌面搜书截图。
+- Android 桥接 shell 检查通过；iPhone 真机和完整 APK 未测。此次未重跑未变更服务端的全套测试（上次发布 483 通过、7 缺媒体输入跳过），也未逐行审查全部影音/原生实现。主题/系统栏运行源码未变，未重复运行上轮已通过的专门矩阵。
+- 北京时间 2026-10-29 20:59:12 完整发布前端 57 文件，保留旧哈希资源。入口 `assets/client-W2BSit1K.js`，样式 `assets/index-qIPFf6_R.css`；全部文件 SHA-256 与 HTTP origin 一致，HTML/SW/入口/CSS/manifest 与本机 HTTPS `/reader/` 一致，健康状态 ok。本机 HTTPS 采用回环解析且未校验证书，不代表公网 TLS/CDN 测试。
+- 完整回退备份：`/opt/reader/backups/web-custom-quality-20261029-125912/web`；并发变更/构建摘要保护及失败自动回滚均启用，本次未触发回滚。服务端、Android 源码、容器、正式账号/书架/进度和插件均未变，reader-novel-web 仍为 1.6.4。
+- 源码、回退和发布标签保存到个人 `wuxf1992/reader`，upstream 继续禁止推送。证据、构建、日志/截图、Git bundle 与部署回执位于工作区外 `../reader-assessment-20261029/quality-optimization/`。
+
 ## 同步与发布记录：2026-10-29（上游 8ec588b）
 
 - 状态：已完成合并和上线；北京时间 2026-10-29 18:31:35 发布至 https://wuxf.top/reader/ 。
