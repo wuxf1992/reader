@@ -90,7 +90,9 @@ try {
       const start = Date.now();
       await page.goto(origin + '/#/shelf', { waitUntil: 'domcontentloaded' });
       await page.locator('.app-shell').waitFor({ timeout: 5000 });
-      assert(Date.now() - start < 5000, 'server verification must not block startup indefinitely');
+      const startupMs = Date.now() - start;
+      assert(startupMs < 1500, `cached shell must render before the verification timeout, took ${startupMs}ms`);
+      console.log(`PASS ${engine}: cached shell ${startupMs}ms while login verification hangs`);
       assert.equal(await page.locator('#app-startup').count(), 0);
       assert.equal(await page.evaluate(() => window.readerApp.api.currentSession()?.user.id), 'u1');
       assert.equal(await page.evaluate(() => !!window.readerApp && document.querySelector('.app-shell') !== null), true);

@@ -14,6 +14,7 @@ import { useAuthStore } from '../shared/stores/auth.store.ts';
 import { useSettingsStore } from '../shared/stores/settings.store.ts';
 import { useSyncStore } from '../shared/stores/sync.store.ts';
 import { PlaybackService } from '../features/media/services/PlaybackService.ts';
+import { withOfflineTimeout } from '../core/offline-timeout.ts';
 
 export function validServerUrl(value?: string): string {
   if (!value?.trim()) return '';
@@ -61,31 +62,6 @@ export async function createAppRuntime(defaultServerUrl = '') {
   useAuthStore.getState().setSession(restored);
   if (restored) {
     await offline.setScope(publicationScope(api.baseUrl, restored.user.id), { claimLegacy: true });
-    if (await platform.connectivity() !== 'offline') {
-      const controller = new AbortController();
-      let timeout: ReturnType<typeof setTimeout> | undefined;
-      try {
-        // Wi-Fi can report online with no internet; boot must still reach local books.
-        const user = await Promise.race([
-          api.me({ signal: controller.signal }),
-          new Promise<never>((_, reject) => {
-            timeout = setTimeout(() => {
-              reject(new ApiError('offline', '登录验证超时，使用本地缓存'));
-              controller.abort();
-            }, 3000);
-          }),
-        ]);
-        useAuthStore.getState().verify(user);
-      } catch (error) {
-        if (!(error instanceof ApiError) || (!error.isConnectivity && error.kind !== 'server')) {
-          await sessions.clear();
-          useAuthStore.getState().setSession(null);
-        }
-      } finally {
-        clearTimeout(timeout);
-      }
-    }
-    if (useAuthStore.getState().session) sync.start();
   }
   let currentBook: Book | null = null;
   let readerFlush: (() => Promise<void>) | null = null;
@@ -121,7 +97,12 @@ export async function createAppRuntime(defaultServerUrl = '') {
       await Promise.allSettled([player.flush(), (async () => { await readerFlush?.(); await offline.flush(); await sync.flush(); })()]);
     },
     connect() {
+      const validation = new AbortController();
+      const session = api.currentSession(), server = api.baseUrl;
+      const current = () => !validation.signal.aborted && api.baseUrl === server
+        && api.currentSession()?.user.id === session?.user.id && useAuthStore.getState().session?.user.id === session?.user.id;
       const stopSession = api.onSessionChange(session => {
+        if (!session || session.user.id !== useAuthStore.getState().session?.user.id) validation.abort();
         // Publish a new account only after authenticated() selects its offline scope.
         if (!session || session.user.id === useAuthStore.getState().session?.user.id) useAuthStore.getState().setSession(session);
         queryClient.clear();
@@ -129,7 +110,22 @@ export async function createAppRuntime(defaultServerUrl = '') {
       });
       const stopSync = sync.onStatus(useSyncStore.getState().update);
       useSyncStore.getState().update(sync.status());
-      return () => { stopSession(); stopSync(); };
+      if (session) {
+        sync.start();
+        // Render the cached account before verifying it; listeners are attached first.
+        if (!useAuthStore.getState().verifiedUser) void (async () => {
+          try {
+            if (await platform.connectivity() === 'offline' || !current()) return;
+            const user = await withOfflineTimeout(api.me({ signal: validation.signal }), true);
+            if (!current()) return;
+            if (user?.id !== session.user.id) { await api.discardSession(); return; }
+            useAuthStore.getState().verify(user);
+          } catch (error) {
+            if (current() && (!(error instanceof ApiError) || !['offline', 'server', 'aborted'].includes(error.kind))) await api.discardSession();
+          } finally { validation.abort(); }
+        })().catch(() => undefined);
+      }
+      return () => { validation.abort(); stopSession(); stopSync(); sync.stop(); };
     },
   };
 }

@@ -189,6 +189,9 @@ export class ReaderApi {
     return () => this.listeners.delete(listener);
   }
 
+  /** Drop unusable local credentials without waiting for a logout request. */
+  discardSession(): Promise<void> { return this.setSession(null); }
+
   private async setSession(session: Session | null, rotation = false): Promise<void> {
     if (!rotation) {
       for (const stream of this.streams) stream.abort();
@@ -201,9 +204,11 @@ export class ReaderApi {
     const write = this.sessionWrites.catch(() => undefined).then(() =>
       session ? this.sessions.save(session) : this.sessions.clear());
     this.sessionWrites = write;
-    await write;
-    if (generation !== this.sessionGeneration) return;
-    for (const listener of this.listeners) listener(session);
+    try { await write; }
+    finally {
+      // Revocation must reach the UI even if credential storage is unavailable.
+      if (generation === this.sessionGeneration) for (const listener of this.listeners) listener(session);
+    }
   }
 
   async signOut(): Promise<void> {
@@ -215,7 +220,7 @@ export class ReaderApi {
       await this.call('/api/v1/auth/logout', 'POST', { refreshToken }).catch(() => undefined);
     }
     if (generation !== this.sessionGeneration) return;
-    await this.setSession(null);
+    await this.discardSession();
   }
 
   // ---- auth ----
