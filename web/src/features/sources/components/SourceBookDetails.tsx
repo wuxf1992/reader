@@ -1,7 +1,8 @@
 import { Button, Callout, Segmented } from '../../../ui/toolkit.tsx';
 import { Sheet } from '../../../ui/sheet.tsx';
 import { ChevronRight } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useCover } from '../../../ui/use-cover.ts';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { sourceChapterCount } from '../../../ui/source-results.ts';
@@ -15,42 +16,32 @@ export function SourceBookDetails({ entry, sourceId, sourceName, inShelf, canPre
   const location = useLocation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [cover, setCover] = useState<string | null>(null);
-  const coverRequest = useRef<AbortController | null>(null);
+  const [failedCover, setFailedCover] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [descending, setDescending] = useState(true);
   const directoryOpen = location.state?.sourceDirectory === sourceId + ':' + entry.ref;
+  const bookCover = entry.coverUrl?.startsWith('/api/v1/books/');
+  const coverPath = entry.coverUrl && entry.shelfBookId !== undefined ? bookCover ? entry.coverUrl
+    : `/api/v1/sources/${encodeURIComponent(sourceId)}/cover?ref=${encodeURIComponent(entry.ref)}` : null;
+  const userId = api.currentSession()?.user.id;
+  const cover = useCover(api, coverPath, bookCover || !directoryOpen);
   useEffect(() => {
     onDirectoryOpenChange(directoryOpen);
     if (!directoryOpen) void queryClient.cancelQueries({ queryKey: ['source-chapters', api.baseUrl, sourceId, entry.ref], exact: true });
+    if (directoryOpen && !bookCover && coverPath) void queryClient.cancelQueries({ queryKey: ['book-cover', api.baseUrl, userId, coverPath], exact: true });
     return () => onDirectoryOpenChange(false);
-  }, [directoryOpen, onDirectoryOpenChange, queryClient, api.baseUrl, sourceId, entry.ref]);
+  }, [directoryOpen, onDirectoryOpenChange, queryClient, api.baseUrl, sourceId, entry.ref, userId, bookCover, coverPath]);
   const directory = useQuery({ queryKey: ['source-chapters', api.baseUrl, sourceId, entry.ref], queryFn: ({ signal }) => api.sourceChapters(sourceId, entry.ref, { signal }), enabled: canPreview && directoryOpen, staleTime: 60_000, retry: false, refetchOnWindowFocus: false });
   useEffect(() => { if (directory.data) onChapterCount(entry.ref, directory.data.length); }, [directory.data, entry.ref, onChapterCount]);
   const count = directory.data?.length ?? sourceChapterCount(entry);
   const chapters = descending ? directory.data?.slice().reverse() : directory.data;
 
-  useEffect(() => {
-    setCover(null);
-    if (!entry.coverUrl || entry.shelfBookId === undefined) return;
-    const controller = new AbortController();
-    coverRequest.current = controller;
-    let objectUrl: string | undefined;
-    const path = entry.coverUrl.startsWith('/api/v1/books/') ? entry.coverUrl
-      : `/api/v1/sources/${encodeURIComponent(sourceId)}/cover?ref=${encodeURIComponent(entry.ref)}`;
-    void api.coverBytes(path, { signal: controller.signal }).then(bytes => {
-      if (controller.signal.aborted) return;
-      objectUrl = URL.createObjectURL(new Blob([bytes as BlobPart]));
-      setCover(objectUrl);
-    }).catch(() => {});
-    return () => { controller.abort(); coverRequest.current = null; if (objectUrl) URL.revokeObjectURL(objectUrl); };
-  }, [api, sourceId, entry.ref, entry.coverUrl, entry.shelfBookId]);
   const description = entry.description?.trim() || '暂无简介';
   const long = description.length > 160;
   return <article className="book-detail source-book-detail">
     <div className="source-book-detail-heading">
       <div className="source-book-detail-cover">
-        {cover ? <img src={cover} alt={`${entry.title}封面`} onError={() => setCover(null)} /> : <span>暂无封面</span>}
+        {cover && cover !== failedCover ? <img src={cover} alt={`${entry.title}封面`} onError={() => setFailedCover(cover)} /> : <span>暂无封面</span>}
       </div>
       <div className="source-book-detail-title">
         <h3>{entry.title}</h3>
@@ -59,7 +50,7 @@ export function SourceBookDetails({ entry, sourceId, sourceName, inShelf, canPre
       </div>
     </div>
     <dl><dt>书源</dt><dd>{entry.sourceName || sourceName || '暂无信息'}</dd><dt>最新章节</dt><dd>{entry.latestChapter || '暂无信息'}</dd></dl>
-    {canPreview && <button type="button" className="source-directory-trigger" aria-label="查看目录" aria-haspopup="dialog" onClick={() => { coverRequest.current?.abort(); navigate({ pathname: location.pathname, search: location.search, hash: location.hash }, { state: { ...location.state, sourceDirectory: sourceId + ':' + entry.ref }, preventScrollReset: true }); }}><strong>章节目录</strong><span>{count === undefined ? '章数待获取' : `共 ${count} 章`}<ChevronRight size={18} aria-hidden="true" /></span></button>}
+    {canPreview && <button type="button" className="source-directory-trigger" aria-label="查看目录" aria-haspopup="dialog" onClick={() => { navigate({ pathname: location.pathname, search: location.search, hash: location.hash }, { state: { ...location.state, sourceDirectory: sourceId + ':' + entry.ref }, preventScrollReset: true }); }}><strong>章节目录</strong><span>{count === undefined ? '章数待获取' : `共 ${count} 章`}<ChevronRight size={18} aria-hidden="true" /></span></button>}
     {directoryOpen && <Sheet onClose={() => navigate(-1)} title="章节目录" className="source-directory-modal" size="wide">
       <section className="source-book-directory" aria-label={entry.title + '章节目录'}>
         <div className="source-directory-heading"><div><h3>{entry.title}</h3><p>{count === undefined ? '章数待获取' : `共 ${count} 章`}</p></div><Segmented label="章节排序" value={descending ? 'desc' : 'asc'} onChange={value => setDescending(value === 'desc')} options={[{ value: 'desc', label: '倒序' }, { value: 'asc', label: '正序' }]} /></div>

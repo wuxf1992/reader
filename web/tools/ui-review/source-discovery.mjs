@@ -16,6 +16,20 @@ try {
       for (const width of [390, 1280]) {
         const page = await browser.newPage({ viewport: { width, height: 844 }, serviceWorkers: 'block' });
         const errors = []; let catalogs = 0;
+        const coverUrl = '/api/v1/books/already-added/cover';
+        const image = Buffer.from(await page.evaluate(() => {
+          const canvas = document.createElement('canvas'); canvas.width = canvas.height = 2;
+          const context = canvas.getContext('2d'); context.fillStyle = 'red'; context.fillRect(0, 0, 2, 2);
+          return canvas.toDataURL('image/png').split(',')[1];
+        }), 'base64');
+        let holdCover = false, coverResponses = 0, releaseCover;
+        const validationGate = new Promise(resolve => { releaseCover = resolve; });
+        await page.route('**/api/v1/books/already-added/cover', async route => {
+          if (holdCover) await validationGate;
+          coverResponses++;
+          if (holdCover) assert.equal(route.request().headers()['if-none-match'], '"detail-cover"');
+          return route.fulfill({ status: 200, contentType: 'image/png', headers: { etag: '"detail-cover"' }, body: image });
+        });
         page.on('pageerror', error => errors.push(error.message));
         await page.route('https://wuxf.top/**', route => route.abort());
         await page.route('**/api/v1/sources', route => route.fulfill({ json: { sources: [{ id: 'demo', name: '网站与书源', enabled: true, isDefault: true, sourceType: 'novel', descriptor }] } }));
@@ -24,7 +38,7 @@ try {
           catalogs++;
           return route.fulfill({ json: { title: '书海 / 发现', items: [], navigation: Array.from({ length: 200 }, (_, index) => ({ title: '示例书源 ' + (index + 1), ref: 'explore:' + index })) } });
         });
-        const entry = { ref: 'detail-book', title: '目录测试书籍', authors: ['测试作者'], shelfBookId: 'already-added', description: '简介'.repeat(120), options: [{ id: 'read', label: '加入书架' }] };
+        const entry = { ref: 'detail-book', title: '目录测试书籍', authors: ['测试作者'], shelfBookId: 'already-added', coverUrl, description: '简介'.repeat(120), options: [{ id: 'read', label: '加入书架' }] };
         let directoryRequests = 0;
         await page.route('**/api/v1/sources/demo/search', route => route.fulfill({ contentType: 'text/event-stream', body: 'event: results\ndata: ' + JSON.stringify({ items: [entry] }) + '\n\nevent: done\ndata: {}\n\n' }));
         await page.route('**/api/v1/sources/demo/entries?*', route => route.fulfill({ json: entry }));
@@ -39,6 +53,8 @@ try {
         await page.locator('input[type=password]').fill('password12');
         await page.locator('button[type=submit]').click();
         await page.locator('.app-shell').waitFor();
+        await page.evaluate(url => window.readerApp.api.coverBytes(url), coverUrl);
+        holdCover = true;
         await page.evaluate(async () => { await window.readerApp.updateSettings({ theme: 'parchment-day' }); location.hash = '#/sources'; });
         const toggle = page.getByRole('button', { name: '书海 / 发现', exact: true });
         await toggle.waitFor();
@@ -65,6 +81,13 @@ try {
         const detail = page.getByRole('dialog', { name: entry.title, exact: true });
         await detail.getByRole('button', { name: '已加入书架', exact: true }).waitFor();
         assert.equal(await detail.getByRole('button', { name: '已加入书架', exact: true }).isDisabled(), true);
+        await page.waitForFunction(() => document.querySelector('.source-book-detail-cover img')?.naturalWidth > 0, undefined, { timeout: 1000 });
+        assert.equal(coverResponses, 1, 'source detail shows durable cover bytes before validation returns');
+        const cachedCover = await detail.locator('.source-book-detail-cover img').getAttribute('src');
+        const coverValidated = page.waitForResponse(response => response.url().endsWith(coverUrl) && response.status() === 200);
+        releaseCover();
+        await coverValidated;
+        assert.equal(await detail.locator('.source-book-detail-cover img').getAttribute('src'), cachedCover, 'unchanged bytes keep the visible object URL');
         await detail.getByRole('button', { name: '展开完整简介', exact: true }).click();
         assert.equal(await detail.locator('.book-detail-description').textContent(), entry.description);
         assert.equal(directoryRequests, 0, 'directory loads on demand');
@@ -85,11 +108,13 @@ try {
         await directory.locator('li').last().waitFor();
         assert.equal(directoryRequests, 1, 'opening again uses the cached directory');
         await directory.getByRole('button', { name: '关闭', exact: true }).click();
+        await directory.waitFor({ state: 'detached' });
         await detail.getByRole('button', { name: '关闭', exact: true }).click();
+        await detail.waitFor({ state: 'detached' });
         assert.equal(await group.isVisible(), true);
         await group.getByRole('button', { name: '关闭', exact: true }).click();
         assert.deepEqual(errors, []);
-        reports.push({ browser: name, width, initialCatalogRequests: 0, explicitCatalogRequests: catalogs, navigationEntries: 200, passed: true });
+        reports.push({ browser: name, width, initialCatalogRequests: 0, explicitCatalogRequests: catalogs, navigationEntries: 200, detailCoverBeforeValidation: true, passed: true });
         await page.close();
       }
     } finally { await browser.close(); }

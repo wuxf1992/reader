@@ -35,6 +35,7 @@ async function mount(capabilities = ['search', 'browse', 'content.manifest']) {
   let subscription = { bookId: 'book/id', title: '测试小说', enabled: false, intervalMinutes: 60, newChapters: 0, nextCheckAt: 1000, lastSuccessAt: null };
   const api = {
     baseUrl: 'https://reader.test',
+    currentSession: () => ({ user: { id: 'fixture' } }),
     sources: vi.fn(async () => [{ id: 'demo', name: '网络书源', enabled: true, sourceType: 'novel', descriptor: { capabilities } }]),
     sourceTypes: vi.fn(async () => []),
     sourceCatalog: vi.fn(async (): Promise<SourcePage> => ({ items: entries })),
@@ -268,7 +269,7 @@ it('shows source details, expands the full description and reflects an existing 
   expect(detail.textContent).not.toContain('完整简介结尾');
   const image = detail.querySelector('img')!;
   expect(image.alt).toBe('测试小说封面'); expect(image.src).toBe('blob:detail-cover');
-  expect(api.coverBytes).toHaveBeenCalledWith('/api/v1/sources/demo/cover?ref=ref-0', expect.objectContaining({ signal: expect.any(AbortSignal) }));
+  expect(api.coverBytes).toHaveBeenCalledWith('/api/v1/sources/demo/cover?ref=ref-0', expect.objectContaining({ signal: expect.any(AbortSignal) }), expect.any(Function));
   await act(async () => detail.querySelector<HTMLButtonElement>('.sheet-close')!.click());
   await settle();
   expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:detail-cover');

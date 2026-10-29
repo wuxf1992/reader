@@ -3,12 +3,12 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ReaderApi } from '../api/client.ts';
 
 /** Share bytes across book views; object URLs belong to each mounted image. */
-export function useCover(api: ReaderApi, coverUrl: string | null | undefined): string | null {
+export function useCover(api: ReaderApi, coverUrl: string | null | undefined, enabled = true): string | null {
   const client = useQueryClient();
   const queryKey = ['book-cover', api.baseUrl, api.currentSession()?.user.id, coverUrl];
   const query = useQuery({
     queryKey,
-    enabled: !!coverUrl,
+    enabled: !!coverUrl && enabled,
     staleTime: 60_000,
     retry: false,
     refetchOnWindowFocus: false,

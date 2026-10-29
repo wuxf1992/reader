@@ -117,6 +117,8 @@ export interface NoteInput {
 /** One entry per HTTP call, so callers can drive their own retry policy. */
 export interface RequestOptions {
   signal?: AbortSignal;
+  /** The caller owns freshness (for example, a React Query refetch). */
+  fresh?: boolean;
   /** Skip the automatic refresh-and-retry, used by the refresh call itself. */
   noRetry?: boolean;
 }
@@ -802,7 +804,7 @@ export class ReaderApi {
     const key = readerQueryKey(this.currentBaseUrl, this.session?.user.id, this.queryScope, path);
     const result = await this.queryClient.fetchQuery<T>({
       queryKey: key,
-      ...(/^\/api\/v1\/books\?/.test(path) && new URLSearchParams(path.split('?')[1]).get('sort') === 'recent' ? { staleTime: 0 } : {}),
+      ...(options.fresh || /^\/api\/v1\/books\?/.test(path) && new URLSearchParams(path.split('?')[1]).get('sort') === 'recent' ? { staleTime: 0 } : {}),
       // Keep the caller's AbortSignal semantics intact. These class-based
       // screens already abort requests when disposed; letting fetchQuery own the
       // signal would turn normal auth/session transitions into CancelledError.

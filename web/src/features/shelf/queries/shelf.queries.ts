@@ -23,7 +23,7 @@ export function shelfQuery(runtime: AppRuntime, page = 1, sort: 'recent' | 'adde
         const response = await withOfflineTimeout(runtime.api.listBooks({
       scope: 'shelf', page, pageSize: 60, sort, order: sort === 'title' || sort === 'author' ? 'asc' : 'desc', search: search.trim(),
       ...(filters.status ? { status: filters.status } : {}), ...(filters.series ? { series: filters.series } : {}), ...(filters.tag ? { tag: filters.tag } : {}),
-        }, { signal }), runtime.offline.books().length > 0);
+        }, { signal, fresh: true }), runtime.offline.books().length > 0);
         // replaceBooks upserts by id, so filtered pages preserve other cached books.
         if (runtime.api.baseUrl === baseUrl && runtime.api.currentSession()?.user.id === userId) {
           await runtime.offline.replaceBooks(response.items).catch(() => undefined);

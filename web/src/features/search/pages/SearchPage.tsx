@@ -30,7 +30,7 @@ export function SearchPage() {
   const user = runtime.api.currentSession()?.user.id;
   const books = useQuery({
     queryKey: ['search', 'books', runtime.api.baseUrl, user, query],
-    queryFn: ({ signal }) => runtime.api.listBooks({ scope: 'library', search: query, page: 1, pageSize: BOOK_LIMIT }, { signal }),
+    queryFn: ({ signal }) => runtime.api.listBooks({ scope: 'library', search: query, page: 1, pageSize: BOOK_LIMIT }, { signal, fresh: true }),
     enabled: query.length > 0,
   });
   const media = useQuery({
