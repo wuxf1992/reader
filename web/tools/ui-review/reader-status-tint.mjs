@@ -58,18 +58,20 @@ try {
           await page.evaluate(async theme => { await window.readerApp.updateSettings({ theme, brightness: 1 }); }, theme);
           await page.evaluate(book => { location.hash = '#/book/' + book; }, BOOK_ID);
           await page.locator('book-content .book-flow p').first().waitFor();
+          if (await page.locator('.reader-screen').getAttribute('data-chrome') === 'hidden') await toggleChrome(page, width, 'visible', false);
           for (const brightness of [1, 0.75, 0.5]) {
             await page.getByRole('button', { name: '外观', exact: true }).click();
             await page.getByRole('slider', { name: '页面亮度', exact: true }).evaluate((slider, value) => {
               slider.value = String(value); slider.dispatchEvent(new Event('input', { bubbles: true }));
             }, brightness);
             await page.locator('.sheet').getByRole('button', { name: '关闭', exact: true }).click();
+            await page.locator('.sheet').waitFor({ state: 'detached' });
             for (const state of ['visible', 'hidden']) {
               if (state === 'hidden') await toggleChrome(page, width, state, theme === 'green' && brightness === 1);
               await page.waitForFunction(state => document.documentElement.dataset.readerChrome === state && document.querySelector('.reader-screen')?.dataset.chrome === state, state);
               const tint = await page.evaluate(({ brightness, state }) => {
                 const root = document.documentElement, style = getComputedStyle(root);
-                const source = style.getPropertyValue(state === 'visible' ? '--reader-surface' : '--reader-paper').trim();
+                const source = getComputedStyle(document.querySelector('.reader-screen')).getPropertyValue(state === 'visible' ? '--reader-surface' : '--reader-paper').trim();
                 const expected = '#' + source.slice(1).match(/../g).map(channel => Math.round(parseInt(channel, 16) * brightness).toString(16).padStart(2, '0')).join('');
                 const header = getComputedStyle(document.querySelector('.topbar'));
                 return { expected, actual: style.getPropertyValue('--reader-browser-paper').trim(),

@@ -18,6 +18,13 @@ try {
       for (const width of [390, 1280]) {
         const page = await browser.newPage({ viewport: { width, height: 844 }, serviceWorkers: 'block' });
         const errors = [], spoken = [], navigationAborts = [];
+        const toolbar = async label => {
+          if (await page.locator('.reader-screen').getAttribute('data-chrome') === 'hidden') {
+            const box = await page.locator('book-content').boundingBox();
+            await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+          }
+          await page.getByRole('button', { name: label, exact: true }).click();
+        };
         let reloading = false;
         page.on('pageerror', error => {
           if (reloading && error.message === `/${new URL(origin).host}/api/v1/sync due to access control checks.`) navigationAborts.push(error.message);
@@ -45,13 +52,14 @@ try {
         const flow = page.locator('book-content .book-flow');
         await flow.waitFor();
         await page.waitForFunction(value => document.querySelector('book-content')?.shadowRoot.querySelector('.book-flow')?.textContent.includes(value), simplified);
-        await page.getByRole('button', { name: '设置', exact: true }).click();
+        await toolbar('设置');
         await page.getByRole('group', { name: '翻页方式', exact: true }).getByRole('button', { name: '翻页', exact: true }).click();
         await page.locator('.sheet').getByRole('button', { name: '关闭', exact: true }).click();
+        await page.locator('.sheet').waitFor({ state: 'detached' });
         await page.locator('.progress-scrubber').evaluate(slider => { slider.value = '3'; slider.dispatchEvent(new Event('input', { bubbles: true })); });
-        await page.waitForFunction(() => document.querySelector('.progress-page')?.textContent.includes('第 3/'));
+        await page.waitForFunction(() => (/第\s*3\s*\//).test(document.querySelector('.progress-page')?.textContent ?? ''));
         const position = await page.locator('.progress-scrubber').inputValue();
-        await page.getByRole('button', { name: '外观', exact: true }).click();
+        await toolbar('外观');
         const choices = page.getByRole('group', { name: '繁简转换（全局）', exact: true });
         await choices.getByRole('button', { name: '繁体', exact: true }).click();
         await page.waitForFunction(value => document.querySelector('book-content')?.shadowRoot.querySelector('.book-flow')?.textContent.includes(value), traditional);
@@ -61,12 +69,14 @@ try {
         assert.ok(dimensions.scroll <= dimensions.width + 1, 'settings fit the screen');
         await page.screenshot({ path: `${output}/${name}-${width}-settings.png` });
         await page.locator('.sheet').getByRole('button', { name: '关闭', exact: true }).click();
-        await page.getByRole('button', { name: '朗读', exact: true }).click();
+        await page.locator('.sheet').waitFor({ state: 'detached' });
+        await toolbar('朗读');
         await page.getByRole('button', { name: '从当前位置朗读', exact: true }).click();
         await page.waitForFunction(() => document.querySelector('.tts-bar') !== null);
         assert.ok(spoken.some(text => text.includes('頭髮')), 'TTS uses the displayed text');
         await page.getByRole('button', { name: '停止朗读', exact: true }).click();
         if (await page.locator('.sheet').count()) await page.locator('.sheet').getByRole('button', { name: '关闭', exact: true }).click();
+        await page.locator('.sheet').waitFor({ state: 'detached' });
         await page.screenshot({ path: `${output}/${name}-${width}-traditional.png` });
         reloading = true;
         await page.reload();
@@ -75,20 +85,23 @@ try {
         assert.ok((await flow.textContent()).includes(traditional), 'reload restores the global preference');
         await page.evaluate(book => { location.hash = '#/book/' + book; }, ILLUSTRATED_ID);
         await page.locator('book-content .book-flow img').first().waitFor();
-        await page.getByRole('button', { name: '外观', exact: true }).click();
+        await toolbar('外观');
         assert.equal(await choices.getByRole('button', { name: '繁体', exact: true }).getAttribute('aria-pressed'), 'true', 'another book shares the preference');
         await choices.getByRole('button', { name: '简体', exact: true }).click();
         await choices.getByRole('button', { name: '原文', exact: true }).click();
         await page.locator('.sheet').getByRole('button', { name: '关闭', exact: true }).click();
+        await page.locator('.sheet').waitFor({ state: 'detached' });
         await page.evaluate(book => { location.hash = '#/book/' + book; }, BOOK_ID);
         await page.waitForFunction(value => document.querySelector('book-content')?.shadowRoot.querySelector('.book-flow')?.textContent.includes(value), simplified);
-        await page.getByRole('button', { name: '外观', exact: true }).click();
+        await toolbar('外观');
         await choices.getByRole('button', { name: '简体', exact: true }).click();
         await page.locator('.sheet').getByRole('button', { name: '关闭', exact: true }).click();
+        await page.locator('.sheet').waitFor({ state: 'detached' });
         await page.waitForFunction(value => !document.querySelector('book-content')?.shadowRoot.querySelector('.book-flow')?.textContent.includes(value), traditional);
-        await page.getByRole('button', { name: '外观', exact: true }).click();
+        await toolbar('外观');
         await choices.getByRole('button', { name: '原文', exact: true }).click();
         await page.locator('.sheet').getByRole('button', { name: '关闭', exact: true }).click();
+        await page.locator('.sheet').waitFor({ state: 'detached' });
         const original = await flow.textContent();
         assert.ok(original.includes(simplified) && original.includes(traditional), 'original recovers both source scripts');
         await page.evaluate(() => { location.hash = '#/shelf'; });
