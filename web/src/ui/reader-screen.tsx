@@ -2342,12 +2342,16 @@ export class ReaderScreen {
   // ---- status ----
 
   private bindSyncStatus(): void {
+    let lastFeedback = '';
     const update = (): void => {
       const status = this.options.sync.status();
       if (status.state === 'idle') this.paintNotes();
-      if (status.state === 'syncing') {
-        return;
-      } else if (status.state === 'offline') {
+      if (status.state === 'syncing') return;
+      // Background retries and new local progress must not reopen a dismissed notice.
+      const feedback = `${status.state}:${status.state === 'offline' ? '' : status.message}`;
+      if (feedback === lastFeedback) return;
+      lastFeedback = feedback;
+      if (status.state === 'offline') {
         this.setStatus('offline', status.pending ? '离线 · 进度待同步' : '离线 · 阅读进度存在本机');
       } else if (status.state === 'error') {
         this.setStatus('error', status.message || '同步失败');

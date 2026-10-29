@@ -689,6 +689,38 @@ describe('SyncEngine', () => {
     expect(engine.status().message).toContain('离线');
   });
 
+  it('stays offline quietly through polling and sends saved progress when connectivity returns', async () => {
+    vi.useFakeTimers();
+    const { api, transport, offline, engine, platform } = build();
+    try {
+      transport.json(SESSION);
+      await api.login('me', 'password12');
+      await offline.load();
+      const progress = { bookId: 'b1', locator: 'r1:0.5:c1', percentage: 0.5, chapterTitle: 'c1', device: platform.deviceLabel, updatedAt: 1000 };
+      await offline.setProgress(progress);
+      const states: string[] = [];
+      engine.onStatus(status => states.push(status.state));
+      platform.setOnline(false);
+      engine.start();
+      await vi.advanceTimersByTimeAsync(90_000);
+      expect(states).toEqual(['offline']);
+      expect(transport.countMatching(request => request.url.includes('/sync'))).toBe(0);
+      const restored = new OfflineStore(platform.kv);
+      await restored.load();
+      expect(restored.outbox().progress).toEqual([progress]);
+
+      transport.json({ accepted: 1, rejected: 0, serverTime: 5000, progress: [progress], notes: [] });
+      platform.setOnline(true);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(states).toEqual(['offline', 'syncing', 'idle']);
+      expect(isOutboxEmpty(offline.current)).toBe(true);
+      expect(JSON.parse(bodyText(transport.requests.at(-1))).progress).toEqual([progress]);
+    } finally {
+      engine.stop();
+      vi.useRealTimers();
+    }
+  });
+
   it('does not lose the outbox when the network fails mid-push', async () => {
     const { api, transport, offline, engine, platform } = build();
     transport.json(SESSION);

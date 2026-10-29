@@ -256,7 +256,6 @@ export class SyncEngine {
     }
     const run = this.captureRun();
     this.running = true;
-    this.setState('syncing');
     try {
       const connectivity = await this.platform.connectivity();
       this.assertCurrent(run);
@@ -265,6 +264,7 @@ export class SyncEngine {
         this.scheduleNext(IDLE_INTERVAL_MS);
         return;
       }
+      this.setState('syncing');
 
       // One round trip, not two.
       //
