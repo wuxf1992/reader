@@ -1,3 +1,4 @@
+import { OfflineDownloads } from '../src/core/offline-downloads.ts';
 // @vitest-environment jsdom
 import { noticeText } from './helpers/notices.ts';
 import { Blob as NodeBlob } from 'node:buffer';
@@ -82,7 +83,7 @@ async function setup(kv = new MemoryKv(), blobs = new MemoryBlobs(), userId = 'u
     schedule: vi.fn(),
   } as unknown as SyncEngine;
   const onSettingsChange = vi.fn();
-  const screen = new ReaderScreen({ api, offline, sync, platform, settings: { ...DEFAULT_APP_SETTINGS, autoCache: false, ...settings, ...(settings.theme && !settings.paper ? { paper: `local-${settings.theme}` as const, paperFollowsDark: false } : {}) },
+  const screen = new ReaderScreen({ api, offline, sync, platform, downloads: new OfflineDownloads(api, platform), settings: { ...DEFAULT_APP_SETTINGS, autoCache: false, ...settings, ...(settings.theme && !settings.paper ? { paper: `local-${settings.theme}` as const, paperFollowsDark: false } : {}) },
     onBack() {}, onSettingsChange, onSignedOut });
   screens.push(screen);
   document.body.append(screen.element);

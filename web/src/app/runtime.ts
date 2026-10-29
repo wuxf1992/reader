@@ -4,6 +4,7 @@ import type { Book, Session } from '../api/types.ts';
 import { createWebPlatform } from '../core/web-platform.ts';
 import { androidPageHost, androidSpeechBridge, createAndroidPlatform, detectAndroidBridge } from '../core/android-platform.ts';
 import { SyncEngine } from '../core/sync.ts';
+import { OfflineDownloads } from '../core/offline-downloads.ts';
 import { OfflineStore } from '../store/offline.ts';
 import { SettingsStore, type AppSettings } from '../store/settings.ts';
 import { publicationScope } from '../store/publications.ts';
@@ -55,6 +56,7 @@ export async function createAppRuntime(defaultServerUrl = '') {
   const settings = new SettingsStore(platform.kv);
   const offline = new OfflineStore(platform.kv);
   const sync = new SyncEngine(api, offline, platform);
+  const downloads = new OfflineDownloads(api, platform);
   const queryClient = createAppQueryClient();
   const loadedSettings = await settings.load();
   useSettingsStore.getState().replace(loadedSettings);
@@ -68,7 +70,7 @@ export async function createAppRuntime(defaultServerUrl = '') {
   let currentBook: Book | null = null;
   let readerFlush: (() => Promise<void>) | null = null;
   return {
-    api, mediaApi, player, playback, settings, offline, sync, queryClient, platform,
+    api, mediaApi, player, playback, settings, offline, sync, downloads, queryClient, platform,
     pageHost: bridge ? androidPageHost(bridge) : null,
     speechBridge: bridge ? androidSpeechBridge(bridge) : null,
     async authenticated() {
@@ -105,7 +107,7 @@ export async function createAppRuntime(defaultServerUrl = '') {
       const current = () => !validation.signal.aborted && api.baseUrl === server
         && api.currentSession()?.user.id === session?.user.id && useAuthStore.getState().session?.user.id === session?.user.id;
       const stopSession = api.onSessionChange(session => {
-        if (!session || session.user.id !== useAuthStore.getState().session?.user.id) validation.abort();
+        if (!session || session.user.id !== useAuthStore.getState().session?.user.id) { validation.abort(); void downloads.clear(); }
         // Publish a new account only after authenticated() selects its offline scope.
         if (!session || session.user.id === useAuthStore.getState().session?.user.id) useAuthStore.getState().setSession(session);
         queryClient.clear();
@@ -128,7 +130,7 @@ export async function createAppRuntime(defaultServerUrl = '') {
           } finally { validation.abort(); }
         })().catch(() => undefined);
       }
-      return () => { validation.abort(); stopSession(); stopSync(); sync.stop(); };
+      return () => { validation.abort(); stopSession(); stopSync(); sync.stop(); void downloads.clear(); };
     },
   };
 }

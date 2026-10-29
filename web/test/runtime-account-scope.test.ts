@@ -161,3 +161,18 @@ it('hides a revoked cached login even when persisted credentials cannot be remov
     expect(useAuthStore.getState().verifiedUser).toBeNull();
   } finally { disconnect(); vi.restoreAllMocks(); }
 });
+
+it.each(['same-account', 'different-account', 'logout'] as const)('keeps downloads scoped during runtime session changes: %s', async change => {
+  const transport = new FakeTransport(), platform = makePlatform(transport);
+  const session: Session = { user: { id: 'downloads-user', username: 'reader', displayName: 'reader', role: 'member', createdAt: 0 }, accessToken: 'access', refreshToken: 'refresh', accessTokenExpiresAt: 9e15, refreshTokenExpiresAt: 9e15 };
+  await platform.kv.set('reader.session.v1', JSON.stringify(session));
+  vi.mocked(createWebPlatform).mockResolvedValue(platform);
+  transport.respondWith(request => ({ status: 200, headers: {}, json: request.url.endsWith('/login') ? { ...session, accessToken: 'rotated', user: { ...session.user, id: change === 'different-account' ? 'other' : session.user.id } } : { user: session.user } }));
+  const runtime = await createAppRuntime('https://reader.test'), disconnect = runtime.connect();
+  const clear = vi.spyOn(runtime.downloads, 'clear');
+  try {
+    if (change === 'logout') await runtime.api.discardSession();
+    else await runtime.api.login('reader', 'password12');
+    expect(clear).toHaveBeenCalledTimes(change === 'same-account' ? 0 : 1);
+  } finally { disconnect(); useAuthStore.getState().setSession(null); }
+});

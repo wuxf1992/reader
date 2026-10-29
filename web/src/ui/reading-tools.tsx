@@ -1,12 +1,13 @@
 import type { ReadingOverrides } from './reading-overrides.ts';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ConfirmSheet, Sheet } from './sheet.tsx';
 import type { ReaderApi } from '../api/client.ts';
 import type { Manifest, Note } from '../api/types.ts';
 import type { OfflineStore } from '../store/offline.ts';
 import type { SyncEngine } from '../core/sync.ts';
 import { PublicationCache } from '../store/publications.ts';
-import { OfflineDownload, type DownloadState } from '../core/offline-download.ts';
+import type { OfflineDownloads } from '../core/offline-downloads.ts';
+import type { OfflineDownload, DownloadState } from '../core/offline-download.ts';
 import { decodeAnchor, encodeAnchor, findText, type SearchHit, type TextAnchor } from './text-anchor.ts';
 import { ApiError } from '../api/errors.ts';
 import type { AppSettings } from '../store/settings.ts';
@@ -28,8 +29,8 @@ export interface ReadingToolsProps {
   onNotes(): void; onClose(): void;
   autoCache: boolean; autoCacheChapters: number; prefetchMessage: string;
   onCacheSetting(patch: Partial<AppSettings>): void;
-  onDownloadRunning(running: boolean): void;
-  onClearCache(bookId: string): void;
+  downloads: OfflineDownloads;
+  onClearCache(bookId: string): Promise<void>;
   previewSpeech(): Promise<string>; stopPreview(): void;
 }
 
@@ -58,7 +59,7 @@ export function ReadingTools(props: ReadingToolsProps) {
   const [removeId, setRemoveId] = useState('');
   const [returnTo] = useState(props.returnLocator);
   const searchRun = useRef<AbortController | null>(null), alive = useRef(true);
-  const task = useMemo(() => new OfflineDownload(props.api, props.cache, props.manifest, state => { props.onDownloadRunning(state.status === 'running'); if (alive.current) setDownload(state); }), []);
+  const [task, setTask] = useState<OfflineDownload | null>(null);
   const bookId = props.manifest.book.id;
   const rangedDownload = ['chapters', 'txt'].includes(props.manifest.book.format) && !props.overrides.headingPrefix;
   const visibleNotes = notes.filter(note => noteFilter === 'all' || (noteFilter === 'bookmark' ? note.type === 'bookmark' : note.type !== 'bookmark'));
@@ -77,9 +78,23 @@ export function ReadingTools(props: ReadingToolsProps) {
     try { await work(); } catch (error) { if (alive.current) {setMessageError(true);setMessage(error instanceof Error ? error.message : '操作失败');} }
   }
   useEffect(() => {
-    void action(async () => { await task.load(); if (!alive.current) return; setDownloadReady(true); if (task.state.status === 'paused' || task.state.status === 'error') { setFrom(task.state.from); setTo(task.state.to); } await storage(); });
-    return () => { alive.current = false; searchRun.current?.abort(); if (task.state.status === 'running') void task.pause().catch(() => undefined); props.stopPreview(); };
+    alive.current = true;
+    let unsubscribe: (() => void) | undefined, active = true;
+    void action(async () => {
+      const task = await props.downloads.get(props.manifest);
+      if (!active) return;
+      setTask(task); setDownloadReady(true);
+      unsubscribe = task.onChange(state => {
+        if (!alive.current) return;
+        setDownload(state);
+        if (state.status !== 'running') void storage().catch(() => undefined);
+      });
+      if (['running', 'paused', 'error'].includes(task.state.status)) { setFrom(task.state.from); setTo(task.state.to); }
+      await storage();
+    });
+    return () => { active = false; alive.current = false; unsubscribe?.(); searchRun.current?.abort(); props.stopPreview(); };
   }, []);
+
   async function search() {
     searchRun.current?.abort(); const run = searchRun.current = new AbortController();
     setHits([]); setScanned(0); setSearching(true); setMessage('');setMessageError(false);
@@ -149,7 +164,7 @@ export function ReadingTools(props: ReadingToolsProps) {
       <div className="reading-tool-panel" id="reading-tool-panel">
       <FloatingNotice message={message} error={messageError} />
       {deleteId && <ConfirmSheet danger title="删除笔记" text="确定删除这条笔记或书签？" confirmText="确认删除" onCancel={()=>setDeleteId('')} onConfirm={()=>{const id=deleteId;setDeleteId('');void edit(async()=>{await props.offline.deleteNote(id);props.sync.schedule();setNotes(props.offline.notesFor(bookId));props.onNotes();});}} />}
-      {removeId && <ConfirmSheet danger title="清理缓存" text="只删除此设备的书籍缓存，保留原书、进度和笔记。" confirmText="确认清理" cancelText="保留缓存" onCancel={()=>setRemoveId('')} onConfirm={()=>{const id=removeId;setRemoveId('');void action(async()=>{props.onClearCache(id);await props.cache.removeBook(id);setDownload(null);await storage();});}} />}
+      {removeId && <ConfirmSheet danger title="清理缓存" text="只删除此设备的书籍缓存，保留原书、进度和笔记。" confirmText="确认清理" cancelText="保留缓存" onCancel={()=>setRemoveId('')} onConfirm={()=>{const id=removeId;setRemoveId('');void action(async()=>{await props.onClearCache(id);setDownload(null);await storage();});}} />}
       {tab === 'search' && <section aria-label="书内搜索">
         <h3>书内搜索</h3>
         <form className="reading-tool-search" onSubmit={event => { event.preventDefault(); if (query.trim()) void search(); }}><label>关键词<input placeholder="输入要查找的文字" value={query} maxLength={200} onInput={event => setQuery(event.currentTarget.value)} /></label><button className="button primary" disabled={searching || !query.trim()}>搜索全文</button></form>
@@ -186,9 +201,9 @@ export function ReadingTools(props: ReadingToolsProps) {
           <p>收起面板后继续预缓存。省流量模式或慢速网络下暂停。</p>
           <p role="status">{props.prefetchMessage}</p>
         </fieldset>}
-        <h3>手动下载</h3><p>关闭面板会暂停手动下载，已缓存内容保留。</p>
+        <h3>手动下载</h3><p>收起面板或返回书架后继续下载。锁屏、切换应用或关闭网页可能被系统中断，可回来后继续。</p>
         {rangedDownload && <div className="reading-tool-range"><label>起始章<input type="number" min={1} max={props.manifest.content?.total} value={from} onInput={e => setFrom(Number(e.currentTarget.value))} /></label><label>结束章<input type="number" min={from} max={props.manifest.content?.total} value={to} onInput={e => setTo(Number(e.currentTarget.value))} /></label></div>}
-        <div className="reading-tool-actions">{download?.status === 'running' ? <><button className="button" onClick={() => void action(() => task.pause())}>暂停</button><button className="button" onClick={() => void action(() => task.pause(true))}>取消任务</button></> : <button className="button primary" disabled={!downloadReady} onClick={() => void action(async () => { await task.start(rangedDownload ? from : 1, rangedDownload ? to : 1); await storage(); })}>下载 / 继续</button>}</div>
+        <div className="reading-tool-actions">{download?.status === 'running' ? <><button className="button" onClick={() => void action(() => task!.pause())}>暂停</button><button className="button" onClick={() => void action(() => task!.pause(true))}>取消任务</button></> : <button className="button primary" disabled={!downloadReady} onClick={() => void action(async () => { await task!.start(rangedDownload ? from : 1, rangedDownload ? to : 1); await storage(); })}>下载 / 继续</button>}</div>
         {download && <p role="status">{download.message} · {download.completed}/{download.total}</p>}
         <p>当前账号缓存占用 {(usage / 1024 / 1024).toFixed(1)} MiB</p>
         <details className="reading-tool-advanced"><summary>存储管理与配额</summary><div><label>设备账号配额（MiB）<input type="number" min={1} max={10240} value={quota} onInput={e => setQuota(Number(e.currentTarget.value))} /></label>

@@ -1,3 +1,4 @@
+import type { OfflineDownloads } from '../core/offline-downloads.ts';
 import { applyThemeTokens, migrateAppearance, readingThemeForPaper, selectTheme, selectedTheme, themeTokens, readThemePreference, resolveAppTheme, resolveReaderSurface, resolveReadingTheme, saveThemePreference, subscribeTheme, systemPrefersDark } from '../shared/theme/theme.ts';
 import { applyCorrections, emptyOverrides, type ReadingOverrides } from './reading-overrides.ts';
 import { loadTxt } from '../formats/txt.ts';
@@ -51,6 +52,7 @@ export interface ReaderScreenOptions {
   api: ReaderApi;
   offline: OfflineStore;
   sync: SyncEngine;
+  downloads: OfflineDownloads;
   platform: Platform;
   settings: AppSettings;
   /**
@@ -235,10 +237,11 @@ export class ReaderScreen {
   constructor(private readonly options: ReaderScreenOptions) {
     this.settings = { ...options.settings };
     migrateAppearance(this.themeScope(), this.settings);
+    const cacheScope = publicationScope(options.api.baseUrl || (typeof location !== 'undefined' ? location.origin : ''), options.api.currentSession()?.user.id ?? '');
     this.publicationCache = new PublicationCache(
       options.platform.kv,
       options.platform.blobs,
-      publicationScope(options.api.baseUrl || (typeof location !== 'undefined' ? location.origin : ''), options.api.currentSession()?.user.id ?? ''),
+      cacheScope,
     );
 
     // The stage is created here and never re-created: `ReaderView` attaches to it
@@ -262,6 +265,15 @@ export class ReaderScreen {
     this.ui = createRoot(this.element);
     this.renderChrome();
 
+    this.listeners.push(options.downloads.onChange(() => {
+      if (this.disposed || !this.book || publicationScope(options.api.baseUrl, options.api.currentSession()?.user.id ?? '') !== cacheScope) return;
+      const running = options.downloads.running(this.book.id);
+      if (running === this.manualDownloadRunning) return;
+      this.manualDownloadRunning = running;
+      this.stopPrefetch(); this.prefetchChapter = null;
+      if (running) { this.prefetchMessage = '手动下载期间暂停预缓存'; this.patch({}); }
+      else this.startPrefetch();
+    }));
     this.bindSyncStatus();
     this.listeners.push(options.platform.onConnectivityChange(state => {
       this.stopPrefetch(); this.prefetchChapter = null;
@@ -318,7 +330,7 @@ export class ReaderScreen {
             onConfirm={() => void this.resolveRemoteProgress(true)} onCancel={() => void this.resolveRemoteProgress(false)} />}{this.annotation && <AnnotationPopover key={this.annotation.note?.id ?? encodeAnchor(this.annotation.anchor)} target={this.annotation}
             save={(type, comment, color) => this.saveAnnotation(type, comment, color)} remove={() => this.removeAnnotation()}
             close={() => { this.annotation = null; this.view?.clearSelection(); this.patch({}); }} />}{this.toolsOpen && this.manifest ? <ReadingTools
-            api={this.options.api} cache={this.publicationCache} offline={this.options.offline}
+            api={this.options.api} cache={this.publicationCache} offline={this.options.offline} downloads={this.options.downloads}
             sync={this.options.sync} manifest={this.manifest} selection={this.toolsSelection}
             currentChapter={this.chrome.chapterIndex}
             locator={this.view?.position()?.locator ?? ''} returnLocator={this.toolsReturn}
@@ -329,17 +341,10 @@ export class ReaderScreen {
             previewHeadings={prefix => this.previewHeadings(prefix)}
             autoCache={this.settings.autoCache} autoCacheChapters={this.settings.autoCacheChapters} prefetchMessage={this.prefetchMessage}
             onCacheSetting={patch => void this.updateSetting(patch)}
-            onClearCache={id => {
-              if (id !== this.book?.id) return;
-              this.stopPrefetch();
-              this.prefetchMessage = '缓存已清理，切换章节后继续预缓存'; this.patch({});
-            }}
-            onDownloadRunning={running => {
-              if (running === this.manualDownloadRunning || this.disposed) return;
-              this.manualDownloadRunning = running;
-              this.stopPrefetch(); this.prefetchChapter = null;
-              if (running) { this.prefetchMessage = '手动下载期间暂停预缓存'; this.patch({}); }
-              else this.startPrefetch();
+            onClearCache={async id => {
+              if (id === this.book?.id) { this.stopPrefetch(); this.prefetchReady = false; }
+              await this.options.downloads.clearBook(id);
+              if (id === this.book?.id) { this.prefetchMessage = '缓存已清理，切换章节后继续预缓存'; this.patch({}); }
             }}
             onNotes={() => this.paintNotes()} onClose={() => { this.toolsOpen = false; this.patch({}); }}
             previewSpeech={() => this.previewSpeech()} stopPreview={() => this.stopPreview()} /> : null}</>}
@@ -417,6 +422,7 @@ export class ReaderScreen {
     const token = ++this.loadingToken;
     this.toolsOpen = false; this.annotation = null; this.toolsReturn = ''; this.toolsSelection = null; this.stopPreview();
     this.content = null; this.book = book;
+    this.manualDownloadRunning = this.options.downloads.running(book.id);
     this.patch({ title: book.title, author: book.author, description: book.description, bookInfoOpen: false, canRefresh: book.format === 'chapters', canSwitch: false, alternatives: null, refreshingChapter: false, sourceName: '', chapterUrl: '', toc: [] });
     this.setStatus('loading', '正在载入…');
     this.setChromeVisible(false);

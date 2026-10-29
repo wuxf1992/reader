@@ -25,6 +25,7 @@ export function ReaderPage() {
       api: runtime.api,
       offline: runtime.offline,
       sync: runtime.sync,
+      downloads: runtime.downloads,
       platform: runtime.platform,
       themeScope: runtime.mediaApi.preferenceScope(),
       settings: runtime.settings.current,

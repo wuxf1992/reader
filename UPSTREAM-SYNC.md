@@ -48,6 +48,7 @@ git merge-tree --write-tree custom "$reader_target"
 | 封面本地优先 | `ui/use-cover.ts` 共享入口，账号/服务隔离；持久缓存先显示、联网后台 ETag 验证；304 不闪，断网可用，重连更新，403 不保留旧图；组件释放 Blob URL |
 | 离线阅读与更新 | 离线登录、书架、缓存章节、恢复进度；网络挂起有时间预算；PWA 更新先保存本地进度，禁止清缓存来解决升级问题 |
 | 小说缓存开书与位置确认 | 目录及落点正文均已缓存时直接打开本机内容，后台校验不替换当前正文；服务端位置更新且不同须询问，继续当前阅读会保存本次选择；关闭书籍、换源、账号切换后丢弃迟到响应，明确拒绝访问时停止展示 |
+| 手动下载跨页继续 | AppRuntime 管理任务，面板只订阅；收起工具/回书架继续、重开附着同一任务；取消/清理无迟到写入，账号/服务隔离、同账号令牌更新保留；中断范围恢复且复用已缓存章节。详见 [后台下载契约](docs/reader-background-downloads.md) |
 | 首屏与共享入口 | 繁简选项不静态加载转换字典；恢复账号先显示页面、后台校验且撤销时退出；React 书籍列表刷新穿过 API 缓存；详情封面复用 useCover，远端目录请求优先。主线等价覆盖后再退掉对应补丁 |
 | 手机阅读 | 默认沉浸、中间显隐工具栏、正文操作继续阅读；对话框阻断背景操作；取消/双指/失焦不翻页；连点跨章有序、拖动不提前提交进度 |
 | 小说/TXT 与 EPUB 排版 | 小说逐行分页及短末页、EPUB 列分页、字体/视口变化保持位置；繁简转换、正文设置、高亮与朗读位置 |
@@ -121,6 +122,7 @@ sh android/scripts/check-shell.sh
 node web/tools/ui-review/reader-touch.mjs
 node web/tools/ui-review/book-cover-cache.mjs
 node web/tools/ui-review/novel-cache-open.mjs
+node web/tools/ui-review/manual-background-download.mjs
 node web/tools/pwa/smoke.mjs
 node web/tools/pwa/startup.mjs
 node web/tools/ui-review/react-app.mjs
