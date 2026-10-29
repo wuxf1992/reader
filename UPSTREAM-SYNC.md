@@ -7,7 +7,7 @@
 | 名称 | 用途 | 规则 |
 | --- | --- | --- |
 | `upstream` | 原作者仓库，只获取更新 | 本机设置了无效 push URL 防止误推；不修改原作者分支 |
-| `origin` | [wuxf1992/reader](https://github.com/wuxf1992/reader) | 已连接；仓库专用 SSH 部署公钥待用户添加后，推送 custom/main 和回退标签 |
+| `origin` | [wuxf1992/reader](https://github.com/wuxf1992/reader) | 已接入并核对远端；custom/main 和 5 个回退/发布标签已完整备份 |
 | `main` | 纯上游镜像，跟踪 `upstream/main` | 只做 fast-forward，不放个人修改 |
 | `custom` | 日常开发和验证后的定制版本 | 功能分别提交，长期采用 merge，不重写已共享历史 |
 | `sync/upstream-YYYYMMDD` | 一次同步的临时整合分支 | 独立 worktree 解决冲突、验证后 fast-forward 回 custom |
@@ -155,8 +155,8 @@ git rev-list --left-right --count custom...upstream/main
 - `origin` 读取地址为 `https://github.com/wuxf1992/reader.git`，推送地址为 `git@github.com:wuxf1992/reader.git`；原作者 `upstream` 的禁止推送设置保持不变。
 - 已读取 origin/main（`8ec588b7742ad77f8143f690ea392775c7c9c776`），纯主线 `main` 从 `6c274a7` 快进到该点。custom 暂未合并本次新增的 12 个主线提交；本次仅接入个人备份，不改变线上源码。
 - HTTPS 推送预检因缺少 Git 认证失败；连接器权限不能自动提供给本机命令行。已生成本仓库专用 SSH 密钥，私钥在仓库之外的受限目录，未纳入 Git；仓库本地 core.sshCommand 只选用该身份，并使用已核对官方指纹的 GitHub 主机公钥。
-- 待用户在仓库 Settings → Deploy keys 添加提供的公钥并勾选 Allow write access。添加后执行普通 push，不重写历史；先核对 main 远端，再推送 custom 与非 v* 的 custom 回退/发布标签。完整推送并核对 SHA 后，才能将 custom 设置为跟踪 origin/custom，并标记远端备份完成。
-- 当前仍只有本机 Git/bundle 的定制完整历史备份，尚未将 custom 上传到 GitHub；不把已连接 origin 视为远端备份成功。
+- 用户已添加仓库专用部署公钥并允许写入，SSH 推送验证通过。北京时间 17:05 使用原子 push 上传 custom 完整历史及 5 个 custom 回退/发布标签；main 与 origin/main 保持一致，未强制覆盖远端。全部 7 个引用 SHA 已逐一核对；custom 已跟踪 origin/custom。
+- 定制代码及原始提交历史已保存到 GitHub，不再只有本机备份；维护记录更新也推送至 origin/custom。今后功能提交留在 custom，验证后普通推送；main 保持纯上游，发布标签只指向实际部署源码。远端引用核验回执保存于 `../reader-assessment-20261029/origin-backup/`。
 
 ## 同步记录：2026-10-28
 
