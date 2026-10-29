@@ -5,7 +5,7 @@ import { ApiError } from '../api/errors.ts';
 import { dismissNotice, notify } from './notifications.ts';
 import { renditionRef } from './rendition.ts';
 import type { ReaderApi } from '../api/client.ts';
-import type { Book, BookContent, Manifest, Note } from '../api/types.ts';
+import type { Book, BookContent, Manifest, Note, Progress } from '../api/types.ts';
 import { loadBook, isImagePath, extensionOf } from '../formats/index.ts';
 import type { OfflineStore } from '../store/offline.ts';
 import type { SyncEngine, SyncStatus } from '../core/sync.ts';
@@ -30,6 +30,7 @@ import {
 import type { NativeSpeechBridge } from '../android-bridge.ts';
 import { createRoot, type Root } from 'react-dom/client';
 import { flushSync } from 'react-dom';
+import { ConfirmSheet } from './sheet.tsx';
 import { ReaderChrome, type ChromeState, type ChromeTocEntry } from './reader-chrome.tsx';
 import { OFFLINE_FILE, PublicationCache, publicationScope } from '../store/publications.ts';
 import { withOfflineTimeout, type OfflineReadBudget } from '../core/offline-timeout.ts';
@@ -228,6 +229,8 @@ export class ReaderScreen {
   private chapterRefresh: AbortController | null = null;
   private alternativeEpoch = 0;
   private qualityRun: AbortController | null = null;
+  private cacheRefresh: AbortController | null = null;
+  private remoteProgress: Progress | null = null;
 
   constructor(private readonly options: ReaderScreenOptions) {
     this.settings = { ...options.settings };
@@ -326,7 +329,10 @@ export class ReaderScreen {
     document.documentElement.dataset.readerChrome = this.chromeVisible ? 'visible' : 'hidden';
     flushSync(() => this.ui.render(
 <ReaderChrome
-          tools={<>{this.annotation && <AnnotationPopover key={this.annotation.note?.id ?? encodeAnchor(this.annotation.anchor)} target={this.annotation}
+          tools={<>{this.remoteProgress && <ConfirmSheet title="发现更新的阅读位置"
+            text={`本机：${this.chrome.chapterLabel || '当前章节'}（${Math.round(this.chrome.progress * 1000) / 10}%）。最新同步：${this.remoteProgress.chapterTitle || '已保存位置'}（${Math.round(this.remoteProgress.percentage * 1000) / 10}%）。是否跳到最新位置？`}
+            confirmText="跳到最新位置" cancelText="继续当前阅读"
+            onConfirm={() => void this.resolveRemoteProgress(true)} onCancel={() => void this.resolveRemoteProgress(false)} />}{this.annotation && <AnnotationPopover key={this.annotation.note?.id ?? encodeAnchor(this.annotation.anchor)} target={this.annotation}
             save={(type, comment, color) => this.saveAnnotation(type, comment, color)} remove={() => this.removeAnnotation()}
             close={() => { this.annotation = null; this.view?.clearSelection(); this.patch({}); }} />}{this.toolsOpen && this.manifest ? <ReadingTools
             api={this.options.api} cache={this.publicationCache} offline={this.options.offline}
@@ -426,6 +432,7 @@ export class ReaderScreen {
   /** Opens a book: fetch bytes, parse, restore position, start reporting. */
   async open(book: Book): Promise<void> {
     const budget = { timedOut: false };
+    this.cacheRefresh?.abort(); this.remoteProgress = null;
     this.positionReady = false;
     this.stopPrefetch(); this.prefetchChapter = null; this.prefetchReady = false; this.prefetchMessage = '';
     this.closeAlternatives(); this.chapterRefresh?.abort(); this.chapterRefresh = null;
@@ -437,12 +444,14 @@ export class ReaderScreen {
     this.setChromeVisible(false);
 
     try {
-      this.manifest = await this.loadManifest(book, budget);
+      const cached = await this.cachedNovelManifest(book);
+      if (token !== this.loadingToken) return;
+      this.manifest = cached ?? await this.loadManifest(book, budget);
       if (token !== this.loadingToken) return;
       const storedOverrides = await this.publicationCache.overrides(book.id) ?? emptyOverrides();
       if (token !== this.loadingToken) return;
       this.overrides = storedOverrides;
-      try {
+      if (!cached) try {
         const remote = await withOfflineTimeout(this.options.api.readingOverrides(book.id), true, budget);
         if (token !== this.loadingToken) return;
         if (remote && Number.isSafeInteger(remote.version) && Array.isArray(remote.corrections)) {
@@ -471,10 +480,12 @@ export class ReaderScreen {
         // meant that message was immediately replaced by nothing — so a reader
         // returning to a book saw no confirmation at all. The other order lets the
         // restore message overwrite "正在载入…", which is what it is there for.
-        await this.restorePosition(book, token, budget);
+        const openingProgress = this.options.offline.progressFor(book.id);
+        await this.restorePosition(book, token, budget, !!cached);
         if (token !== this.loadingToken) return;
         this.prefetchReady = true; this.startPrefetch();
         if (this.chrome.statusState === 'loading') this.hideStatus();
+        if (cached) void this.revalidateCachedNovel(book, token, openingProgress);
         return;
       }
 
@@ -609,6 +620,7 @@ export class ReaderScreen {
   }
 
   dispose(): void {
+    this.cacheRefresh?.abort(); this.remoteProgress = null;
     this.stopPrefetch(); this.prefetchReady = false;
     this.themeOff?.();
     this.closeAlternatives(); this.chapterRefresh?.abort();
@@ -667,6 +679,7 @@ export class ReaderScreen {
     if (token === this.loadingToken) await this.applyOverrides(next);
   }
   private async applyOverrides(next: ReadingOverrides): Promise<void> {
+    this.cacheRefresh?.abort();
     const book = this.book; if (!book) return;
     const oldPrefix = this.overrides.headingPrefix;
     this.overrides = next;
@@ -875,6 +888,91 @@ export class ReaderScreen {
 
   // ---- loading ----
 
+  private async cachedNovelManifest(book: Book): Promise<Manifest | null> {
+    if (book.format !== 'chapters') return null;
+    const cached = await this.publicationCache.manifest(book.id);
+    if (!cached?.content || !isStagedKind(cached.content.kind)) return null;
+    const locator = this.options.offline.progressFor(book.id)?.locator;
+    const ref = locator?.replace(/^r1:[^:]+:/, '');
+    const item = ref ? cached.content.items.find(item => item.href === ref) : cached.content.items[0];
+    return item && (await this.publicationCache.resource(book.id, renditionRef(item)))?.byteLength ? cached : null;
+  }
+
+  private async revalidateCachedNovel(book: Book, token: number, openingProgress: Progress | undefined): Promise<void> {
+    const run = new AbortController(); this.cacheRefresh = run;
+    const manifest = this.manifest, overrides = this.overrides;
+    const baseUrl = this.options.api.baseUrl, userId = this.options.api.currentSession()?.user.id;
+    const stillOpen = () => !run.signal.aborted && !this.disposed && token === this.loadingToken
+      && this.manifest === manifest && this.options.api.baseUrl === baseUrl;
+    const current = () => stillOpen() && this.options.api.currentSession()?.user.id === userId;
+    const failed = (error: unknown) => {
+      if (!stillOpen() || !(error instanceof ApiError) || !['bad_request', 'unauthorized', 'forbidden', 'not_found'].includes(error.kind)) return;
+      if (!current() && !(error.isAuthFailure && !this.options.api.currentSession())) return;
+      run.abort(); this.stopPrefetch(); this.cancelPageTurns(); this.stopSpeech();
+      this.positionReady = false; this.pendingPosition = null; this.remoteProgress = null;
+      this.viewEpoch++;
+      for (const off of this.viewListeners.splice(0)) off();
+      this.view?.dispose(); this.view = null; this.doc = null;
+      this.patch({ toc: [] }); this.handleLoadError(error);
+    };
+    try {
+      if (await this.options.platform.connectivity() === 'offline' || !current()) return;
+      await Promise.all([
+        this.options.api.manifest(book.id, { signal: run.signal }).catch(error => { failed(error); return null; }).then(async fresh => {
+          if (!fresh || !current()) return;
+          const item = fresh.content?.items.find(item => item.href === this.view?.position().sectionId);
+          if (item) {
+            const ref = renditionRef(item);
+            const cached = await this.publicationCache.resource(book.id, ref);
+            if (!current()) return;
+            if (!cached?.byteLength) {
+              // Commit the new directory only after its landing chapter is usable offline.
+              const bytes = new Uint8Array(await (await this.options.api.asset(book.id, ref, { signal: run.signal })).arrayBuffer());
+              if (!current()) return;
+              await this.publicationCache.putResource(book.id, ref, bytes);
+            }
+          }
+          if (current()) await this.publicationCache.putManifest(book.id, fresh);
+        }).catch(error => { if (error instanceof ApiError && error.kind !== 'not_found') failed(error); }),
+        this.options.api.readingOverrides(book.id, { signal: run.signal }).then(async fresh => {
+          if (current() && this.overrides === overrides && Number.isSafeInteger(fresh?.version) && Array.isArray(fresh.corrections)) {
+            await this.publicationCache.putOverrides(book.id, fresh);
+          }
+        }).catch(failed),
+        this.options.api.getProgress(book.id, { signal: run.signal }).then(async progress => {
+          if (current() && progress?.locator) await this.considerRemoteProgress(progress, openingProgress);
+        }).catch(failed),
+      ]);
+    } finally { if (this.cacheRefresh === run) this.cacheRefresh = null; }
+  }
+
+  private async considerRemoteProgress(remote: Progress, openingProgress: Progress | undefined): Promise<void> {
+    const local = this.options.offline.progressFor(remote.bookId);
+    if (openingProgress && remote.updatedAt <= openingProgress.updatedAt) return;
+    if (!this.view || !this.doc || remote.bookId !== this.book?.id || (local && remote.updatedAt < local.updatedAt)) return;
+    const here = parseLocator(this.view.position().locator, this.doc);
+    const there = parseLocator(this.compatibleLocator(remote.locator), this.doc);
+    const same = here && there && here.sectionId === there.sectionId
+      && (here.textOffset !== undefined && there.textOffset !== undefined ? here.textOffset === there.textOffset : Math.abs(here.offset - there.offset) < 0.0001);
+    if (same || remote.locator === openingProgress?.locator) { await this.options.offline.reconcileProgress(remote); return; }
+    this.hideStatus(); this.remoteProgress = remote; this.patch({});
+  }
+
+  private async resolveRemoteProgress(accept: boolean): Promise<void> {
+    const remote = this.remoteProgress, book = this.book, position = this.view?.position(), token = this.loadingToken;
+    this.remoteProgress = null; this.patch({});
+    if (!remote || !book || !position) return;
+    try {
+      await this.flushProgress();
+      if (token !== this.loadingToken || this.disposed) return;
+      await this.options.offline.setProgress({ ...(accept ? remote : { ...remote, locator: position.locator, percentage: position.percentage, chapterTitle: position.chapterTitle }),
+        device: this.options.platform.deviceLabel, updatedAt: Math.max(Date.now(), remote.updatedAt + 1, (this.options.offline.progressFor(book.id)?.updatedAt ?? 0) + 1) });
+      if (token !== this.loadingToken || this.disposed) return;
+      this.options.sync.schedule();
+      if (accept) await this.open(book);
+    } catch (error) { if (token === this.loadingToken && !this.disposed) this.handleLoadError(error); }
+  }
+
   private async loadManifest(book: Book, budget: OfflineReadBudget): Promise<Manifest> {
     const cached = await this.publicationCache.manifest(book.id);
     try {
@@ -891,6 +989,7 @@ export class ReaderScreen {
 
   private async sourceAction(action: () => Promise<void>): Promise<void> {
     if (this.chrome.switching || this.chrome.refreshing || this.chrome.refreshingChapter || this.navigating) return;
+    this.cacheRefresh?.abort(); this.remoteProgress = null;
     this.stopPrefetch(); this.prefetchChapter = null;
     const token = this.loadingToken; this.patch({ switching: true });
     try { await action(); }
@@ -930,6 +1029,7 @@ export class ReaderScreen {
     const item = content?.items.find(value => value.href === this.chrome.currentSectionId);
     if (!book || !content || !item || this.chapterRefresh || this.chrome.refreshing || this.chrome.switching || this.navigating) return;
     this.stopPrefetch(); this.prefetchChapter = null;
+    this.cacheRefresh?.abort();
     const run = new AbortController(); this.chapterRefresh = run;
     this.patch({ refreshingChapter: true }); this.setStatus('loading', '正在重新获取当前章节…');
     try {
@@ -1026,6 +1126,7 @@ export class ReaderScreen {
     const previousManifest = this.manifest;
     if (!book || book.format !== 'chapters' || !previousManifest || this.chrome.refreshing || this.chrome.switching || this.navigating) return;
     const token = this.loadingToken;
+    this.cacheRefresh?.abort();
     const previousHrefs = new Set(previousManifest.content?.items.map((item) => item.href));
     this.stopPrefetch(); this.prefetchChapter = null;
     this.patch({ refreshing: true });
@@ -1313,6 +1414,7 @@ export class ReaderScreen {
     // the desktop convention and costs nothing.
     this.viewListeners.push(
       bindKeys(this.element, (key) => {
+        if (this.bodyGesturesBlocked()) return;
         if (['ArrowRight', 'ArrowLeft', 'PageDown', 'PageUp'].includes(key) && this.chromeVisible) this.setChromeVisible(false);
         if (key === 'ArrowRight' || key === 'PageDown') void this.turnPage('next');
         else if (key === 'ArrowLeft' || key === 'PageUp') void this.turnPage('previous');
@@ -1422,14 +1524,15 @@ export class ReaderScreen {
     void this.turnPage(forward ? 'next' : 'previous');
   }
 
-  private async restorePosition(book: Book, token: number, budget: OfflineReadBudget): Promise<void> {
+  private async restorePosition(book: Book, token: number, budget: OfflineReadBudget, localOnly = false): Promise<void> {
     let latest = await this.options.offline.getProgress(book.id);
-    try {
-      const remote = await withOfflineTimeout(this.options.api.getProgress(book.id, { signal: AbortSignal.timeout(5000) }), true, budget);
+    let remote: Progress | null = null;
+    if (!localOnly) try {
+      remote = await withOfflineTimeout(this.options.api.getProgress(book.id, { signal: AbortSignal.timeout(5000) }), true, budget);
       const local = await this.options.offline.getProgress(book.id);
       if (token !== this.loadingToken) return;
       latest = local ?? latest;
-      if (remote?.locator) latest = await this.options.offline.reconcileProgress(remote);
+      if (!latest && remote?.locator) latest = await this.options.offline.reconcileProgress(remote);
       if (this.options.offline.current.dirtyProgress.includes(book.id)) this.options.sync.schedule();
     } catch (err) {
       if (err instanceof ApiError && err.isAuthFailure) this.options.onSignedOut();
@@ -1445,6 +1548,7 @@ export class ReaderScreen {
       if (restored) {
         this.positionReady = true;
         this.flashStatus('已恢复到上次阅读位置', 2400);
+        if (remote?.locator) await this.considerRemoteProgress(remote, latest);
         return;
       }
       // A locator that cannot be resolved means the book changed on disk under
@@ -1452,7 +1556,10 @@ export class ReaderScreen {
       this.flashStatus('原阅读位置已失效，从开头开始', 3200);
     }
     await this.view?.open(0, 0);
-    if (token === this.loadingToken) this.positionReady = true;
+    if (token === this.loadingToken) {
+      this.positionReady = true;
+      if (remote?.locator) await this.considerRemoteProgress(remote, latest);
+    }
   }
 
   // ---- position and progress ----

@@ -3910,7 +3910,7 @@ svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; verti
 .reader-screen .rail-button { width: 48px; height: 48px; border-radius: 50%; background: var(--reader-surface); box-shadow: 0 3px 12px #00000020; }
 .reader-screen .rail-button .icon { font-size: var(--text-display); }
 @media (max-width: 700px) {
-  .reader-screen .sheet {
+  .reader-screen .sheet:not([data-size='compact']) {
     height: min(62vh, calc(100vh - var(--safe-top) - 1.5rem));
     height: min(62dvh, calc(100dvh - var(--safe-top) - 1.5rem));
     max-height: 36rem;

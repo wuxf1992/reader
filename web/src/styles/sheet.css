@@ -103,6 +103,10 @@
   padding-bottom: var(--space-3);
 }
 
+.sheet[data-size='compact'] > .sheet-body {
+  flex-basis: auto;
+}
+
 .sheet-footer {
   flex: none;
   display: flex;

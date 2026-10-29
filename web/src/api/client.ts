@@ -457,7 +457,7 @@ export class ReaderApi {
   }
 
   /** Whether this instance has a server-side speech engine, and what it offers. */
-  async readingOverrides(id: string): Promise<ReadingOverrides> { return this.get('/api/v1/books/' + encodeURIComponent(id) + '/reading-overrides'); }
+  async readingOverrides(id: string, options: RequestOptions = {}): Promise<ReadingOverrides> { return this.get('/api/v1/books/' + encodeURIComponent(id) + '/reading-overrides', options); }
   async saveReadingOverrides(id: string, value: ReadingOverrides): Promise<ReadingOverrides> { return this.call('/api/v1/books/' + encodeURIComponent(id) + '/reading-overrides','PUT',value); }
   async undoReadingOverrides(id: string, version: number): Promise<ReadingOverrides> { return this.call('/api/v1/books/' + encodeURIComponent(id) + '/reading-overrides/undo','POST',{version}); }
 
