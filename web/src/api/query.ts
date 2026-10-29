@@ -1,9 +1,9 @@
 import { QueryClient } from '@tanstack/query-core';
 
 /**
- * Shared client-side server cache for transport-level invalidation. React pages
- * consume the same client through QueryClientProvider and React Query hooks;
- * this module only owns the API client's framework-neutral cache operations.
+ * Transport-level navigation cache with framework-neutral invalidation.
+ * React pages own a separate view cache and use fresh requests when refetching
+ * resources whose freshness they control.
  */
 export const createReaderQueryClient = () => new QueryClient({
   defaultOptions: {
