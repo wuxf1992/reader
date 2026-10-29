@@ -219,6 +219,16 @@ git push origin custom-before-upstream-20261028
 - 入口：`assets/client-BVbdWtOY.js`；样式：`assets/index-CrBVdzV1.css`。源码、产物、截图、摘要与发布回执保存于 `../reader-assessment-20261029/unified-themes/`；迁移和下次合并的验收契约见 [统一主题说明](docs/reader-theme-presets.md)。
 - 未验证真实 iPhone Safari/系统合成层、完整 APK、外网 CDN 与公开证书链；HTTPS 校验使用本机回环。个人 Reader fork 远端仍待接入，当前保留本机 Git 与 bundle 备份；插件维持已发布的 1.6.4。
 
+## 发布记录：2026-10-29 离线同步提示去重
+
+- 发布源码：`561d996ffe10d10f7c1a4241f4fad98b5afab2cd`；标签 `custom-release-offline-feedback-20261029`。北京时间 16:51 发布完整前端。
+- 阅读页在同一次断网或相同同步错误期间只提示一次；提示自动消失或手动关闭后，后台重试及新增本地进度不再重开提示。成功同步后重新允许报告下一次故障；不同错误及登录失效仍按原流程处理。
+- 同步前先检查系统连接状态，已知离线时保持 offline，不再切换为 syncing；进度继续持久保存在本机，联网事件触发自动补传，保留后台重试、拒绝计数与账号隔离。
+- 52 项同步/阅读提示/通知回归通过，类型检查与生产构建通过；Chromium/WebKit × 390/1120 宽度验证提示过期、手动关闭、重复重试、离线进度保留与恢复补传、新一轮断网提醒，均无页面异常。PWA 根路径/子路径安装、离线重开、多标签即时更新与缓存清理检查通过。
+- 旧前端完整备份：`/opt/reader/backups/web-custom-offline-feedback-20261029-085104/web`。57 个构建文件逐一匹配 HTTP 源站，HTML/SW/入口/CSS/manifest 的本机 HTTPS `/reader/` 摘要匹配，健康接口正常。发布失败路径自动恢复备份；保留旧资源供已有页面更新。
+- 入口：`assets/client-DCuTYYCW.js`。证据、发布回执与源码备份位于 `../reader-assessment-20261029/offline-feedback/`。本次只发布前端，未重启容器或修改正式账号、书籍、插件数据。
+- 未测 iPhone 真机、完整 APK、公网 CDN 与公开证书链；HTTPS 校验使用本机回环。
+
 ## 历史：2026-10-09 同步记录
 
 以下是当时从 `5c59cae0` 合并到 `875fec84` 的交付记录，不表示当前分支或当前依赖状态。
