@@ -173,9 +173,8 @@ export function createStagedDoc(options: StagedDocOptions): StagedDoc {
       const loaded = await options.loader.read(item);
       if (loaded.html !== undefined) section.html = loaded.html;
       if (loaded.image !== undefined) section.image = loaded.image;
-      // The loader read the body and found characters (a book source's text-only
-      // HTML chapter, converted): typeset it like a TXT, and do not parse it.
-      if (loaded.plainText) { section.plainText = true; section.bodyIsMarkup = false; }
+      // Typeset text-only source HTML, retaining its media type until the view decodes it.
+      if (loaded.plainText) section.plainText = true;
       return section;
     },
     setWindow(content: BookContent, spine: number): number {

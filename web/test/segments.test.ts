@@ -268,6 +268,10 @@ describe('chunk boundaries and the carry', () => {
  * paragraphs are inferred.
  */
 describe('web-page markup in a TXT', () => {
+  it('decodes entity text once across heading promotion and paragraph rendering', () => {
+    const html = textToChapterHtml('第一章 标签\n\n他说 &lt;b&gt; 是标签，&amp;lt; 是实体。');
+    expect(html).toContain('他说 &lt;b&gt; 是标签，&amp;lt; 是实体。');
+  });
   const scraped = '<div>\n    天斗星作为第一颗被人类发现并且移民成功的行政星，距今已经有数千年的历史了。<br/>\n    <br/>\n    <br/>\n    <br/>\n    这颗星球大约有原本斗罗星二分之一大。<br/>\n</div>';
 
   it('turns the scraped block into clean paragraphs with no tags or gaps', () => {

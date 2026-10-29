@@ -66,8 +66,8 @@ const WHITESPACE_LINE = /^[ \t\u3000\u00a0]+$/gm;
  * Block tags (`<br>`, `<p>`, `<div>`, headings, list items) become line breaks, so
  * the paragraphs they marked survive as the blank lines the rules below read;
  * inline tags (`<span>`, `<font>`) are dropped; common character entities become
- * the characters they stand for. Idempotent, and a file without markup is returned
- * with only its whitespace-only lines emptied. The result is still *text*: every
+ * the characters they stand for. Already decoded text must bypass this step;
+ * a file without markup only has its whitespace-only lines emptied. The result is still *text*: every
  * consumer escapes it, so nothing here can turn into markup.
  */
 export function cleanTextMarkup(text: string): string {
@@ -177,8 +177,8 @@ export interface TextParagraph {
  * returns, so a book cannot look like a different book depending on which
  * transport happened to deliver it.
  */
-export function splitTextParagraphs(text: string): TextParagraph[] {
-  return cleanTextMarkup(text)
+export function splitTextParagraphs(text: string, cleanMarkup = true): TextParagraph[] {
+  return (cleanMarkup ? cleanTextMarkup(text) : text.replace(LINE_ENDINGS, '\n'))
     .split(PARAGRAPH_BREAK)
     .flatMap((block) => splitSentenceBreaks(block))
     .map(toParagraph)
@@ -282,8 +282,8 @@ export function textToParagraphs(text: string): DocumentFragment {
  * memory is cheaper to describe as markup than as ten thousand elements built one
  * at a time. Both forms call the same split, so the two cannot drift.
  */
-export function textToParagraphHtml(text: string): string {
-  return splitTextParagraphs(text)
+export function textToParagraphHtml(text: string, cleanMarkup = true): string {
+  return splitTextParagraphs(text, cleanMarkup)
     .map((paragraph) => `<p>${escapeHtml(paragraph.text)}</p>`)
     .join('\n');
 }
@@ -337,8 +337,8 @@ function isHeadingLine(line: string): boolean {
  * of prose that happens to look like one, and promoting those would restructure
  * the book rather than render it.
  */
-export function splitChapterHeading(text: string): { heading: string; body: string } {
-  const normalised = cleanTextMarkup(text);
+export function splitChapterHeading(text: string, cleanMarkup = true): { heading: string; body: string } {
+  const normalised = cleanMarkup ? cleanTextMarkup(text) : text.replace(LINE_ENDINGS, '\n');
   const lines = normalised.split('\n');
   const firstIndex = lines.findIndex((line) => line.trim().length > 0);
   if (firstIndex === -1) return { heading: '', body: '' };
@@ -358,11 +358,12 @@ export function splitChapterHeading(text: string): { heading: string; body: stri
  * added by whoever renders it — plus the heading promotion, which is the same
  * decision on every path (a locale's own file, the windowed manifest, the stream)
  * rather than one the server made for two of them.
+ * Already decoded HTML text sets cleanMarkup=false so literal tags stay characters.
  */
-export function textToChapterHtml(text: string): string {
-  const { heading, body } = splitChapterHeading(text);
+export function textToChapterHtml(text: string, cleanMarkup = true): string {
+  const { heading, body } = splitChapterHeading(text, cleanMarkup);
   const promoted = heading ? `<h3>${escapeHtml(heading)}</h3>\n` : '';
-  return `<div class="txt-body">\n${promoted}${textToParagraphHtml(body)}\n</div>\n`;
+  return `<div class="txt-body">\n${promoted}${textToParagraphHtml(body, false)}\n</div>\n`;
 }
 
 /**

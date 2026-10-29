@@ -102,6 +102,42 @@ function serve(transport: FakeTransport, current: BookContent, next = current) {
   });
 }
 
+it('typesets HTML source chapters without stripping decoded text or changing raw offline cache', async () => {
+  const kv = new MemoryKv(), blobs = new MemoryBlobs();
+  const raw = '<p>第一章 标签</p><p>他说 &lt;b&gt; 是标签，&amp;lt; 是实体。</p>';
+  const current = content(['a']); current.items[0]!.mediaType = 'text/html';
+  const env = await setup(kv, blobs);
+  env.transport.respondWith(request => request.url.endsWith('/manifest')
+    ? { status: 200, headers: {}, json: manifest(current) }
+    : request.url.includes('/assets?')
+      ? { status: 200, headers: {}, bytes: new TextEncoder().encode(raw) }
+      : { status: 200, headers: {}, json: { progress: null } });
+  await env.screen.open(book);
+  expect(body(env.screen)?.textContent).toContain('他说 <b> 是标签，&lt; 是实体。');
+  expect(body(env.screen)?.querySelector('b')).toBeNull();
+  const cache = new PublicationCache(env.platform.kv, env.platform.blobs, publicationScope(env.api.baseUrl, 'u1'));
+  expect(new TextDecoder().decode((await cache.resource(book.id, 'resource:r1:a'))!)).toBe(raw);
+  env.screen.dispose();
+  const restored = await setup(kv, blobs); restored.platform.setOnline(false);
+  restored.transport.failWith(new ApiError('offline', 'offline'));
+  await restored.screen.open(book);
+  expect(body(restored.screen)?.textContent).toContain('他说 <b> 是标签，&lt; 是实体。');
+});
+
+it('keeps image and table content in HTML source chapters', async () => {
+  const current = content(['a']); current.items[0]!.mediaType = 'text/html';
+  const raw = '<p>正文</p><img src="data:image/png;base64,iVBORw0KGgo=" alt="插图"><table><tr><td>表格内容</td></tr></table>';
+  const env = await setup();
+  env.transport.respondWith(request => request.url.endsWith('/manifest')
+    ? { status: 200, headers: {}, json: manifest(current) }
+    : request.url.includes('/assets?')
+      ? { status: 200, headers: {}, bytes: new TextEncoder().encode(raw) }
+      : { status: 200, headers: {}, json: { progress: null } });
+  await env.screen.open(book);
+  expect(body(env.screen)?.querySelector('img')?.getAttribute('alt')).toBe('插图');
+  expect(body(env.screen)?.querySelector('td')?.textContent).toBe('表格内容');
+});
+
 it('applies the global text choice immediately, preserves the chapter, TTS and raw cached text, and survives another book and offline reload', async () => {
   const kv = new MemoryKv(), blobs = new MemoryBlobs();
   const env = await setup(kv, blobs);

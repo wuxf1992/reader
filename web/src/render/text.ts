@@ -29,7 +29,7 @@
 
 import { ApiClient, type BookDto } from '../net/api.ts';
 import { Emitter } from '../lib/events.ts';
-import { endsAtParagraphBreak, paragraphElement, splitTextParagraphs } from '../formats/segments.ts';
+import { endsAtParagraphBreak, escapeHtml, paragraphElement, splitTextParagraphs } from '../formats/segments.ts';
 
 /** Size of a streamed chunk, matching the server's own window. */
 const CHUNK_CHARS = 256 * 1024;
@@ -226,7 +226,8 @@ function paragraphsOf(
   // at a paragraph break, so there is nothing to carry.
   const endsClean = endsAtParagraphBreak(combined);
   const settled = endsClean ? split : split.slice(0, -1);
-  const rest = endsClean ? '' : (split[split.length - 1]?.text ?? '');
+  // Carry decoded characters escaped so the next raw-input pass cannot strip them as tags.
+  const rest = endsClean ? '' : escapeHtml(split[split.length - 1]?.text ?? '');
   const fragment = document.createDocumentFragment();
   for (const paragraph of settled) fragment.append(paragraphElement(paragraph));
   return { fragment, rest };

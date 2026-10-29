@@ -38,7 +38,7 @@ import { ReadingTools, type SearchSection } from './reading-tools.tsx';
 import { decodeAnchor, encodeAnchor, searchableText, type TextAnchor } from './text-anchor.ts';
 import { AnnotationPopover, type AnnotationTarget } from './annotation-popover.tsx';
 import { newId } from '../core/id.ts';
-import { htmlToText, isTextOnlyMarkup, textToChapterHtml } from '../formats/segments.ts';
+import { isTextOnlyMarkup, textToChapterHtml } from '../formats/segments.ts';
 import { parseLocator } from './locator.ts';
 import { shouldPrefetch } from '../render/prefetch.ts';
 import { clampBrightness } from '../render/theme.ts';
@@ -603,7 +603,7 @@ export class ReaderScreen {
     // server cached before the plugin cleaned them are fixed too. A chapter with
     // images (every comic chapter) or tables keeps its markup; EPUBs never get here.
     if (book.format === 'chapters' && item.kind === 'chapter' && /html/i.test(item.mediaType) && isTextOnlyMarkup(body)) {
-      return { html: htmlToText(body), plainText: true };
+      return { html: body, plainText: true };
     }
     return { html: body };
   }

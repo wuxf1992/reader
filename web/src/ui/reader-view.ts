@@ -10,7 +10,7 @@ import {
   sanitiseInjectedContent,
   type BookShadowHost,
 } from './shadow.ts';
-import { escapeHtml, textToChapterHtml } from '../formats/segments.ts';
+import { escapeHtml, htmlToText, isTextOnlyMarkup, textToChapterHtml } from '../formats/segments.ts';
 import { bookPercentage, formatLocator, parseLocator } from './locator.ts';
 import { collectSpokenChunks, type SpokenChunk } from '../render/tts-text.ts';
 import { adoptWindow } from '../formats/windowed.ts';
@@ -1155,6 +1155,7 @@ export class ReaderView {
   private retypePlainText(section: Section): string {
     const raw = section.html ?? '';
     if (!this.isPlainText(section)) return raw;
+    if (section.bodyIsMarkup !== false && section.plainText && !isTextOnlyMarkup(raw)) return raw;
     // A `txt-body` wrapper means the body arrived as markup (this build no longer
     // produces one, but a window carried over from an older server or a cached
     // section might). Its blocks are read back *per block* and re-joined with a
@@ -1162,6 +1163,7 @@ export class ReaderView {
     // run, and the re-split below would then see a single paragraph and destroy
     // every boundary the block structure was carrying.
     let text = raw;
+    let cleanMarkup = true;
     // A heading an older server promoted out of the body. It is kept, and kept
     // *first*, because it is the one piece of structure a TXT has and because
     // re-deriving it is a heuristic — running a heuristic twice is how two copies of
@@ -1194,7 +1196,11 @@ export class ReaderView {
           .map((element) => element.textContent ?? '')
           .filter((block) => block.trim().length > 0);
         text = blocks.length > 0 ? blocks.join('\n\n') : wrapper.textContent ?? '';
+        cleanMarkup = false;
       }
+    } else if (section.plainText && section.bodyIsMarkup !== false) {
+      text = htmlToText(raw);
+      cleanMarkup = false;
     } else {
       // Not markup: the chapter's characters, as fetched, and nothing else. This
       // is what the server sends now (see `server/src/indexer/formats/text.ts`).
@@ -1209,7 +1215,7 @@ export class ReaderView {
     // lands on the title). A heading the body *did* carry is re-emitted directly
     // rather than fed back through the regex — it was already promoted once, and
     // a second pass would only be a chance to disagree with the first.
-    const rendered = textToChapterHtml(text);
+    const rendered = textToChapterHtml(text, cleanMarkup);
     if (keptHeading) {
       return rendered.replace(
         '<div class="txt-body">\n',
