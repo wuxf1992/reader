@@ -18,6 +18,27 @@
 
 本机已启用 `rerere.enabled=true`，记住人工冲突解法；每次仍须审阅 diff 和验证行为。
 
+## 每次同步的差异预审与定制退场
+
+2026-10-29 的固定版本审计、优化排序及主线重叠判断见 [custom 与主线审计](docs/custom-upstream-audit-20261029.md)。审计基线 `d0452f2` 已包含上游 `6c274a7` 的全部提交；32 个本地独有提交不表示仍落后主线。
+
+获取更新后、进入独立 worktree 前增加以下预审；变量每次按实际输出固定，不复用过期目标：
+
+```sh
+reader_target=$(git rev-parse upstream/main)
+reader_base=$(git merge-base custom "$reader_target")
+git diff --name-only "$reader_base" "$reader_target"
+git diff --name-only "$reader_base" custom
+git cherry -v "$reader_target" custom
+git merge-tree --write-tree custom "$reader_target"
+```
+
+前两份清单的交集是重点审阅范围；merge-base 若与上次记录不符，先核对上游历史和同步点。`merge-tree` 返回 0 表示文本合并成功、1 表示冲突；它不改工作区/索引，但写入 Git 对象。不要将其返回 0 当作回归通过。
+
+每项定制记录保留理由、验证入口与退场条件：主线已有等价行为时，优先转用主线并删除旧实现。patch-id/`git cherry` 仅识别补丁等价，不能据此自动判断功能等价。当前优先收敛书源详情封面与两层查询缓存失效，繁简选项与字典解耦；旧设置读写入口经完整引用检查后可清理。
+
+发布继续记录源码标签、实际构建摘要和插件版本。紧急回移分支只保存发布点，后续功能仍进 custom；完成完整验证后将线上与 custom 的发布点收敛，避免同时维护两个开发版本。个人 origin 备份未接入时持续保留已验证的本地 bundle，并明确它仍是本机备份。
+
 ## 必须保留或验证的定制
 
 | 定制 | 维护入口与验证重点 |
