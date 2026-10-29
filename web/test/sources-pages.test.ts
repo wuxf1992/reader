@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mergePages } from '../src/features/sources/pages/SourceCatalogPage.tsx';
+import { mergePages } from '../src/ui/source-results.ts';
 
 describe('source catalog page helpers', () => {
   it('merges streamed result batches by ref and keeps pagination metadata', () => {

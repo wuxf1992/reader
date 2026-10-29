@@ -11,9 +11,9 @@ import { useRuntime } from '../../../app/providers/runtime-context.tsx';
 import { FloatingNotice } from '../../../ui/floating-notice.tsx';
 import { notify } from '../../../ui/notifications.ts';
 import { useAuthStore } from '../../../shared/stores/auth.store.ts';
-import { mergePages } from './SourceCatalogPage.tsx';
+import { useSources, useSourceTypes } from '../hooks/sourceQueries.ts';
 import { SearchableSelect } from '../../../ui/searchable-select.tsx';
-import { groupSourceResults, sourceChapterCount, sourceChapterLabel, withChapterCount } from '../../../ui/source-results.ts';
+import { mergePages, groupSourceResults, sourceChapterCount, sourceChapterLabel, withChapterCount } from '../../../ui/source-results.ts';
 import { SourceBookDetails } from '../components/SourceBookDetails.tsx';
 import { CatalogFeedback } from '../../../ui/catalog-feedback.tsx';
 import { PluginManager } from '../components/PluginManager.tsx';
@@ -36,7 +36,6 @@ export function SourcesPage() {
   const [discoveryOpen, setDiscoveryOpen] = useState(false);
   const [catalogFilters, setCatalogFilters] = useState<Record<string, string>>({});
   const [detail, setDetail] = useState<SourceEntry | null>(null);
-  const [, setDirectoryOpen] = useState(false);
   const updateChapterCount = useCallback((ref: string, count: number) => setCatalogPage(previous => withChapterCount(previous, ref, count)), []);
   const [searchState, setSearchState] = useState<SearchState>('idle');
   const [resultGroupKey, setResultGroupKey] = useState<string | null>(null);
@@ -46,8 +45,8 @@ export function SourcesPage() {
   const searchRequest = useRef<{ query: string; filters: Record<string, string> } | null>(null);
   const searchRun = useRef<AbortController | null>(null);
   const catalogEpoch = useRef(0);
-  const sources = useQuery({ queryKey: ['sources', runtime.api.baseUrl], queryFn: () => runtime.api.sources() });
-  const types = useQuery({ queryKey: ['source-types', runtime.api.baseUrl], queryFn: () => runtime.api.sourceTypes(), staleTime: 300_000 });
+  const sources = useSources();
+  const types = useSourceTypes();
   const subscriptions = useQuery({ queryKey: ['subscriptions', runtime.api.baseUrl], queryFn: () => runtime.api.subscriptions(), enabled: tab === 'updates' });
   const [busy, setBusy] = useState<string | null>(null);
   const enabledSources = (sources.data ?? []).filter(source => source.enabled && source.descriptor);
@@ -121,7 +120,12 @@ export function SourcesPage() {
       notify(reason instanceof Error ? reason.message : '追更操作失败，请重试', { kind: 'error' });
     } finally { setBusy(null); }
   };
-  const updateSource = async (id: string, patch: { enabled?: boolean; isDefault?: boolean }) => { setBusy(id); try { await runtime.api.saveSource(id, patch); await sources.refetch(); } finally { setBusy(null); } };
+  const updateSource = async (id: string, patch: { enabled?: boolean; isDefault?: boolean }) => {
+    setBusy(id);
+    try { await runtime.api.saveSource(id, patch); await sources.refetch(); }
+    catch (reason) { notify(reason instanceof Error ? reason.message : '更新失败，请稍后重试。', { kind: 'error' }); }
+    finally { setBusy(null); }
+  };
   useEffect(() => {
     ++catalogEpoch.current; searchRun.current?.abort(); searchRun.current = null;
     setDiscoveryOpen(false); setCatalogBusy(false); setCatalogPage(undefined); setCatalogError(''); setCatalogFilters({}); setDetail(null); searchSession.current = null;
@@ -199,6 +203,6 @@ export function SourcesPage() {
       {tab === 'plugins' && (admin ? <PluginManager /> : <Callout tone="warning">只有管理员可以管理插件</Callout>)}
     </main>
     {activeGroup && <Sheet onClose={() => setResultGroupKey(null)} title="书源列表"><div className="sheet-form"><p>{activeGroup.entry.title} · {activeGroup.entries.length} 条书源</p>{activeGroup.entries.map(entry => { const option = entry.options?.[0]; return <article className="catalog-source-item" key={entry.ref}><div><strong>{entry.sourceName ?? selectedSource?.name}</strong><p className="source-description">{hasChapters && <>{sourceChapterLabel(entry)} · </>}最新章节：{entry.latestChapter || '暂无信息'}</p></div><div className="sources-actions"><Button className="button" onClick={() => setDetail(entry)}>详情</Button><Button className="button primary" disabled={option?.available === false} busy={acquire.isPending} onClick={() => acquireEntry(entry, option?.id)}>{option?.label ?? '加入书架'}</Button></div></article>; })}</div></Sheet>}
-    {detail && <Sheet onClose={() => setDetail(null)} title={detail.title || '书籍详情'}><div className="sheet-form">{detailQuery.isPending && <FloatingNotice message="正在读取书籍详情…" busy />}{detailQuery.error && <Callout tone="error">{detailQuery.error.message}</Callout>}{detail && <><SourceBookDetails key={selectedSourceId + ':' + detail.ref} entry={detail} sourceId={selectedSourceId} sourceName={selectedSource?.name} inShelf={detailInShelf ? true : detail.shelfBookId === null ? false : undefined} canPreview={hasChapters && !detailQuery.isFetching} onChapterCount={updateChapterCount} onDirectoryOpenChange={setDirectoryOpen} />{detail.options?.map(option => <Button key={option.id} disabled={detailInShelf || option.available === false} busy={acquire.isPending} onClick={() => acquireEntry(detail, option.id)}>{detailInShelf ? '已加入书架' : option.label}</Button>)}{(!detail.options || detail.options.length === 0) && <Button disabled={detailInShelf} busy={acquire.isPending} onClick={() => acquireEntry(detail)}>{detailInShelf ? '已加入书架' : '加入书架'}</Button>}</>}</div></Sheet>}
+    {detail && <Sheet onClose={() => setDetail(null)} title={detail.title || '书籍详情'}><div className="sheet-form">{detailQuery.isPending && <FloatingNotice message="正在读取书籍详情…" busy />}{detailQuery.error && <Callout tone="error">{detailQuery.error.message}</Callout>}{detail && <><SourceBookDetails key={selectedSourceId + ':' + detail.ref} entry={detail} sourceId={selectedSourceId} sourceName={selectedSource?.name} inShelf={detailInShelf ? true : detail.shelfBookId === null ? false : undefined} canPreview={hasChapters && !detailQuery.isFetching} onChapterCount={updateChapterCount} />{detail.options?.map(option => <Button key={option.id} disabled={detailInShelf || option.available === false} busy={acquire.isPending} onClick={() => acquireEntry(detail, option.id)}>{detailInShelf ? '已加入书架' : option.label}</Button>)}{(!detail.options || detail.options.length === 0) && <Button disabled={detailInShelf} busy={acquire.isPending} onClick={() => acquireEntry(detail)}>{detailInShelf ? '已加入书架' : '加入书架'}</Button>}</>}</div></Sheet>}
   </div>;
 }

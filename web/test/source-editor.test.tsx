@@ -2,7 +2,7 @@
 import { act } from 'react';
 import { expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { Link, MemoryRouter, Route, Routes } from 'react-router-dom';
 import { RuntimeContext } from '../src/app/providers/runtime-context.tsx';
 import { SourceEditorPage } from '../src/features/sources/pages/SourceEditorPage.tsx';
 import { render } from '../src/shared/ui/render-root.ts';
@@ -39,4 +39,63 @@ it('reports a save failure, preserves the draft and lets the user retry successf
   } finally {
     act(() => render(null, root)); client.clear(); root.remove(); vi.clearAllMocks();
   }
+});
+
+it('preserves an edited draft across source refetches and clears it when creating another source', async () => {
+  const root = document.createElement('div'); document.body.append(root);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  let version = 1;
+  const api = {
+    baseUrl: 'http://fixture.test', sources: async () => [{ id: 'one', pluginId: 'test', sourceType: 'text', name: '原名称', config: { version } }],
+    sourceTypes: async () => [{ id: 'text', pluginId: 'test', label: '测试来源', capabilities: [] }],
+  };
+  try {
+    await act(async () => render(<RuntimeContext value={{ api } as any}><QueryClientProvider client={client}><MemoryRouter initialEntries={['/sources/manage/one']}>
+      <Link to="/sources/manage/new">添加另一来源</Link><Routes>
+        <Route path="/sources/manage/new" element={<SourceEditorPage />} /><Route path="/sources/manage/:sourceId" element={<SourceEditorPage />} />
+      </Routes>
+    </MemoryRouter></QueryClientProvider></RuntimeContext>, root));
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 30)); });
+    await act(async () => {
+      const input = root.querySelector('input')!;
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, '未保存的名称');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      const raw = root.querySelector('textarea')!;
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(raw, '{"draft":true}');
+      raw.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    version = 2;
+    await act(async () => { await client.invalidateQueries({ queryKey: ['sources'] }); await new Promise(resolve => setTimeout(resolve, 30)); });
+    expect(root.querySelector('input')!.value).toBe('未保存的名称');
+    expect(root.querySelector('textarea')!.value).toBe('{"draft":true}');
+    await act(async () => root.querySelector('a')!.click());
+    expect(root.querySelector('input')!.value).toBe('');
+    expect(root.querySelector('textarea')!.value).toBe('{}');
+  } finally { act(() => render(null, root)); client.clear(); root.remove(); }
+});
+
+it('keeps failed removal recoverable and prevents duplicate confirmations while removing', async () => {
+  const root = document.createElement('div'); document.body.append(root);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  let finish!: () => void;
+  const api = {
+    baseUrl: 'http://fixture.test', sources: async () => [{ id: 'one', pluginId: 'test', sourceType: 'text', name: '原名称', config: {} }],
+    sourceTypes: async () => [{ id: 'text', pluginId: 'test', label: '测试来源', capabilities: [] }],
+    removeSource: vi.fn().mockRejectedValueOnce(new Error('删除失败，请重试')).mockImplementationOnce(() => new Promise<void>(done => { finish = done; })),
+  };
+  const button = (text: string) => [...document.querySelectorAll<HTMLButtonElement>('button')].find(item => item.textContent === text)!;
+  try {
+    await act(async () => render(<RuntimeContext value={{ api } as any}><QueryClientProvider client={client}><MemoryRouter initialEntries={['/sources/manage/one']}><Routes>
+      <Route path="/sources/manage/:sourceId" element={<SourceEditorPage />} /><Route path="/sources" element={<p>删除完成</p>} />
+    </Routes></MemoryRouter></QueryClientProvider></RuntimeContext>, root));
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 30)); });
+    await act(async () => button('删除来源').click());
+    await act(async () => button('删除').click());
+    expect(notify).toHaveBeenCalledWith('删除失败，请重试', { kind: 'error' });
+    expect(document.querySelector('[role=alertdialog]')).not.toBeNull();
+    await act(async () => button('删除').click());
+    expect(button('删除').disabled).toBe(true);
+    await act(async () => { finish(); });
+    expect(root.textContent).toContain('删除完成');
+  } finally { act(() => render(null, root)); client.clear(); root.remove(); vi.clearAllMocks(); }
 });

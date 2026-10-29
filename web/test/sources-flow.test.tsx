@@ -8,6 +8,7 @@ import { render } from '../src/shared/ui/render-root.ts';
 import { SourcesPage } from '../src/features/sources/pages/SourcesPage.tsx';
 import { notify } from '../src/ui/notifications.ts';
 import type { SourcePage } from '../src/api/sources.ts';
+import { useAuthStore } from '../src/shared/stores/auth.store.ts';
 
 vi.mock('../src/ui/notifications.ts', () => ({ notify: vi.fn(), placeNotifications: vi.fn() }));
 vi.mock('../src/ui/floating-notice.tsx', () => ({ FloatingNotice: ({ message }: { message: string }) => <span role="status">{message}</span> }));
@@ -54,6 +55,24 @@ async function mount(capabilities = ['search', 'browse', 'content.manifest']) {
   await settle();
   return api;
 }
+
+it.each(['暂停', '设为默认'])('reports failed %s updates and leaves the source usable for retry', async action => {
+  useAuthStore.getState().verify({ id: 'fixture', role: 'admin' } as any);
+  try {
+    const api = await mount();
+    const saveSource = vi.fn().mockRejectedValueOnce(new Error('更新失败，请重试')).mockResolvedValueOnce({});
+    Object.assign(api, { saveSource });
+    await act(async () => button(root, '书源管理').click());
+    await act(async () => button(root, '管理').click());
+    await act(async () => button(document, action).click());
+    expect(notify).toHaveBeenCalledWith('更新失败，请重试', { kind: 'error' });
+    expect(root.textContent).toContain('已启用');
+    await act(async () => button(root, '管理').click());
+    expect(button(document, action).disabled).toBe(false);
+    await act(async () => button(document, action).click());
+    expect(saveSource).toHaveBeenCalledTimes(2);
+  } finally { useAuthStore.getState().setSession(null); }
+});
 
 it('supports arrow, Home and End keys in the source tabs', async () => {
   await mount();

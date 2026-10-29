@@ -9,18 +9,8 @@ import type { SourceEntry, SourcePage } from '../../../api/sources.ts';
 import { useRuntime } from '../../../app/providers/runtime-context.tsx';
 import { useSources } from '../hooks/sourceQueries.ts';
 import { SourceBookDetails } from '../components/SourceBookDetails.tsx';
-import { sortSourceResults, sourceChapterLabel, withChapterCount } from '../../../ui/source-results.ts';
+import { mergePages, sourceChapterLabel, withChapterCount } from '../../../ui/source-results.ts';
 import { FloatingNotice } from '../../../ui/floating-notice.tsx';
-
-export function mergePages(current: SourcePage | undefined, page: SourcePage): SourcePage {
-  const items = new Map((current?.items ?? []).map(item => [item.ref, item]));
-  page.items.forEach(item => {
-    const previous = items.get(item.ref);
-    items.set(item.ref, { ...previous, ...item, ...(previous?.metadata || item.metadata ? { metadata: { ...previous?.metadata, ...item.metadata } } : {}) });
-  });
-  const errors = new Map([...(current?.errors ?? []), ...(page.errors ?? [])].map(error => [error.source + ':' + error.code, error]));
-  return { ...page, items: sortSourceResults([...items.values()]), ...(errors.size ? { errors: [...errors.values()] } : {}) };
-}
 
 export function SourceCatalogPage() {
   const { api } = useRuntime();
@@ -33,7 +23,6 @@ export function SourceCatalogPage() {
   const [query, setQuery] = useState(params.get('q') ?? '');
   const [page, setPage] = useState<SourcePage>();
   const [detail, setDetail] = useState<SourceEntry | null>(null);
-  const [, setDirectoryOpen] = useState(false);
   const updateChapterCount = useCallback((ref: string, count: number) => setPage(previous => withChapterCount(previous, ref, count)), []);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -85,7 +74,7 @@ export function SourceCatalogPage() {
         {detailQuery.isPending && <FloatingNotice message="正在读取书籍详情…" busy />}
         {detailQuery.error && <Callout tone="error">{detailQuery.error.message}</Callout>}
         {detail && <>
-          <SourceBookDetails key={sourceId + ':' + detail.ref} entry={detail} sourceId={sourceId} sourceName={source?.name} inShelf={detail.shelfBookId === undefined ? undefined : !!detail.shelfBookId} canPreview={hasChapters && !detailQuery.isFetching} onChapterCount={updateChapterCount} onDirectoryOpenChange={setDirectoryOpen} />
+          <SourceBookDetails key={sourceId + ':' + detail.ref} entry={detail} sourceId={sourceId} sourceName={source?.name} inShelf={detail.shelfBookId === undefined ? undefined : !!detail.shelfBookId} canPreview={hasChapters && !detailQuery.isFetching} onChapterCount={updateChapterCount} />
           {detail.options?.map(option => <Button key={option.id} disabled={!!detail.shelfBookId || option.available === false} busy={acquire.isPending} onClick={() => acquireEntry(detail, option.id)}>{detail.shelfBookId ? '已加入书架' : option.label}</Button>)}
           {(!detail.options || detail.options.length === 0) && <Button disabled={!!detail.shelfBookId} busy={acquire.isPending} onClick={() => acquireEntry(detail)}>{detail.shelfBookId ? '已加入书架' : '加入书架'}</Button>}
         </>}

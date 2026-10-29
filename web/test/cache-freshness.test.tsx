@@ -56,7 +56,7 @@ it('shares persisted cover bytes between source details and other views before v
   const noop = () => {};
   try {
     act(() => render(<RuntimeContext.Provider value={runtime}><QueryClientProvider client={client}><MemoryRouter>
-      <SourceBookDetails entry={{ ref: 'one', title: 'One', coverUrl: url, shelfBookId: 'one' }} sourceId="source" sourceName="Source" inShelf canPreview={false} onChapterCount={noop} onDirectoryOpenChange={noop} />
+      <SourceBookDetails entry={{ ref: 'one', title: 'One', coverUrl: url, shelfBookId: 'one' }} sourceId="source" sourceName="Source" inShelf canPreview={false} onChapterCount={noop} />
       <Probe />
     </MemoryRouter></QueryClientProvider></RuntimeContext.Provider>, root));
     await vi.waitFor(() => expect(releases).toHaveLength(1));

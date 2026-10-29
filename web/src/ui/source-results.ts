@@ -1,5 +1,15 @@
 import type { SourceEntry, SourcePage } from '../api/sources.ts';
 
+export function mergePages(current: SourcePage | undefined, page: SourcePage): SourcePage {
+  const items = new Map((current?.items ?? []).map(item => [item.ref, item]));
+  page.items.forEach(item => {
+    const previous = items.get(item.ref);
+    items.set(item.ref, { ...previous, ...item, ...(previous?.metadata || item.metadata ? { metadata: { ...previous?.metadata, ...item.metadata } } : {}) });
+  });
+  const errors = new Map([...(current?.errors ?? []), ...(page.errors ?? [])].map(error => [error.source + ':' + error.code, error]));
+  return { ...page, items: sortSourceResults([...items.values()]), ...(errors.size ? { errors: [...errors.values()] } : {}) };
+}
+
 export interface SourceResultGroup { key: string; entry: SourceEntry; entries: SourceEntry[] }
 const normalize = (value: string) => value.normalize('NFKC').replace(/\s+/gu, '').toLowerCase();
 const normalizeTitle = (value: string) => normalize(value).replace(/[《》「」『』·：:，,。.!！?？()（）]/gu, '');

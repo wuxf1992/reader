@@ -22,12 +22,13 @@ export function SourceEditorPage() {
   const [jsonError, setJsonError] = useState('');
   const [removing, setRemoving] = useState(false);
   useEffect(() => {
-    if (!source) return;
-    setTypeKey(`${source.pluginId}/${source.sourceType}`);
-    setName(source.name);
-    setConfig(source.config ?? {});
-    setRaw(JSON.stringify(source.config ?? {}, null, 2));
-  }, [source]);
+    // A refetch must not overwrite the draft; only selecting a different source resets it.
+    setTypeKey(source ? `${source.pluginId}/${source.sourceType}` : '');
+    setName(source?.name ?? '');
+    setConfig(source?.config ?? {});
+    setRaw(JSON.stringify(source?.config ?? {}, null, 2));
+    setJsonError(''); setRemoving(false);
+  }, [sourceId, source?.id]);
   const type: SourceType | undefined = types.data?.find(item => `${item.pluginId}/${item.id}` === typeKey)
     ?? (source ? types.data?.find(item => item.pluginId === source.pluginId && item.id === source.sourceType) : undefined);
   if (sources.isPending || types.isPending) return <FloatingNotice message="正在加载书源配置…" busy />;
@@ -73,8 +74,11 @@ export function SourceEditorPage() {
         </div>
       </form>}
     </main>
-    {removing && sourceId && <ConfirmSheet danger title="删除来源" text={`确定删除书源「${source?.name ?? sourceId}」？`} confirmText="删除"
+    {removing && sourceId && <ConfirmSheet danger busy={mutations.remove.isPending} title="删除来源" text={`确定删除书源「${source?.name ?? sourceId}」？`} confirmText="删除"
       onCancel={() => setRemoving(false)}
-      onConfirm={() => { setRemoving(false); void mutations.remove.mutateAsync(sourceId).then(() => navigate('/sources')); }} />}
+      onConfirm={async () => {
+        try { await mutations.remove.mutateAsync(sourceId); navigate('/sources'); }
+        catch (reason) { notify(reason instanceof Error ? reason.message : '删除失败，请稍后重试。', { kind: 'error' }); }
+      }} />}
   </div>;
 }

@@ -9,8 +9,8 @@ import { sourceChapterCount } from '../../../ui/source-results.ts';
 import type { SourceEntry } from '../../../api/sources.ts';
 import { useRuntime } from '../../../app/providers/runtime-context.tsx';
 
-export function SourceBookDetails({ entry, sourceId, sourceName, inShelf, canPreview, onChapterCount, onDirectoryOpenChange }: {
-  entry: SourceEntry; sourceId: string; sourceName: string | undefined; inShelf: boolean | undefined; canPreview: boolean; onChapterCount: (ref: string, count: number) => void; onDirectoryOpenChange: (open: boolean) => void;
+export function SourceBookDetails({ entry, sourceId, sourceName, inShelf, canPreview, onChapterCount }: {
+  entry: SourceEntry; sourceId: string; sourceName: string | undefined; inShelf: boolean | undefined; canPreview: boolean; onChapterCount: (ref: string, count: number) => void;
 }) {
   const { api } = useRuntime();
   const location = useLocation();
@@ -26,11 +26,9 @@ export function SourceBookDetails({ entry, sourceId, sourceName, inShelf, canPre
   const userId = api.currentSession()?.user.id;
   const cover = useCover(api, coverPath, bookCover || !directoryOpen);
   useEffect(() => {
-    onDirectoryOpenChange(directoryOpen);
     if (!directoryOpen) void queryClient.cancelQueries({ queryKey: ['source-chapters', api.baseUrl, sourceId, entry.ref], exact: true });
     if (directoryOpen && !bookCover && coverPath) void queryClient.cancelQueries({ queryKey: ['book-cover', api.baseUrl, userId, coverPath], exact: true });
-    return () => onDirectoryOpenChange(false);
-  }, [directoryOpen, onDirectoryOpenChange, queryClient, api.baseUrl, sourceId, entry.ref, userId, bookCover, coverPath]);
+  }, [directoryOpen, queryClient, api.baseUrl, sourceId, entry.ref, userId, bookCover, coverPath]);
   const directory = useQuery({ queryKey: ['source-chapters', api.baseUrl, sourceId, entry.ref], queryFn: ({ signal }) => api.sourceChapters(sourceId, entry.ref, { signal }), enabled: canPreview && directoryOpen, staleTime: 60_000, retry: false, refetchOnWindowFocus: false });
   useEffect(() => { if (directory.data) onChapterCount(entry.ref, directory.data.length); }, [directory.data, entry.ref, onChapterCount]);
   const count = directory.data?.length ?? sourceChapterCount(entry);
