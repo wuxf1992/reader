@@ -13,13 +13,14 @@ try {
     try {
       for (const width of [390, 1120]) {
         const context = await browser.newContext({ viewport: { width, height: width === 390 ? 844 : 900 }, serviceWorkers: 'block' });
-        let phase = 'online', remote = null, release;
+        let phase = 'online', remote = null, release, closing = false;
         let gate = Promise.resolve(), responses = 0;
         const errors = [];
         const hold = () => { responses = 0; gate = new Promise(resolve => { release = resolve; }); };
         try {
           await context.route('https://wuxf.top/**', route => route.abort());
           await context.route('**/api/v1/**', async route => {
+            try {
             const path = new URL(route.request().url()).pathname;
             const metadata = path === `/api/v1/books/${BOOK_ID}/manifest` || path === `/api/v1/books/${BOOK_ID}/reading-overrides` || path === `/api/v1/sync/progress/${BOOK_ID}`;
             const currentGate = gate;
@@ -35,7 +36,8 @@ try {
               return route.fulfill({ response, json: data });
             }
             if (metadata) responses++;
-            return route.continue();
+            return await route.continue();
+            } catch (error) { if (!closing) throw error; }
           });
           const page = await context.newPage(); page.setDefaultTimeout(10000);
           page.on('pageerror', error => errors.push(error.message));
@@ -99,7 +101,7 @@ try {
           assert.deepEqual(errors, []);
           results.push({ engine, width, cachedOpenMs, cacheShownBeforeValidation: true, declineKeepsLocal: true, acceptJumpsToNewerPosition: true });
           console.log(`${engine} ${width}: cached open ${cachedOpenMs}ms before metadata responses; both progress choices passed`);
-        } finally { release?.(); await context.close(); }
+        } finally { closing = true; release?.(); await context.close(); }
       }
     } finally { await browser.close(); }
   }
