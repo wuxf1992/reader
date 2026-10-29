@@ -1,7 +1,7 @@
 import { PALETTES, clampBrightness, type ThemeMode } from '../render/theme.ts';
 import type { KeyValueStore } from '../core/platform.ts';
 import type { ViewSettings } from '../ui/reader-view.ts';
-import { CHINESE_VARIANTS } from '../render/chinese.ts';
+import { CHINESE_VARIANTS } from '../shared/chinese-variant.ts';
 import { readingThemeForPaper, validReadingTheme, validReaderPaper, type ReadingTheme, type ReaderPaper } from '../shared/theme/theme.ts';
 
 /**

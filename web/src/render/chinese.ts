@@ -1,13 +1,8 @@
 import { Trie, type DictGroup } from 'opencc-js/core';
 import { configs } from 'opencc-js/preset';
 import { anchorFor, anchorOffset, textNodes, type TextAnchor } from '../ui/text-anchor.ts';
-
-export type ChineseVariant = 'original' | 'simplified' | 'traditional';
-export const CHINESE_VARIANTS = [
-  { value: 'original', label: '原文' },
-  { value: 'simplified', label: '简体' },
-  { value: 'traditional', label: '繁体' },
-] as const;
+import type { ChineseVariant } from '../shared/chinese-variant.ts';
+export type { ChineseVariant } from '../shared/chinese-variant.ts';
 
 const tries = new Map<string, Trie[]>();
 function conversion(variant: Exclude<ChineseVariant, 'original'>): Trie[] {

@@ -1,4 +1,4 @@
-import { CHINESE_VARIANTS } from '../render/chinese.ts';
+import { CHINESE_VARIANTS } from '../shared/chinese-variant.ts';
 /**
  * The shelf's own settings.
  *

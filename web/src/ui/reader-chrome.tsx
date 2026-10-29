@@ -1,6 +1,6 @@
 import { BusyIndicator } from './busy.tsx';
 import { MIN_BRIGHTNESS } from '../render/theme.ts';
-import { CHINESE_VARIANTS } from '../render/chinese.ts';
+import { CHINESE_VARIANTS } from '../shared/chinese-variant.ts';
 import type { CSSProperties } from 'react';
 import { defaultThemePreference, readingThemeOptions, resolveReadingTheme, themeTokens, type AppThemeId, type ReaderPaper, type ReaderSurface, type ResolvedTheme, type ThemeMode, type ThemePreference } from '../shared/theme/theme.ts';
 import type { ChapterQuality } from '../api/sources.ts';
