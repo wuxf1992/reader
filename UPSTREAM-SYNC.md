@@ -7,7 +7,7 @@
 | 名称 | 用途 | 规则 |
 | --- | --- | --- |
 | `upstream` | 原作者仓库，只获取更新 | 本机设置了无效 push URL 防止误推；不修改原作者分支 |
-| `origin` | [wuxf1992/reader](https://github.com/wuxf1992/reader) | 已接入并核对远端；custom/main 和 5 个回退/发布标签已完整备份 |
+| `origin` | [wuxf1992/reader](https://github.com/wuxf1992/reader) | 已接入并核对远端；custom/main 和回退/发布标签已完整备份 |
 | `main` | 纯上游镜像，跟踪 `upstream/main` | 只做 fast-forward，不放个人修改 |
 | `custom` | 日常开发和验证后的定制版本 | 功能分别提交，长期采用 merge，不重写已共享历史 |
 | `sync/upstream-YYYYMMDD` | 一次同步的临时整合分支 | 独立 worktree 解决冲突、验证后 fast-forward 回 custom |
@@ -148,6 +148,24 @@ git rev-list --left-right --count custom...upstream/main
 6. 同步提交和线上部署分别记录。部署前核对本机 `web/.env.production`、当前线上版本、数据/插件兼容性并备份；包含拆包或新资源时发布完整构建，不能只替换入口 JS。验证 HTTP 健康和构建一致后再记录发布完成。
 7. 线上回滚使用对应发布备份，源码共享后的撤销使用新提交（必要时 `git revert -m 1 <mergeSHA>`），不重写远端历史，不覆盖当前账号、书架或进度。
 8. 整合记录和本地证据保存后，可移除干净 worktree 和已合入的临时分支。回退标签按实际保留策略处理，不在例行同步时批量删备份。
+
+## 同步与发布记录：2026-10-29（上游 8ec588b）
+
+- 状态：已完成合并和上线；北京时间 2026-10-29 18:31:35 发布至 https://wuxf.top/reader/ 。
+- 合并前 custom：`01a4caa23d413e9544a2fd081775cfa7d915439e`；回退标签：`custom-before-upstream-20261029-8ec588b`。此前个人 fork 接入和同步记录是历史状态，以本节为本次最终结果。
+- 固定上游：`8ec588b7742ad77f8143f690ea392775c7c9c776`，相对共同祖先 `6c274a7` 吸收 12 个提交（含 merge）；合并提交 `13c3380`。独立 worktree 验收后 fast-forward 回 custom，custom 相对本次上游遗漏 0 个提交；main 保持纯上游。
+- 上游变化涉及书源配置/日志/筛选、通用菜单和 Sheet、媒体管理界面、文本清理。25 个上游变更文件中 10 个与定制重叠，实际冲突为 SourceCatalogPage、SourcesPage、reader.css 三处。保留目录结果元数据合并与排序，接入主线错误去重；使用主线共享 ActionMenu，删除旧菜单状态及失效调用；合并菜单定位和滚动区域。Sheet 紧凑高度使用主线规则，删除重复定制。
+- 保留封面缓存、小说离线开书与位置确认、手机翻页及进度、主题、换源和离线同步提示去重；不增加另一套正文/缓存/保存路径。
+- 回归发现并修复：HTML 实体经重复清理后丢失字面标签，改为在排版入口清理一次，流式未完成段落重新转义，离线原文和富文本图片/表格保持完整；书源保存失败保留草稿并提示；源类型选项在安装/更新/启停/卸载后立即刷新；书源页标签补齐方向键/Home/End 和窄屏选中项可见性。
+- 浏览器工具适配当前独立源编辑页、安装 Sheet、操作提示、筛选菜单及 SSE 换源协议；真实 HTTP/SQLite/stdio 插件检查只使用本地独立数据，明确阻断正式站点请求，保留失败换源原正文和成功换源章节落点的断言。
+- 环境：Node 22.23.1，server/web 分别新装锁定依赖；未运行 Node 24 或远端 CI。server 类型检查、构建通过；490 项中 483 通过、7 项缺少真实音视频/封面/字幕等媒体输入而跳过。web 类型检查、生产构建通过；完整 133 个文件的 1265 项 Vitest 和 29 项 Node 测试通过。
+- 浏览器：12 套发布检查全部通过：reader-touch、book-cover-cache、novel-cache-open、host-source-flow、source-discovery、host-extension-page、reader-unified-themes、reader-status-tint、offline-sync、react-app、pwa-smoke、pwa-startup。覆盖 Chromium/WebKit 手机/桌面、正文与富文本、缓存重开、失败/成功换源、插件真实安装和配置、离线重试与恢复、PWA 多标签更新/挂起接口/离线进程重启。主题 120 次选择、系统栏 96 项及整站 40 张截图通过；人工查看手机/桌面设置、书库和插件配置截图。最终构建另跑 reader-text-fidelity 四组通过。
+- Android 桥接 shell 检查通过；iPhone 真机和完整 APK 未测。服务端及 Android 源码未变，未重启容器、改正式数据或升级插件；reader-novel-web 仍为 1.6.4。
+- 部署源码：`48397f17a9d9113a082b688fa1c48fb286d3eb0e`，发布标签 `custom-release-upstream-20261029`。后续维护记录提交只变文档；实际构建依据该标签。
+- 发布完整 57 个文件，保留旧哈希资源；全部文件经 HTTP origin SHA-256 核对，HTML/SW/入口/CSS/manifest 经本机 HTTPS `/reader/` 核对，健康状态 ok。入口 `assets/client-CcBwNjrf.js`，样式 `assets/index-qIPFf6_R.css`。HTTPS 使用回环解析并忽略本机证书校验，因此不代表公网 TLS/CDN 验证。
+- 上线前完整备份：`/opt/reader/backups/web-custom-upstream-merge-20261029-103135/web`。发布脚本包含并发修改保护、构建摘要保护和失败自动回滚；当前未触发回滚。回滚只恢复前端，不覆盖账号/书架/进度。
+- custom/main 及本次回退标签已普通原子推送到个人 `wuxf1992/reader`；发布标签随本节维护记录推送。原作者 upstream 保持禁止推送，未创建上游 PR 或触发镜像发布。
+- 预审及完整验收/构建/发布回执保存于工作区外 `../reader-assessment-20261029/merge-feasibility/` 和 `../reader-assessment-20261029/upstream-merge-release/`。下次沿用固定上游、独立 worktree 和实际浏览器任务验证；合并后优先检查文本清理次数、插件缓存失效以及已迁移组件的旧调用。
 
 ## 个人 fork 接入：2026-10-29
 
