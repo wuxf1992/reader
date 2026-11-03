@@ -4072,6 +4072,8 @@ svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; verti
 .shelf-screen .book-meta { display: flex; align-items: center; justify-content: space-between; gap: .25rem; min-height: 44px; }
 .shelf-screen .book-state { min-width: 0; padding: .15rem .4rem; border-radius: var(--radius-pill); background: color-mix(in srgb, var(--reader-accent) 10%, var(--reader-paper)); color: var(--reader-accent); font-size: var(--text-meta); line-height: 1.4; }
 .shelf-screen .book-card .book-more { position: static; flex: 0 0 44px; width: 44px; height: 44px; margin-inline-start: auto; padding: 0; border: 0; border-radius: var(--radius-md); background: transparent; color: var(--reader-muted); opacity: 1; backdrop-filter: none; box-shadow: none; transition: background-color var(--motion-duration) var(--motion-ease); }
+/* The shelf button is already 44px; its old touch overlay covers the whole card. */
+.shelf-screen .book-card .book-more::before { content: none; }
 .shelf-screen .book-card .book-more:focus-visible { background: color-mix(in srgb, var(--reader-accent) 8%, transparent); }
 @media (hover: hover) and (pointer: fine) {
   .shelf-screen .book-card .book-more:hover { background: color-mix(in srgb, var(--reader-accent) 8%, transparent); }
