@@ -336,3 +336,11 @@ React 全流程浏览器回归已通过，40 张手机 / 桌面截图，无页�
 - 发布源码 `c725023a37edbf4b315412ac122d7479bd86d289`，标签 `custom-release-reader-layout-20261105`；回退标签 `custom-before-reader-layout-20261105`，均已推送个人 origin。北京时间 2026-11-05 18:10 发布完整前端。
 - 旧网页完整备份 `/opt/reader/backups/web-reader-layout-20261105-101040`。60 个构建文件逐一匹配 HTTP 源站，HTML/SW/入口/CSS/manifest 匹配公网 HTTPS 并校验证书；健康正常，保留旧资源供已打开页面继续使用。入口 `assets/client-CguISffI.js`，样式 `assets/index-CEMFLGL7.css`。
 - 仅更新前端，未重启服务或更改数据库、账号、书籍和插件；后端镜像仍为此前验证的 `reader-github:upstream-settings-20261105-23ee384`。回执与最终截图位于 `../reader-assessment-20261105/layout-fix/`。
+
+## iPhone PWA 面板与底栏修复：2026-11-05
+
+- 用户真机截图暴露此前未覆盖的独立应用模式：PWA 旧规则 `inset: 20vh 0 0` 将阅读设置的顶部和底部同时固定，自动高度仍被拉长。阅读设置明确仅固定底部，内容不再撑满空闲空间，保留长内容内部滚动。
+- 底栏顺序改为目录、朗读、日间/夜间、设置。两行内容自然确定高度，页码跟随真实高度；通过 `ResizeObserver` 观察包含内边距的 border-box，安全区改变时也能更新。底部间距取普通留白与系统安全区的较大值，不再相加；不删除 Home 手势安全区，不修改正文留白偏好。
+- 先复现旧版失败：390×844 模拟 PWA 有 156.52px 面板多余空白、13.6px 底栏空闲高度，并额外叠加 6.4px 普通底边距。修复后面板/底栏空闲高度约为 0，PWA 底部保留 34px 安全区；动态变为 50px 后恢复，页码与底栏保持贴合。
+- 144 项阅读设置/拖动/朗读/配色/阅读布局/样式引用测试通过，类型检查与构建通过。Chromium/WebKit × 普通模式及模拟 PWA 共 12 组布局/持久化/30 项配色/真实指针或触摸拖动通过；96 项系统取色（含渲染像素）、小说/EPUB 翻页与取消、PWA 根路径/子路径更新及离线通过。
+- 网络依据及下一次合并约束见 [iPhone PWA 与底部安全区](docs/reader-settings.md#iphone-pwa-与底部安全区)。本次仅前端修复；未重复服务端或全量网页测试，模拟独立模式不是 iPhone 真机复验。证据 `../reader-assessment-20261105/iphone-fix/`。

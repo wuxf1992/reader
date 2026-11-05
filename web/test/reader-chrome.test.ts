@@ -225,7 +225,7 @@ describe('ReaderChrome', () => {
     render(h(ReaderChrome, { state: chromeState(), stage,
       handlers: { ...handlers(), onTools: () => {} } }), container);
     const labels = [...container.querySelectorAll('.reader-actions button')].map(button => button.textContent?.trim());
-    expect(labels).toEqual(['目录', '夜间', '朗读', '设置']);
+    expect(labels).toEqual(['目录', '朗读', '夜间', '设置']);
     expect(labels.indexOf('目录')).toBeGreaterThanOrEqual(0);
   });
 

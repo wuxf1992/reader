@@ -245,6 +245,20 @@ export interface ReaderChromeProps {
 export function ReaderChrome({ state, stage, handlers, tools }: ReaderChromeProps): JSX.Element {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const tocList = useRef<HTMLUListElement>(null);
+  const footerRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const footer = footerRef.current, screen = footer?.closest<HTMLElement>('.reader-screen');
+    if (!footer || !screen) return;
+    const measure = () => {
+      const height = footer.getBoundingClientRect().height;
+      if (height > 0) screen.style.setProperty('--reader-footer-height', `${height}px`);
+    };
+    measure();
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(measure) : null;
+    // Safe-area padding can change while the content box stays the same.
+    observer?.observe(footer, { box: 'border-box' });
+    return () => { observer?.disconnect(); screen.style.removeProperty('--reader-footer-height'); };
+  }, [state.chromeVisible]);
   useLayoutEffect(() => {
     if (!state.tocOpen) return;
     const current = tocList.current?.querySelector<HTMLElement>('[aria-current="true"]');
@@ -286,7 +300,7 @@ export function ReaderChrome({ state, stage, handlers, tools }: ReaderChromeProp
         </div>
       </div>}
       <ReaderIndicators state={state} />
-      <div className="footer" hidden={!state.chromeVisible}>
+      <div ref={footerRef} className="footer" hidden={!state.chromeVisible}>
         <div className="progress-row">
           <button type="button" className="nav-chapter" disabled={state.navigating || state.chapterIndex <= 1}
             onClick={() => handlers.onChapter(-1)}>{fixed ? '上一页' : '上一章'}</button>
@@ -304,8 +318,8 @@ export function ReaderChrome({ state, stage, handlers, tools }: ReaderChromeProp
         </div>
         <div className="reader-actions">
           <TopButton icon="menu" label="目录" onClick={handlers.toggleToc} />
-          <TopButton icon={dark ? 'sun' : 'moon'} label={dark ? '日间' : '夜间'} onClick={toggleNight} />
           <TopButton icon="read-aloud" label={state.tts.active ? '朗读中' : '朗读'} pressed={state.tts.active} onClick={() => handlers.toggleSettings('speech')} />
+          <TopButton icon={dark ? 'sun' : 'moon'} label={dark ? '日间' : '夜间'} onClick={toggleNight} />
           <TopButton icon="settings" label="设置" onClick={() => handlers.toggleSettings('appearance')} />
         </div>
       </div>

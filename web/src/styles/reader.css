@@ -3629,8 +3629,8 @@ svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; verti
 .reader-screen .footer {
   /* System-bar tint and both solid edge bars switch on the same frame. */
   transition: none;
-  height: var(--reader-footer-height);
-  padding: 0.5rem calc(1rem + var(--safe-right)) calc(0.4rem + var(--safe-bottom)) calc(1rem + var(--safe-left));
+  height: auto;
+  padding: 0.5rem calc(1rem + var(--safe-right)) max(0.4rem, var(--safe-bottom)) calc(1rem + var(--safe-left));
   background: var(--reader-surface);
   border: 0;
   box-shadow: 0 -2px 12px #0000000a;
@@ -4150,6 +4150,7 @@ body, .reader-screen .stage, .reader-screen .stage::before, .reader-screen .foot
 .reader-settings .segmented > button { min-width: 44px; min-height: 44px; padding: var(--space-1) var(--space-2); white-space: nowrap; font-size: var(--text-label); }
 .reader-settings .sheet-header > button[aria-label='返回阅读设置'] { order: -1; }
 @media (max-width: 700px) {
-  .reader-screen .reader-settings:not([data-size='compact']) { height: auto; max-height: min(80dvh, calc(100dvh - var(--safe-top) - 1.5rem)); }
-  .reader-settings > .sheet-body { flex-basis: auto; }
+  /* A PWA's legacy top inset must not pin a content-sized panel at both ends. */
+  .reader-screen .sheet.reader-settings:not([data-size='compact']) { inset: auto 0 0; height: auto; max-height: min(80dvh, calc(100dvh - var(--safe-top) - 1.5rem)); }
+  .reader-screen .sheet.reader-settings:not([data-size='compact']) > .sheet-body { flex: 0 1 auto; }
 }
