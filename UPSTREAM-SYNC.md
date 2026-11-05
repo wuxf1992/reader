@@ -365,3 +365,11 @@ React 全流程浏览器回归已通过，40 张手机 / 桌面截图，无页�
 - 发布源码 `fb668c4c02675e8a5923afe408caef80d36e5545`，标签 `custom-release-reader-fontsize-20261105`，回退标签 `custom-before-reader-fontsize-20261105`；个人 origin 已备份。北京时间 2026-11-05 21:56 发布完整前端。
 - 旧网页完整备份 `/opt/reader/backups/web-reader-fontsize-skill-20261105-135641`。60 个构建文件逐一匹配 HTTP 源站，HTML/SW/入口/CSS/manifest 匹配公网 HTTPS 并校验证书，健康正常。入口 `assets/client-8-Wn2G9s.js`，样式 `assets/index-CJDxszAT.css`；保留旧资源供已有页面继续使用。
 - 仅更新网页，未重启服务或更改账号、书籍、进度与插件数据；失败路径可恢复旧前端。临时工具和 npm 缓存已清理，全局技能未安装或升级；审计报告与证据保留。
+
+## 朗读遮挡与正文点击修复：2026-11-05
+
+- 发布源码 `ee5073fd1488d8d9587a42cf67e62dd8f3b6bea2`，标签 `custom-release-reader-speech-tap-20261105`；回退标签 `custom-before-reader-speech-tap-20261105`。北京时间22:21发布前端。
+- 朗读栏恢复纵向两行并拉伸到可用宽度，避免播放按钮挤压到进度行。控制栏显示时，正文单击只收起并返回；隐藏后下一次单击才按点击分区翻页/跳章，保留设置/目录阻断、滑动与硬件按键导航。
+- 两项修复前回归均先失败：手机朗读控制挤在进度行同一高度；右侧点击收起后仍执行next。修复后149项相关测试、类型检查/构建通过；Chromium/WebKit手机模拟PWA与桌面共4组验证朗读开始/暂停/继续/停止、按钮几何与首次收起后不翻页。既有小说/EPUB真实触摸或指针跟手、取消、对话框阻断及PWA根/子路径更新与离线检查通过。
+- 旧前端备份 `/opt/reader/backups/web-reader-speech-tap-20261105-142103/web`；60个产物匹配HTTP源站，HTML/SW/入口/CSS/manifest匹配公网HTTPS并校验证书，健康正常。入口 `assets/client-D2b2Uxiu.js`，样式 `assets/index-C8KYplhA.css`。保留旧静态资源供已有页面升级；仅前端，未重启服务或修改账号/书籍/进度/插件数据。
+- 证据 `../reader-assessment-20261105/speech-tap/`；语音使用浏览器测试替身，未测真实iPhone或系统/HTTP/Android音频引擎，未重跑全量网页或服务端测试。
