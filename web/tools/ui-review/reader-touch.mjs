@@ -102,6 +102,9 @@ try {
             assert.deepEqual(visible.rect, previous.after.rect, 'showing controls must preserve page geometry');
             const box = await page.locator('book-content').boundingBox();
             await page.mouse.click(box.x + box.width * .85, box.y + box.height / 2);
+            await page.waitForFunction(() => document.querySelector('.reader-screen').dataset.chrome === 'hidden');
+            assert.equal((await state(page)).page, before.page, 'first body tap dismisses controls without turning');
+            await page.mouse.click(box.x + box.width * .85, box.y + box.height / 2);
             await page.waitForFunction(before => Number(document.querySelector('.progress-scrubber').value) === before + 1, before.page);
             assert.equal((await state(page)).chrome, 'hidden');
             await toggle(page); await page.getByRole('button', { name: '设置', exact: true }).click();

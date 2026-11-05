@@ -1556,13 +1556,13 @@ export class ReaderScreen {
   private onTapZone(column: number, row: number): void {
     if (this.bodyGesturesBlocked() || performance.now() - this.annotationClosedAt < 600) return;
 
+    if (this.chromeVisible) { this.setChromeVisible(false); return; }
     const action = tapActionAt(this.settings.tapZones, column, row, this.isRtl());
     if (action === 'none') return;
     if (action === 'menu') {
       this.setChromeVisible(!this.chromeVisible);
       return;
     }
-    if (this.chromeVisible) this.setChromeVisible(false);
     if (action === 'next' || action === 'previous') void this.turnPage(action);
     else void this.goToChapter(action === 'next-chapter' ? 1 : -1);
   }

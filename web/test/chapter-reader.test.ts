@@ -965,7 +965,7 @@ it('toggles glass without reapplying body settings or changing its saved palette
   expect(env.screen.element.querySelector('[aria-label="液态玻璃"]')?.getAttribute('aria-pressed')).toBe('true');
 });
 
-it('opens immersed and lets body taps, swipes and keys continue reading while controls are visible', async () => {
+it('dismisses visible controls on a body tap before turning pages; swipes and keys still navigate', async () => {
   const env = await setup(undefined, undefined, 'u1', 'http://one.test', { mode: 'paged' });
   serve(env.transport, content(['a', 'b'])); await env.screen.open(book);
   const reader = env.screen as unknown as { turnPage(direction: 'next' | 'previous'): Promise<void>; onTapZone(column: number, row: number): void };
@@ -976,6 +976,8 @@ it('opens immersed and lets body taps, swipes and keys continue reading while co
   stage.getBoundingClientRect = () => ({ x: 0, y: 0, left: 0, top: 0, right: 300, bottom: 600, width: 300, height: 600, toJSON() {} });
   reader.onTapZone(1, 1); reader.onTapZone(2, 1);
   expect(env.screen.element.dataset.chrome).toBe('hidden');
+  expect(turn).not.toHaveBeenCalled();
+  reader.onTapZone(2, 1);
   expect(turn).toHaveBeenLastCalledWith('next');
   reader.onTapZone(1, 1);
   for (const [type, x] of [['pointerdown', 250], ['pointerup', 50]] as const) {
