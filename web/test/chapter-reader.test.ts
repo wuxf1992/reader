@@ -1297,3 +1297,15 @@ it('does not submit the previous reader’s time through a newly selected accoun
     expect(record).not.toHaveBeenCalled();
   } finally { vi.useRealTimers(); }
 });
+
+it.each(['wheel','pending-touch'] as const)('does not pull a chapter behind an open settings sheet: %s',async kind=>{
+ const env=await setup(undefined,undefined,'u1','http://one.test',{mode:'scroll'});serve(env.transport,content(['a','b']));await env.screen.open(book);
+ const reader=env.screen as unknown as {view:ReaderView;turnPage(direction:'next'|'previous'):Promise<void>;onTapZone(column:number,row:number):void};
+ const turn=vi.spyOn(reader,'turnPage').mockResolvedValue(),host=reader.view.elementHost;
+ Object.defineProperties(host,{clientHeight:{configurable:true,value:100},scrollHeight:{configurable:true,value:1000}});host.scrollTop=0;
+ if(kind==='pending-touch'){const event=new Event('touchstart');Object.assign(event,{touches:[{clientY:100}]});host.dispatchEvent(event);}
+ reader.onTapZone(1,1);await click(env.screen,'设置');
+ if(kind==='wheel')host.dispatchEvent(new WheelEvent('wheel',{deltaY:-300}));
+ else{const event=new Event('touchend');Object.assign(event,{changedTouches:[{clientY:250}]});host.dispatchEvent(event);}
+ expect(turn).not.toHaveBeenCalled();
+});

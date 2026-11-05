@@ -99,6 +99,7 @@ export function Sheet({
     } else {
       dialog.setAttribute('open', '');
     }
+    const releaseScroll = containSheetScroll(dialog);
     if (initialFocus) dialog.querySelector<HTMLElement>(initialFocus)?.focus({ preventScroll: true });
     placeNotifications();
     // A compact sheet on a wide window opens where the hand is, not at the far edge.
@@ -108,6 +109,7 @@ export function Sheet({
     if (anchor) addEventListener('resize', place);
     return () => {
       cancelExit();
+      releaseScroll();
       if (anchor) removeEventListener('resize', place);
       if (typeof dialog.close === 'function' && dialog.open) dialog.close(); else dialog.removeAttribute('open');
       placeNotifications();
@@ -230,6 +232,48 @@ export function Sheet({
       {footer ? <footer className="sheet-footer">{typeof footer === 'function' ? footer(requestClose) : footer}</footer> : null}
     </dialog>
   );
+}
+
+// A short sheet has no scroll boundary for CSS overscroll containment to catch.
+function containSheetScroll(dialog: HTMLDialogElement): () => void {
+  let point: { x: number; y: number } | null = null, vertical: boolean | null = null;
+  const owns = (target: EventTarget | null) => target instanceof Element && target.closest('dialog[open]') === dialog;
+  const canScroll = (target: EventTarget | null, delta: number) => {
+    for (let node = target instanceof Element ? target : null; node && node !== dialog; node = node.parentElement) {
+      if (!(node instanceof HTMLElement) || !/^(auto|scroll)$/.test(getComputedStyle(node).overflowY)) continue;
+      if (delta < 0 ? node.scrollTop > 0 : node.scrollTop + node.clientHeight < node.scrollHeight - 1) return true;
+    }
+    return false;
+  };
+  const start = (event: TouchEvent) => {
+    vertical = null;
+    const touch = event.touches[0];
+    point = owns(event.target) && event.touches.length === 1 && touch ? { x: touch.clientX, y: touch.clientY } : null;
+  };
+  const move = (event: TouchEvent) => {
+    const touch = event.touches[0];
+    if (!point || event.touches.length !== 1 || !touch || event.defaultPrevented) return;
+    const dx = point.x - touch.clientX, dy = point.y - touch.clientY;
+    // Ignore tap jitter; cancelling its first touchmove would swallow button clicks.
+    if (vertical === null) {
+      if (Math.hypot(dx, dy) < 6) return;
+      vertical = Math.abs(dy) >= Math.abs(dx);
+    }
+    point = { x: touch.clientX, y: touch.clientY };
+    // Horizontal controls and pinch zoom keep their native handling.
+    if (vertical && dy && !canScroll(event.target, dy)) event.preventDefault();
+  };
+  const wheel = (event: WheelEvent) => {
+    if (!event.ctrlKey && !event.defaultPrevented && owns(event.target) && event.deltaY && !canScroll(event.target, event.deltaY)) event.preventDefault();
+  };
+  dialog.addEventListener('touchstart', start, { passive: true });
+  dialog.addEventListener('touchmove', move, { passive: false });
+  dialog.addEventListener('wheel', wheel, { passive: false });
+  return () => {
+    dialog.removeEventListener('touchstart', start);
+    dialog.removeEventListener('touchmove', move);
+    dialog.removeEventListener('wheel', wheel);
+  };
 }
 
 /** The wide-window breakpoint; below it every sheet is a bottom sheet. */

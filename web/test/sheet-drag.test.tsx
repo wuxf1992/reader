@@ -51,3 +51,38 @@ it('dismisses only the top sheet when a nested sheet is dragged', () => {
   pointer(child.querySelector('header')!, 'pointerdown', 100); pointer(child, 'pointermove', 240); pointer(child, 'pointerup', 240);
   expect(childClose).toHaveBeenCalledOnce(); expect(parentClose).not.toHaveBeenCalled();
 });
+
+function touch(target: Element, type: string, x: number, y: number) {
+ const event=new Event(type,{bubbles:true,cancelable:true});Object.assign(event,{touches:[{clientX:x,clientY:y}]});target.dispatchEvent(event);return event;
+}
+function scrollArea(element: HTMLElement, top: number) {
+ element.style.overflowY='auto';Object.defineProperties(element,{scrollHeight:{configurable:true,value:500},clientHeight:{configurable:true,value:200}});element.scrollTop=top;
+}
+it('contains touch and wheel gestures when a sheet has no scrollable content',()=>{
+ const {dialog}=paint(),input=dialog.querySelector('input')!;
+ touch(input,'touchstart',50,100);expect(touch(input,'touchmove',50,30).defaultPrevented).toBe(true);
+ const wheel=new WheelEvent('wheel',{bubbles:true,cancelable:true,deltaY:200});input.dispatchEvent(wheel);expect(wheel.defaultPrevented).toBe(true);
+});
+it.each([0,300])('contains an outward scroll at sheet edge %s and allows scrolling inward',top=>{
+ const {dialog}=paint(),body=dialog.querySelector<HTMLElement>('.sheet-body')!,input=dialog.querySelector('input')!;scrollArea(body,top);
+ const outward=new WheelEvent('wheel',{bubbles:true,cancelable:true,deltaY:top===0?-100:100});input.dispatchEvent(outward);expect(outward.defaultPrevented).toBe(true);
+ const inward=new WheelEvent('wheel',{bubbles:true,cancelable:true,deltaY:top===0?100:-100});input.dispatchEvent(inward);expect(inward.defaultPrevented).toBe(false);
+ touch(input,'touchstart',50,100);expect(touch(input,'touchmove',50,top===0?160:40).defaultPrevented).toBe(true);
+});
+it('preserves nested scrolling and horizontal slider movement',()=>{
+ const {dialog}=paint(),body=dialog.querySelector<HTMLElement>('.sheet-body')!,input=dialog.querySelector('input')!;input.type='range';
+ touch(input,'touchstart',20,100);expect(touch(input,'touchmove',100,102).defaultPrevented).toBe(false);
+ const textarea=document.createElement('textarea');body.append(textarea);scrollArea(textarea,100);
+ touch(textarea,'touchstart',50,100);expect(touch(textarea,'touchmove',50,50).defaultPrevented).toBe(false);
+ const zoom=new WheelEvent('wheel',{bubbles:true,cancelable:true,deltaY:100,ctrlKey:true});input.dispatchEvent(zoom);expect(zoom.defaultPrevented).toBe(false);
+});
+it('removes scroll interception when a sheet unmounts',()=>{
+ const {dialog}=paint();act(()=>render(null,root));const event=new WheelEvent('wheel',{bubbles:true,cancelable:true,deltaY:100});dialog.dispatchEvent(event);expect(event.defaultPrevented).toBe(false);
+});
+
+it('does not cancel tap jitter or change a horizontal drag into a scroll blocker',()=>{
+ const {dialog}=paint(),input=dialog.querySelector('input')!;
+ touch(input,'touchstart',50,100);expect(touch(input,'touchmove',51,102).defaultPrevented).toBe(false);
+ touch(input,'touchstart',50,100);expect(touch(input,'touchmove',100,102).defaultPrevented).toBe(false);
+ expect(touch(input,'touchmove',100,110).defaultPrevented).toBe(false);
+});

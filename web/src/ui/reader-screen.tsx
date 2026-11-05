@@ -1403,7 +1403,7 @@ export class ReaderScreen {
           if (this.positionReady && this.settings.mode === 'scroll') void this.flushProgress().catch(() => undefined);
         }, 250),
       );
-      this.viewListeners.push(bindChapterPull(this.view.elementHost, () => this.settings.mode !== 'paged', direction => void this.turnPage(direction)));
+      this.viewListeners.push(bindChapterPull(this.view.elementHost, () => this.settings.mode !== 'paged' && !this.bodyGesturesBlocked(), direction => void this.turnPage(direction)));
     }
 
     let following = false;
@@ -2739,7 +2739,7 @@ function bindChapterPull(host: HTMLElement, active: () => boolean, turn: (direct
   };
   const onTouchEnd = (event: TouchEvent) => {
     const from = edge; edge = null;
-    if (!from || performance.now() < quietUntil || hasTextSelection(host)) return;
+    if (!from || !active() || performance.now() < quietUntil || hasTextSelection(host)) return;
     const dy = (event.changedTouches[0]?.clientY ?? startY) - startY;
     if (from === 'end' && dy < -PULL && atEnd()) fire('next');
     else if (from === 'start' && dy > PULL && atStart()) fire('previous');
