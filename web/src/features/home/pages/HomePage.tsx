@@ -135,7 +135,7 @@ export function HomePage() {
   const user = useAuthStore(state => state.verifiedUser ?? state.session?.user ?? null);
   const reading = useQuery({
     queryKey: ['home', 'reading', runtime.api.baseUrl, user?.id],
-    queryFn: ({ signal }) => runtime.api.continueReading(2, { signal }),
+    queryFn: ({ signal }) => runtime.api.continueReading(1, { signal }),
   });
   const shelf = useShelf(1, 'recent');
   // 首页显示最近续播 (偏好设置 › 影音浏览) off: no video/audiobook continue cards; books are not media.
@@ -143,14 +143,14 @@ export function HomePage() {
   const video = useQuery({ ...historyQuery(runtime, 'video', new URLSearchParams()), enabled: showContinue });
   const audio = useQuery({ ...historyQuery(runtime, 'audiobook', new URLSearchParams()), enabled: showContinue });
   const unfinished = (items?: Activity[]) => items?.find(item => !item.completed);
-  const readingBooks = reading.data ?? [], book = readingBooks[0];
+  const book = reading.data?.[0];
   const videoActivity = showContinue ? unfinished(video.data?.items) : undefined, audioActivity = showContinue ? unfinished(audio.data?.items) : undefined;
   const books = (shelf.data?.items ?? []).slice(0, 8);
   const name = user?.displayName || user?.username || '';
 
   // Most recent first, whatever kind it is.
   const resumes: Array<{ at: number; node: ReactNode }> = [];
-  for (const item of readingBooks.slice(0, 2)) resumes.push({ at: item.lastReadAt ?? 0, node: <ResumeBook key={`read:${item.id}`} book={item} /> });
+  if (book) resumes.push({ at: book.lastReadAt ?? 0, node: <ResumeBook key={`read:${book.id}`} book={book} /> });
   if (videoActivity) resumes.push({ at: videoActivity.updatedAt ?? 0, node: <ResumeMedia key="video" channel="video" activity={videoActivity} /> });
   if (audioActivity) resumes.push({ at: audioActivity.updatedAt ?? 0, node: <ResumeMedia key="audiobook" channel="audiobook" activity={audioActivity} /> });
   resumes.sort((a, b) => b.at - a.at);

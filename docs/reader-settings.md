@@ -26,3 +26,14 @@
 ## 时长统计账号边界
 
 上游新增的离线时长队列按服务器及账号隔离。ReaderScreen 停止或账号切换后，旧阅读器不会通过新账号上报。读取旧账号的队列仅在回到同一作用域时发生；无法归属账号的旧无作用域队列不导入。
+
+
+## 自适应布局与续读验收
+
+- 首页只显示最近的一本正在阅读；视频/有声书续播仍按各自进度展示，书架不受影响。
+- 底栏按实际按钮数量等分可用宽度，配色按钮同样等分；详细入口按容器宽度自动排成合适列数，不为删除的按钮留空位。
+- 设置中的滑块按“标签 / 弹性滑块 / 右对齐数值”排版；开关说明占剩余宽度、开关靠右；分段选项独占一行且保留 44px 触控高度。返回位于标题左侧，关闭位于右侧。
+- 手机面板按内容自然增高，上限为动态可用视口的 80% 并扣除顶部安全区，超长内容在面板内滚动；标题、底部入口保持可达。桌面沿用右侧抽屉。
+- 合并后必须检查实际按钮位置、所有详细页和长说明，不再仅检查按钮数量与首屏截图。现有浏览器入口覆盖 320/390/768/1440 宽度、两种引擎；故意让接口返回两本书，确认仍只显示最新一本。
+
+参考：[Android 按可用窗口自适应](https://developer.android.com/develop/adaptive-apps/guides/support-different-display-sizes)、[Apple 底部面板与返回/关闭](https://developer.apple.com/design/human-interface-guidelines/sheets)、[Readest 设置布局](https://github.com/readest/readest/blob/main/apps/readest-app/DESIGN.md)、[CSS Grid 自适应列](https://developer.mozilla.org/en-US/docs/Learn_web_development/Core/CSS_layout/Grids)。采用现有 CSS 布局和共享组件，无新增布局框架或设备型号判断。

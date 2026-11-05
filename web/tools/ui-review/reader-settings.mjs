@@ -10,7 +10,7 @@ try {
   for (const [engine, type] of Object.entries({ chromium, webkit })) {
     const browser = await type.launch({ headless: true });
     try {
-      for (const [width, height] of [[320, 640], [390, 844], [1440, 768]]) {
+      for (const [width, height] of [[320, 640], [390, 844], [768, 1024], [1440, 768]]) {
         const page = await browser.newPage({ viewport: { width, height }, serviceWorkers: 'block', hasTouch: width < 701 });
         page.setDefaultTimeout(10000);
         const errors = []; page.on('pageerror', error => errors.push(error.message));
@@ -19,15 +19,50 @@ try {
         await page.locator('input[type=url]').fill(origin); await page.locator('input[autocomplete=username]').fill('review');
         await page.locator('input[type=password]').fill('password12'); await page.locator('button[type=submit]').click();
         await page.locator('.app-shell').waitFor();
+        await page.route('**/api/v1/library/continue?*', route => route.fulfill({ json: { items: [
+          { id: BOOK_ID, title: '当前阅读', format: 'chapters', lastReadAt: 2, percentage: .4 },
+          { id: 'older-reading', title: '上一本书', format: 'epub', lastReadAt: 1, percentage: .2 },
+        ] } }));
+        await page.evaluate(() => { location.hash = '#/'; });
+        await page.locator('.home-resume[data-channel=read]').waitFor();
+        assert.equal(await page.locator('.home-resume[data-channel=read]').count(), 1, 'home has only the latest reading card');
+        assert.match(await page.locator('.home-resume[data-channel=read]').innerText(), /当前阅读/);
+        await page.screenshot({ path: output + `${engine}-${width}-home.png` });
         await page.evaluate(() => window.readerApp.updateSettings({ mode: 'paged', fontScale: 1, brightness: 1 }));
         await page.evaluate(id => { location.hash = '#/book/' + id; }, BOOK_ID);
         await page.locator('book-content .book-flow p').first().waitFor();
         await page.locator('.stage').click({ position: { x: width / 2, y: height / 3 } });
+        const spacing = await page.locator('.reader-actions').evaluate(row => {
+          const rect = row.getBoundingClientRect(), buttons = [...row.children].map(button => button.getBoundingClientRect());
+          return { width: rect.width, slots: buttons.map(button => ({ left: button.left - rect.left, right: button.right - rect.left, width: button.width })) };
+        });
+        assert.equal(spacing.slots.length, 4);
+        assert.ok(spacing.slots.every(slot => Math.abs(slot.width - spacing.slots[0].width) < 1), 'footer buttons share available width');
+        assert.ok(Math.abs(spacing.slots.at(-1).right - spacing.width) < 2, 'footer fills its last slot');
         await page.getByRole('button', { name: '设置', exact: true }).click();
         const dialog = page.getByRole('dialog', { name: '阅读设置', exact: true }); await dialog.waitFor();
         await dialog.evaluate(async el => { await Promise.all(el.getAnimations().map(animation => animation.finished.catch(() => undefined))); });
         assert.equal(await page.locator('.reader-rail').count(), 0);
         assert.deepEqual(await page.locator('.reader-actions .top-button-label').allTextContents(), ['目录', '夜间', '朗读', '设置']);
+        const checkSettings = async name => {
+          const layout = await page.getByRole('dialog').locator('.sheet-body').evaluate(body => {
+            const bounds = body.getBoundingClientRect();
+            return { overflow: body.scrollWidth > body.clientWidth + 1,
+              controls: [...body.querySelectorAll('select, input[type=range], .segmented button, .switch')].map(control => {
+                const rect = control.getBoundingClientRect();
+                return { inside: rect.left >= bounds.left - 1 && rect.right <= bounds.right + 1, height: rect.height, segmented: control.closest('.segmented') !== null };
+              }),
+              switchAligned: [...body.querySelectorAll('.switch-field')].every(row => {
+                const button = row.querySelector('.switch').getBoundingClientRect();
+                return Math.abs(row.getBoundingClientRect().right - button.right) < 2;
+              }),
+            };
+          });
+          assert.equal(layout.overflow, false, name + ' has no horizontal overflow');
+          assert.ok(layout.controls.every(control => control.inside && (!control.segmented || control.height >= 44)), name + ' controls fit and have usable targets');
+          assert.ok(layout.switchAligned, name + ' switches align at the right');
+          await page.screenshot({ path: output + `${engine}-${width}-${name}.png` });
+        };
         const quick = await dialog.locator('.reader-font-size, .reader-quick-themes, .reader-settings-links').evaluateAll(nodes => nodes.map(node => ({ top: node.getBoundingClientRect().top, bottom: node.getBoundingClientRect().bottom })));
         await page.screenshot({ path: output + `${engine}-${width}-initial.png` });
         assert.ok(quick.every(box => box.top >= 0 && box.bottom <= height), 'size and favorite colors are visible immediately: ' + JSON.stringify({engine,width,height,quick}));
@@ -42,15 +77,22 @@ try {
         await dialog.getByRole('button', { name: '配色：牛皮纸', exact: true }).click();
         await page.waitForFunction(() => document.querySelector('.reader-screen')?.dataset.readingTheme === 'local-kraft-day');
         await page.screenshot({ path: output + `${engine}-${width}-quick.png` });
+        await checkSettings('quick-layout');
         await dialog.getByRole('button', { name: '字体与间距', exact: true }).click();
+        await checkSettings('text-layout');
         await page.getByRole('combobox', { name: '字体', exact: true }).selectOption('system-ui, -apple-system, "Noto Sans SC", sans-serif');
         await page.getByRole('button', { name: '返回阅读设置', exact: true }).click();
         await page.getByRole('button', { name: /^翻页与点击/ }).click();
         assert.equal(await page.locator('.tap-zones-grid .tap-zone-cell').count(), 9);
+        await checkSettings('paging-layout');
         await page.screenshot({ path: output + `${engine}-${width}-paging.png` });
         await page.getByRole('button', { name: '返回阅读设置', exact: true }).click();
         await page.getByRole('button', { name: /^显示设置/ }).click();
         await page.getByRole('combobox', { name: '底部右侧', exact: true }).selectOption('progress');
+        await checkSettings('display-layout');
+        await page.getByRole('button', { name: '返回阅读设置', exact: true }).click();
+        await page.getByRole('button', { name: /^朗读设置/ }).click();
+        await checkSettings('speech-layout');
         await close(page);
         await page.getByRole('button', { name: '设置', exact: true }).click();
         await page.getByRole('button', { name: '更多配色', exact: true }).click();
@@ -86,7 +128,7 @@ try {
         assert.equal(await page.locator('.reader-screen').getAttribute('data-reading-theme'), 'local-kraft-day');
         assert.equal(await page.locator('html').evaluate(el => el.scrollWidth > innerWidth), false);
         assert.deepEqual(errors, []);
-        cases.push({ engine, width, height, quickControlsVisible: true, settingsAppliedAndPersisted: true, themes: 30 });
+        cases.push({ engine, width, height, oneReadingCard: true, equalFooterSlots: true, allSettingsFit: true, quickControlsVisible: true, settingsAppliedAndPersisted: true, themes: 30 });
         await page.close();
       }
     } finally { await browser.close(); }

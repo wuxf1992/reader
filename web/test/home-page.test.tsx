@@ -107,11 +107,12 @@ describe('首页', () => {
     expect(browses().filter((path: string) => path.includes('sort=random')).length).toBe(2);
   });
 
-  it('lists up to two books in progress among the media, by recency', async () => {
+  it('shows only the latest reading book, even if the server returns several, alongside media', async () => {
     useAuthStore.setState({ verifiedUser: user as any });
-    mount({ reading: [{ ...book, id: 'b2', title: '新书', lastReadAt: 9 }, book] });
+    const runtime = mount({ reading: [{ ...book, id: 'b2', title: '新书', lastReadAt: 9 }, book] });
     await settle();
-    expect([...root.querySelectorAll<HTMLAnchorElement>('a.home-resume')].map(card => card.getAttribute('href'))).toEqual(['/book/b2', '/media/video/items/i1', '/book/b1']);
+    expect([...root.querySelectorAll<HTMLAnchorElement>('a.home-resume')].map(card => card.getAttribute('href'))).toEqual(['/book/b2', '/media/video/items/i1']);
+    expect(runtime.api.continueReading).toHaveBeenCalledWith(1, expect.anything());
   });
 
   it('skips finished media and invites the reader to the shelf when nothing is in progress', async () => {

@@ -704,7 +704,7 @@ function SegmentedRow({
   onChange(value: string): void;
 }): JSX.Element {
   return (
-    <div className="field">
+    <div className="field is-stacked">
       <label>{label}</label>
       <div className="segmented" role="group" aria-label={label}>
         {options.map((option) => (
@@ -803,10 +803,8 @@ function SliderRow({
   onChange(value: number): void;
 }): JSX.Element {
   return (
-    <div className="field">
-      <label>
-        {label} {format(value)}
-      </label>
+    <div className="field field-slider">
+      <label>{label}</label>
       <input
         type="range"
         aria-label={label}
@@ -817,6 +815,7 @@ function SliderRow({
         value={value}
         onInput={(event) => onChange(Number((event.currentTarget as HTMLInputElement).value))}
       />
+      <output className="field-value" aria-hidden="true">{format(value)}</output>
     </div>
   );
 }
