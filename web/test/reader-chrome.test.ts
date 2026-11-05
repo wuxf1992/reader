@@ -339,11 +339,24 @@ describe('ReaderChrome', () => {
     act(() => render(h(ReaderChrome, { state: chromeState({ settingsOpen: true, settingsTab: 'appearance' }), stage: document.createElement('div'), handlers: callbacks }), container));
     expect(container.querySelector('.reader-settings-home input[aria-label="页面亮度"]')).not.toBeNull();
     expect(container.querySelectorAll('[aria-label="常用配色"] button')).toHaveLength(5);
+    expect(container.querySelector('output[aria-label="当前字号"]')?.textContent).toBe('20');
     settingsPage('增大字号'); expect(callbacks.onSetting).toHaveBeenLastCalledWith({ fontScale: 1.05 });
     settingsPage('减小字号'); expect(callbacks.onSetting).toHaveBeenLastCalledWith({ fontScale: .95 });
     settingsPage('阅读工具'); expect(callbacks.onTools).toHaveBeenCalledOnce();
     settingsPage('显示设置');
     expect(container.querySelector('select[aria-label="顶部左侧"]')).not.toBeNull();
+  });
+
+  it('uses integer font sizes in both settings entries while keeping stored scale values', () => {
+    const callbacks = { ...handlers(), onSetting: vi.fn() };
+    act(() => render(h(ReaderChrome, { state: chromeState({ settingsOpen: true, settingsTab: 'appearance', fontScale: 1.05 }), stage: document.createElement('div'), handlers: callbacks }), container));
+    expect(container.querySelector('output[aria-label="当前字号"]')?.textContent).toBe('21');
+    settingsPage('字体与间距');
+    const slider = container.querySelector<HTMLInputElement>('input[aria-label="字号"]')!;
+    expect([slider.value, slider.min, slider.max, slider.step]).toEqual(['21', '16', '44', '1']);
+    act(() => { slider.value = '19'; slider.dispatchEvent(new Event('input', { bubbles: true })); });
+    expect(callbacks.onSetting).toHaveBeenLastCalledWith({ fontScale: .95 });
+    expect(slider.getAttribute('aria-valuetext')).not.toContain('%');
   });
 
   it('offers all shared themes as swatches, and marks the current one', () => {

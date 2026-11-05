@@ -100,6 +100,7 @@ try {
         assert.equal(await dialog.getByRole('button', { name: '增大字号', exact: true }).isDisabled(), false);
         await dialog.getByRole('button', { name: '增大字号', exact: true }).click();
         await page.waitForFunction(() => window.readerApp.settings.current.fontScale === 1.05);
+        assert.equal(await dialog.getByLabel('当前字号', { exact: true }).textContent(), '21');
         await dialog.getByRole('button', { name: '减小字号', exact: true }).click();
         await page.waitForFunction(() => window.readerApp.settings.current.fontScale === 1);
         const brightness = dialog.getByRole('slider', { name: '页面亮度', exact: true });

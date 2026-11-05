@@ -350,3 +350,12 @@ React 全流程浏览器回归已通过，40 张手机 / 桌面截图，无页�
 - 发布源码 `c48edb57a3c2b1a44685e48fcc75f8817c65a5db`，标签 `custom-release-reader-iphone-20261105`，回退标签 `custom-before-reader-iphone-20261105`；个人 origin 的 custom 及两标签已推送。北京时间 2026-11-05 21:20 发布前端。
 - 旧网页完整备份 `/opt/reader/backups/web-reader-iphone-20261105-132046`。60 个构建文件逐一匹配 HTTP 源站，HTML/SW/入口/CSS/manifest 匹配公网 HTTPS 且证书验证正常，健康接口通过。入口 `assets/client-DdlLtYWb.js`，样式 `assets/index-Ca9wb6BO.css`；保留旧资源供现有页面更新。
 - 仅更新网页，服务未重启；数据库、账号、阅读进度与插件保持原样。发布失败路径可恢复完整旧前端。完整回执、修复前后截图及检查记录在 `../reader-assessment-20261105/iphone-fix/`；尚未由真实 iPhone 复验。
+
+## 临时技能检查与数字字号：2026-11-05
+
+- 临时加载 Impeccable audit、官方 Playwright CLI、Webapp Testing 服务器辅助脚本和 Ponytail Review；引擎/CLI 缓存均在 `/tmp`，未安装或升级全局技能。报告见 [临时技能检查](docs/reader-skill-audit-20261105.md)。
+- 用户追加要求：字号改为整数档位，默认 20，16–44，每次加减一档；快捷入口与详细滑块一致。沿用原 fontScale 存储，原字号不突变，EPUB 版式层级保留。
+- 检查复现并修复四项：横屏抽屉未避开侧面安全区；悬停文字对比度仅 1.66:1；设置图标按钮 40px 小于本项目 44px 目标；32px 根字号下滑条挤窄。分别复用安全区、语义文字令牌、最小触控尺寸与容器查询修正，没有新产品依赖。
+- 150 项相关单元/组件/设计契约检查、类型检查与构建通过。临时 CLI 8 条命令成功；技能流程 12 组场景与既有设置 12 组回归均通过；另以 Chromium 合成触摸及 WebKit 指针验证放大界面下的原生滑条实际生效。键盘焦点、Escape、短视口输入、PWA 根/子路径安装更新与离线均通过。
+- Impeccable 仅有两条引用文字侧线告警，经上下文核对为语义标记而非卡片装饰，保留。真实 iPhone、软件键盘切换、OS 动态字号、完整无障碍审计与低端机性能仍未覆盖；缩小视口不能等同于真键盘。
+- 本次为前端发布；证据与前后截图保存于 `../reader-assessment-20261105/skill-fontsize/`，实际发布源码与备份见后续回执。

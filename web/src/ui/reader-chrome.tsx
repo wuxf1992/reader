@@ -451,6 +451,8 @@ function StageHost({ stage }: { stage: HTMLElement }): JSX.Element {
   );
 }
 
+const FONT_SIZE_BASE = 20;
+
 type SettingsSection = 'quick' | 'text' | 'theme' | 'behavior' | 'display' | 'speech';
 const SETTINGS_TITLES: Record<SettingsSection, string> = {
   quick: '阅读设置', text: '字体与间距', theme: '全部配色', behavior: '翻页与点击', display: '显示设置', speech: '朗读',
@@ -476,7 +478,7 @@ function ReaderSettings({ state, handlers }: { state: ChromeState; handlers: Chr
         <span>字号</span>
         <div className="reader-size-stepper" role="group" aria-label="字号">
           <IconButton icon="minus" label="减小字号" disabled={state.fontScale <= .8} onClick={() => handlers.onSetting({ fontScale: Math.max(.8, Math.round((state.fontScale - .05) * 100) / 100) })} />
-          <output aria-live="polite" aria-label="当前字号">{Math.round(state.fontScale * 100)}%</output>
+          <output aria-live="polite" aria-label="当前字号">{Math.round(state.fontScale * FONT_SIZE_BASE)}</output>
           <IconButton icon="plus" label="增大字号" disabled={state.fontScale >= 2.2} onClick={() => handlers.onSetting({ fontScale: Math.min(2.2, Math.round((state.fontScale + .05) * 100) / 100) })} />
         </div>
         <button type="button" className="reader-font-more" onClick={() => setSection('text')}>字体与间距<Icon name="chevron-right" size={14} /></button>
@@ -502,7 +504,7 @@ function ReaderSettings({ state, handlers }: { state: ChromeState; handlers: Chr
 
 function SettingsBody({ section, state, handlers }: { section: 'text' | 'behavior' | 'display'; state: ChromeState; handlers: ChromeHandlers }): JSX.Element {
   if (section === 'text') return <>
-    <SliderRow label="字号" value={state.fontScale} min={.8} max={2.2} step={.05} format={value => `${Math.round(value * 100)}%`} onChange={fontScale => handlers.onSetting({ fontScale })} />
+    <SliderRow label="字号" value={Math.round(state.fontScale * FONT_SIZE_BASE)} min={16} max={44} step={1} format={String} onChange={fontSize => handlers.onSetting({ fontScale: fontSize / FONT_SIZE_BASE })} />
     <SelectRow label="字体" options={[
       { value: 'inherit', label: '原书' },
       { value: 'system-ui, -apple-system, "Noto Sans SC", sans-serif', label: '系统黑体' },

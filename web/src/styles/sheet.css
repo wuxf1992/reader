@@ -322,9 +322,9 @@
 
 @media (min-width: 701px) {
   .sheet {
-    inset: 1rem 1rem 1rem auto;
-    width: min(30rem, calc(100vw - 2rem));
-    max-height: calc(100dvh - 2rem);
+    inset: max(1rem, var(--safe-top)) max(1rem, var(--safe-right)) max(1rem, var(--safe-bottom)) auto;
+    width: min(30rem, calc(100vw - max(1rem, var(--safe-left)) - max(1rem, var(--safe-right))));
+    max-height: calc(100dvh - max(1rem, var(--safe-top)) - max(1rem, var(--safe-bottom)));
     border-bottom: 1px solid var(--reader-line);
     border-radius: var(--radius-lg);
     box-shadow: 0 12px 48px color-mix(in srgb, #000 20%, transparent);

@@ -47,3 +47,10 @@
 - 浏览器回归分别覆盖普通模式与模拟独立模式；后者显式设置 47px 顶部、34px 底部安全区，并验证动态增至 50px 后恢复。除可见性，还断言正文区域没有被拉长、底栏没有空闲高度、页码紧贴底栏、按钮顺序正确。
 
 依据：[WebKit 安全区处理](https://webkit.org/blog/7929/designing-websites-for-iphone-x/)、[MDN 尺寸监听范围](https://developer.mozilla.org/en-US/docs/Web/API/ResizeObserver/observe)。模拟 PWA 不等同于真机 Safari 验收。
+
+
+## 数字字号与临时技能验收
+
+字号快捷显示和详细滑块使用同一套整数档位：默认 20，范围 16–44，每次加减一档；不再显示百分比。内部沿用旧比例存储，原来的大小和阅读进度不变，EPUB 原书的字号层级继续保留。
+
+本次临时调用 Impeccable、Playwright CLI、Webapp Testing 辅助脚本和 Ponytail Review，确认并修正横屏安全区、悬停对比度、40px 小按钮及大界面字号下滑条挤窄。完整过程、误报与验收限制见 [技能检查报告](reader-skill-audit-20261105.md)。
