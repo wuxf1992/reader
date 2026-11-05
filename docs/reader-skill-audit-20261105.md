@@ -70,6 +70,8 @@ Implementation integrity: pass. The detector returned two `side-tab` warnings at
 - The fixture uses synthetic local accounts and blocks requests to the production Reader. The temporary helper stops its server, and the isolated CLI browser session is closed.
 - Evidence: `artifacts/skill-audit-20261105/` contains before/after screenshots, CLI snapshots and structured results. Temporary skill files and runtime caches were kept outside the global skill directories.
 
+Publication: Source `fb668c4c02675e8a5923afe408caef80d36e5545` was published at 2026-11-05 21:56 Asia/Shanghai. All 60 frontend files match the origin, key files match public HTTPS with certificate verification, and health is normal. The complete previous frontend is retained at `/opt/reader/backups/web-reader-fontsize-skill-20261105-135641`. Temporary tool caches were removed after the check.
+
 Verdict: Ship.
 
 Not checked: Physical iPhone Safari/PWA, real software-keyboard transitions, OS Dynamic Type, screen readers, complete Android APK and low-end network/render performance. A shortened viewport is a keyboard surrogate. WebKit mouse interaction is not physical iPhone touch.

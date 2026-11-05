@@ -359,3 +359,9 @@ React 全流程浏览器回归已通过，40 张手机 / 桌面截图，无页�
 - 150 项相关单元/组件/设计契约检查、类型检查与构建通过。临时 CLI 8 条命令成功；技能流程 12 组场景与既有设置 12 组回归均通过；另以 Chromium 合成触摸及 WebKit 指针验证放大界面下的原生滑条实际生效。键盘焦点、Escape、短视口输入、PWA 根/子路径安装更新与离线均通过。
 - Impeccable 仅有两条引用文字侧线告警，经上下文核对为语义标记而非卡片装饰，保留。真实 iPhone、软件键盘切换、OS 动态字号、完整无障碍审计与低端机性能仍未覆盖；缩小视口不能等同于真键盘。
 - 本次为前端发布；证据与前后截图保存于 `../reader-assessment-20261105/skill-fontsize/`，实际发布源码与备份见后续回执。
+
+### 数字字号与技能检查发布回执
+
+- 发布源码 `fb668c4c02675e8a5923afe408caef80d36e5545`，标签 `custom-release-reader-fontsize-20261105`，回退标签 `custom-before-reader-fontsize-20261105`；个人 origin 已备份。北京时间 2026-11-05 21:56 发布完整前端。
+- 旧网页完整备份 `/opt/reader/backups/web-reader-fontsize-skill-20261105-135641`。60 个构建文件逐一匹配 HTTP 源站，HTML/SW/入口/CSS/manifest 匹配公网 HTTPS 并校验证书，健康正常。入口 `assets/client-8-Wn2G9s.js`，样式 `assets/index-CJDxszAT.css`；保留旧资源供已有页面继续使用。
+- 仅更新网页，未重启服务或更改账号、书籍、进度与插件数据；失败路径可恢复旧前端。临时工具和 npm 缓存已清理，全局技能未安装或升级；审计报告与证据保留。
