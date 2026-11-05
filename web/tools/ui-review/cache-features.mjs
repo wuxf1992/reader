@@ -50,7 +50,7 @@ try {
         if (await page.locator('.reader-screen').getAttribute('data-chrome') === 'hidden') {
           const box = await page.locator('book-content').boundingBox(); await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
         }
-        await page.getByRole('button', { name: '工具', exact: true }).click();
+        await page.getByRole('button', { name: '设置', exact: true }).click(); await page.getByRole('button', { name: /^阅读工具/ }).click();
         await page.getByRole('button', { name: '离线缓存', exact: true }).click();
         const dialog = page.getByRole('dialog', { name: '阅读工具' });
         const toggle = dialog.getByRole('checkbox', { name: '提前缓存后续章节' });
@@ -72,7 +72,7 @@ try {
         await page.waitForFunction(() => document.querySelectorAll('.toc-cached').length === 4);
         assert.equal(await panel.locator('.toc-list button').nth(9).locator('.toc-cached').count(), 0);
         await panel.getByRole('button', { name: '关闭', exact: true }).click();
-        await page.getByRole('button', { name: '工具', exact: true }).click();
+        await page.getByRole('button', { name: '设置', exact: true }).click(); await page.getByRole('button', { name: /^阅读工具/ }).click();
         await page.getByRole('button', { name: '离线缓存', exact: true }).click();
         await dialog.getByText('后续 3 章已缓存', { exact: true }).waitFor();
         await count.selectOption('5');
@@ -85,7 +85,7 @@ try {
         if (await page.locator('.reader-screen').getAttribute('data-chrome') === 'hidden') {
           const box = await page.locator('book-content').boundingBox(); await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
         }
-        await page.getByRole('button', { name: '工具', exact: true }).click();
+        await page.getByRole('button', { name: '设置', exact: true }).click(); await page.getByRole('button', { name: /^阅读工具/ }).click();
         await page.getByRole('button', { name: '离线缓存', exact: true }).click();
         assert.equal(await toggle.isChecked(), false); assert.equal(await count.inputValue(), '5');
         assert.ok(await dialog.evaluate(el => {

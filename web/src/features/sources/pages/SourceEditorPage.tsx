@@ -41,10 +41,9 @@ export function SourceEditorPage() {
     }
     try {
       await mutations.save.mutateAsync({ id: sourceId ?? null, input: { name: name.trim(), config: value, ...(sourceId ? {} : { pluginId: type?.pluginId, sourceType: type?.id }) } });
+      notify(sourceId ? '书源已保存' : '书源已添加', { kind: 'success' });
       navigate('/sources');
-    } catch (reason) {
-      notify(reason instanceof Error ? reason.message : '保存失败，请稍后重试。', { kind: 'error' });
-    }
+    } catch (reason) { setJsonError(reason instanceof Error ? reason.message : '保存书源失败，请重试'); }
   };
   const setField = (key: string, value: unknown) => setConfig(previous => ({ ...previous, [key]: value }));
   return <div className="sources-screen">
@@ -68,7 +67,7 @@ export function SourceEditorPage() {
         {jsonError && <Callout tone="error">{jsonError}</Callout>}
         {source?.descriptor?.credentialKeys?.length ? <p className="muted">凭据不会保存到配置中，请保存后单独设置</p> : null}
         <div className="sources-actions">
-          <Button type="submit" className="primary" disabled={mutations.save.isPending}>保存</Button>
+          <Button type="submit" className="primary" disabled={mutations.save.isPending}>{mutations.save.isPending ? '正在保存…' : '保存'}</Button>
           <Button onClick={() => navigate('/sources')}>取消</Button>
           {sourceId && <Button className="danger" disabled={mutations.remove.isPending} onClick={() => setRemoving(true)}>删除来源</Button>}
         </div>

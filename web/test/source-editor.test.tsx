@@ -31,7 +31,7 @@ it('reports a save failure, preserves the draft and lets the user retry successf
       input.dispatchEvent(new Event('input', { bubbles: true }));
     });
     await act(async () => { root.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); });
-    expect(notify).toHaveBeenCalledWith('保存失败，请重试', { kind: 'error' });
+    expect(root.querySelector('[role="alert"]')?.textContent).toContain('保存失败，请重试');
     expect(root.querySelector('input')!.value).toBe('保留的草稿');
     await act(async () => { root.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); });
     expect(api.saveSource).toHaveBeenLastCalledWith(null, { name: '保留的草稿', config: {}, pluginId: 'test', sourceType: 'text' });
@@ -94,7 +94,9 @@ it('keeps failed removal recoverable and prevents duplicate confirmations while 
     expect(notify).toHaveBeenCalledWith('删除失败，请重试', { kind: 'error' });
     expect(document.querySelector('[role=alertdialog]')).not.toBeNull();
     await act(async () => button('删除').click());
-    expect(button('删除').disabled).toBe(true);
+    await vi.waitFor(() => expect(button('删除').disabled).toBe(true));
+    button('删除').click();
+    expect(api.removeSource).toHaveBeenCalledTimes(2);
     await act(async () => { finish(); });
     expect(root.textContent).toContain('删除完成');
   } finally { act(() => render(null, root)); client.clear(); root.remove(); vi.clearAllMocks(); }

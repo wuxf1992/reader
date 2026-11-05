@@ -6,7 +6,7 @@ import {SleepTimerOptions} from './sleep-timer.tsx';
 export function PlaybackSettings({scope,player,onPlayback}:{scope:string;player:MediaPlayer;onPlayback?:()=>void}) {
   const [value,setValue]=useState(()=>readPlaybackPreferences(scope)),[error,setError]=useState('');
   function change(patch:Partial<typeof value>){const next={...value,...patch};try{savePlaybackPreferences(scope,next);setValue(next);setError('');}catch{setError('无法保存播放偏好，请检查设备存储。');}}
-  return <section className="media-settings-panel"><h2>播放偏好</h2>
+  return <section className="media-settings-panel">
     <label className="media-setting-field">默认倍速<MediaSelect aria-label="默认倍速" value={value.defaultRate} onChange={event=>change({defaultRate:Number(event.currentTarget.value)})}>{playbackRates.map(rate=><option key={rate} value={rate}>{rate}×</option>)}</MediaSelect></label>
     <label className="media-settings-check"><span>连续播放</span><input type="checkbox" checked={value.continuous} onChange={event=>change({continuous:event.currentTarget.checked})}/></label>
     <p className="media-theme-note">默认倍速在结束后再次开始播放时使用。连续播放适用于网页播放器，原生播放器使用其自身的队列设置。</p>

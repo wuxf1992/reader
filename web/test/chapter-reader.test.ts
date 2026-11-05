@@ -152,7 +152,8 @@ it('applies the global text choice immediately, preserves the chapter, TTS and r
   await env.screen.open(book);
   const reader = env.screen as unknown as { view: ReaderView; goToSection(index: number): Promise<void> };
   await reader.goToSection(1);
-  await act(() => click(env.screen, '外观'));
+  await act(() => click(env.screen, '设置'));
+  await act(() => click(env.screen, '字体与间距'));
   await act(() => click(env.screen, '繁体'));
   await vi.waitFor(() => expect(body(env.screen)?.querySelector('.book-flow')?.textContent).toContain('頭髮發展，乾淨幹活，皇后後來。'));
   expect(reader.view.position().sectionId).toBe('chapter:b');
@@ -168,7 +169,8 @@ it('applies the global text choice immediately, preserves the chapter, TTS and r
   const restored = await setup(kv, blobs, 'u1', 'http://one.test', await new SettingsStore(kv).load());
   restored.transport.failWith(new Error('offline')); await restored.screen.open(book);
   expect(body(restored.screen)?.querySelector('.book-flow')?.textContent).toContain('頭髮發展');
-  await act(() => click(restored.screen, '外观'));
+  await act(() => click(restored.screen, '设置'));
+  await act(() => click(restored.screen, '字体与间距'));
   await act(() => click(restored.screen, '原文'));
   await vi.waitFor(() => expect(body(restored.screen)?.querySelector('.book-flow')?.textContent).toContain(raw));
 });
@@ -206,8 +208,12 @@ function body(screen: ReaderScreen): ShadowRoot | null | undefined {
 }
 
 async function click(screen: ReaderScreen, label: string): Promise<void> {
+  if (label === '工具') {
+    if (!screen.element.querySelector('.reader-settings')) await click(screen, '设置');
+    await click(screen, '阅读工具'); return;
+  }
   const button = [...screen.element.querySelectorAll('button')].find((candidate) =>
-    candidate.getAttribute('aria-label') === label || candidate.textContent?.trim().endsWith(label));
+    candidate.getAttribute('aria-label') === label || candidate.textContent?.trim().endsWith(label) || candidate.textContent?.trim().startsWith(label));
   expect(button, label).toBeDefined();
   button!.click();
   await Promise.resolve();
@@ -402,7 +408,8 @@ describe('chapter publication reading', () => {
     const kv = new MemoryKv();
     const blobs = new MemoryBlobs();
     const first = await setup(kv, blobs);
-    serve(first.transport, content(['a', 'b']));
+    // Three chapters: opening a also prefetches b, so c is the one never cached.
+    serve(first.transport, content(['a', 'b', 'c']));
     await first.screen.open(book);
     expect(body(first.screen)?.textContent).toContain('<script>alert(1)</script>');
     expect(body(first.screen)?.querySelector('script')).toBeNull();
@@ -416,11 +423,11 @@ describe('chapter publication reading', () => {
     await second.screen.open(book);
     expect(body(second.screen)?.textContent).toContain('resource:r1:a');
     await click(second.screen, '目录');
-    expect(second.screen.element.querySelectorAll('.toc-list li')).toHaveLength(2);
-    await click(second.screen, '2章节 b');
+    expect(second.screen.element.querySelectorAll('.toc-list li')).toHaveLength(3);
+    await click(second.screen, '3章节 c');
     await vi.waitFor(() => expect(noticeText()).toContain('这一章尚未缓存'));
     expect(body(second.screen)?.textContent).toContain('resource:r1:a');
-    expect(body(second.screen)?.textContent).not.toContain('resource:r1:b');
+    expect(body(second.screen)?.textContent).not.toContain('resource:r1:c');
   });
 
   it('opens cached text immediately without spending a network timeout budget', async () => {
@@ -914,7 +921,7 @@ it('applies brightness to the whole reading screen on load and slider updates', 
   serve(env.transport, content(['a'])); await env.screen.open(book);
   expect(env.screen.element.style.getPropertyValue('--reader-brightness')).toBe('0.5');
   expect(document.documentElement.dataset.readerBrightness).toBe('0.5');
-  await click(env.screen, '外观');
+  await click(env.screen, '设置');
   const slider = env.screen.element.querySelector<HTMLInputElement>('[aria-label="页面亮度"]')!;
   await act(() => { slider.value = '0.75'; slider.dispatchEvent(new Event('input', { bubbles: true })); });
   expect(env.screen.element.style.getPropertyValue('--reader-brightness')).toBe('0.75');
@@ -954,23 +961,23 @@ it('toggles glass without reapplying body settings or changing its saved palette
   expect(apply).not.toHaveBeenCalled();
   expect(env.onSettingsChange).toHaveBeenLastCalledWith({ liquidGlass: true });
   expect(env.screen.element.dataset.readingTheme).toBe('local-wechat-night');
-  await click(env.screen, '外观');
+  await click(env.screen, '设置'); await click(env.screen, '显示设置');
   expect(env.screen.element.querySelector('[aria-label="液态玻璃"]')?.getAttribute('aria-pressed')).toBe('true');
 });
 
 it('opens immersed and lets body taps, swipes and keys continue reading while controls are visible', async () => {
   const env = await setup(undefined, undefined, 'u1', 'http://one.test', { mode: 'paged' });
   serve(env.transport, content(['a', 'b'])); await env.screen.open(book);
-  const reader = env.screen as unknown as { turnPage(direction: 'next' | 'previous'): Promise<void>; onTapZone(zone: 'previous' | 'next' | 'toggle-chrome'): void };
+  const reader = env.screen as unknown as { turnPage(direction: 'next' | 'previous'): Promise<void>; onTapZone(column: number, row: number): void };
   expect(env.screen.element.dataset.chrome).toBe('hidden');
   expect(document.activeElement).toBe(env.screen.element);
   const turn = vi.spyOn(reader, 'turnPage').mockResolvedValue();
   const stage = env.screen.element.querySelector<HTMLElement>('.stage')!;
   stage.getBoundingClientRect = () => ({ x: 0, y: 0, left: 0, top: 0, right: 300, bottom: 600, width: 300, height: 600, toJSON() {} });
-  reader.onTapZone('toggle-chrome'); reader.onTapZone('next');
+  reader.onTapZone(1, 1); reader.onTapZone(2, 1);
   expect(env.screen.element.dataset.chrome).toBe('hidden');
   expect(turn).toHaveBeenLastCalledWith('next');
-  reader.onTapZone('toggle-chrome');
+  reader.onTapZone(1, 1);
   for (const [type, x] of [['pointerdown', 250], ['pointerup', 50]] as const) {
     const event = new Event(type, { bubbles: true });
     Object.assign(event, { clientX: x, clientY: 300, pointerType: 'touch', button: 0 });
@@ -978,22 +985,22 @@ it('opens immersed and lets body taps, swipes and keys continue reading while co
   }
   expect(env.screen.element.dataset.chrome).toBe('hidden');
   expect(turn).toHaveBeenCalledTimes(2);
-  reader.onTapZone('toggle-chrome');
+  reader.onTapZone(1, 1);
   stage.dispatchEvent(new KeyboardEvent('keydown', { key: 'PageDown', bubbles: true }));
   expect(turn).toHaveBeenCalledTimes(3);
   expect(env.screen.element.dataset.chrome).toBe('hidden');
-  reader.onTapZone('toggle-chrome');
-  await click(env.screen, '外观');
+  reader.onTapZone(1, 1);
+  await click(env.screen, '设置');
   turn.mockClear();
-  reader.onTapZone('next');
+  reader.onTapZone(2, 1);
   stage.dispatchEvent(new KeyboardEvent('keydown', { key: 'PageDown', bubbles: true }));
   expect(turn).not.toHaveBeenCalled();
 });
 
 it('hides controls on a scroll drag without consuming the browser scroll', async () => {
   const env = await setup(); serve(env.transport, content(['a'])); await env.screen.open(book);
-  const reader = env.screen as unknown as { onTapZone(zone: 'toggle-chrome'): void };
-  reader.onTapZone('toggle-chrome');
+  const reader = env.screen as unknown as { onTapZone(column: number, row: number): void };
+  reader.onTapZone(1, 1);
   const stage = env.screen.element.querySelector<HTMLElement>('.stage')!;
   for (const [type, y] of [['pointerdown', 400], ['pointermove', 300], ['pointercancel', 300]] as const) {
     const event = new Event(type, { bubbles: true, cancelable: true });
@@ -1066,30 +1073,22 @@ it('keeps automatic sync quiet while preserving failures and offline feedback', 
 });
 
 
-it('remembers each settings section independently across reopening and reload', async () => {
+it('keeps reading preferences across settings pages, reopening and device reload', async () => {
   const env = await setup(); serve(env.transport, content(['a'])); await env.screen.open(book);
-  await click(env.screen, '外观');
-  const section = [...env.screen.element.querySelectorAll<HTMLDetailsElement>('details')]
-    .find(details => details.querySelector('summary')?.textContent === '页眉页脚顶部与底部显示的信息')!;
-  section.open = false;
-  section.dispatchEvent(new Event('toggle'));
-  await vi.waitFor(() => expect(env.onSettingsChange).toHaveBeenCalled());
+  await click(env.screen, '设置'); await click(env.screen, '显示设置');
+  const select = env.screen.element.querySelector<HTMLSelectElement>('select[aria-label="顶部左侧"]')!;
+  await act(() => { select.value = 'book'; select.dispatchEvent(new Event('change', { bubbles: true })); });
+  await vi.waitFor(() => expect(env.onSettingsChange).toHaveBeenCalledWith({ readoutTopLeft: 'book' }));
   const saved = env.onSettingsChange.mock.calls.at(-1)![0];
-  expect(saved.readerSections).toEqual({ readout: false, text: true, theme: false, paging: true });
-  await click(env.screen, '外观'); await click(env.screen, '外观');
-  expect([...env.screen.element.querySelectorAll<HTMLDetailsElement>('details')]
-    .find(details => details.querySelector('summary')?.textContent === '页眉页脚顶部与底部显示的信息')?.open).toBe(false);
-  const kv = new MemoryKv(), store = new SettingsStore(kv);
-  await store.load(); await store.update(saved);
+  await click(env.screen, '返回阅读设置'); await click(env.screen, '字体与间距');
+  expect(env.screen.element.querySelector('[aria-label="字体"]')).not.toBeNull();
+  await click(env.screen, '关闭'); await click(env.screen, '设置'); await click(env.screen, '显示设置');
+  expect(env.screen.element.querySelector<HTMLSelectElement>('select[aria-label="顶部左侧"]')?.value).toBe('book');
+  const kv = new MemoryKv(), store = new SettingsStore(kv); await store.load(); await store.update(saved);
   const next = await setup(undefined, undefined, 'u1', 'http://one.test', await new SettingsStore(kv).load());
-  serve(next.transport, content(['a'])); await next.screen.open(book); await click(next.screen, '外观');
-  const details = [...next.screen.element.querySelectorAll<HTMLDetailsElement>('details')];
-  expect(details.map(item => item.querySelector('summary')?.textContent)).toEqual(['主题与书架和设置共用', '更多排版页边距 · 对齐 · 字体', '页眉页脚顶部与底部显示的信息']);
-  expect(details.map(item => item.open)).toEqual([false, true, false]);
-  const readout = details[2]!; readout.open = true; readout.dispatchEvent(new Event('toggle'));
-  await vi.waitFor(() => expect(next.onSettingsChange).toHaveBeenCalledWith({ readerSections: { readout: true, text: true, theme: false, paging: true } }));
+  serve(next.transport, content(['a'])); await next.screen.open(book); await click(next.screen, '设置'); await click(next.screen, '显示设置');
+  expect(next.screen.element.querySelector<HTMLSelectElement>('select[aria-label="顶部左侧"]')?.value).toBe('book');
 });
-
 
 it('keeps the back control available when opening an uncached book fails', async () => {
   const env = await setup(); env.transport.failWith(new Error('offline'));
@@ -1185,4 +1184,114 @@ it('removes cached text after explicit background denial of book access', async 
   await vi.waitFor(() => expect(deny).toBeDefined()); deny(new ApiError('forbidden', 'book permission revoked'));
   await vi.waitFor(() => expect(env.screen.element.querySelector('book-content')).toBeNull());
   expect(env.screen.element.dataset.chrome).toBe('visible');
+});
+
+it('keeps saying why a book did not open, and 重试 opens it once the server answers', async () => {
+  const env = await setup();
+  env.transport.json({ error: { code: 'BROKEN', message: '服务器出错了' } }, 500);
+  await env.screen.open(book);
+  await vi.waitFor(() => expect(env.screen.element.querySelector('.reader-open-failure')?.textContent).toContain('服务器出错了'));
+  serve(env.transport, content(['a']));
+  await click(env.screen, '重试');
+  await vi.waitFor(() => expect(body(env.screen)?.textContent ?? '').toContain('正文'));
+  expect(env.screen.element.querySelector('.reader-open-failure')).toBeNull();
+});
+
+it('turns pages from the keyboard without the reader having focused anything first', async () => {
+  const env = await setup(); serve(env.transport, content(['a', 'b']));
+  await env.screen.open(book);
+  const turn = vi.spyOn(env.screen as unknown as { turnPage(direction: string): Promise<void> }, 'turnPage').mockResolvedValue(undefined);
+  document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+  document.body.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', shiftKey: true, bubbles: true }));
+  expect(turn.mock.calls.map(call => call[0])).toEqual(['next', 'previous']);
+});
+
+it('fetches the configured next chapter while the current one is read, once', async () => {
+  const env = await setup(undefined, undefined, 'u1', 'http://one.test', { autoCache: true, autoCacheChapters: 1 }); serve(env.transport, content(['a', 'b', 'c']));
+  await env.screen.open(book);
+  const assets = () => env.transport.requests.filter((request) => request.url.includes('/assets?')).map((request) => new URL(request.url, 'http://test').searchParams.get('ref'));
+  await vi.waitFor(() => expect(assets()).toContain('resource:r1:b'));
+  expect(assets().filter((ref) => ref === 'resource:r1:b')).toHaveLength(1);
+  expect(assets()).not.toContain('resource:r1:c');
+});
+
+it('bookmarks the page on screen from the top bar, and the same button removes it', async () => {
+  const env = await setup(); serve(env.transport, content(['a', 'b']));
+  await env.screen.open(book);
+  const button = () => env.screen.element.querySelector<HTMLButtonElement>('.reader-bookmark')!;
+  expect(button().getAttribute('aria-pressed')).toBe('false');
+  await act(async () => { button().click(); });
+  await vi.waitFor(() => expect(button().getAttribute('aria-pressed')).toBe('true'));
+  expect(env.offline.notesFor(book.id).filter((note) => note.type === 'bookmark')).toHaveLength(1);
+  await act(async () => { button().click(); });
+  await vi.waitFor(() => expect(button().getAttribute('aria-pressed')).toBe('false'));
+  expect(env.offline.notesFor(book.id).filter((note) => note.type === 'bookmark')).toHaveLength(0);
+});
+
+it('in scroll mode, pulling on past the end of a chapter opens the next one, and only a pull that starts there', async () => {
+  const env = await setup(); serve(env.transport, content(['a', 'b']));
+  await env.screen.open(book);
+  (env.screen as unknown as { settings: { mode: string } }).settings.mode = 'scroll';
+  const turn = vi.spyOn(env.screen as unknown as { turnPage(direction: string): Promise<void> }, 'turnPage').mockResolvedValue(undefined);
+  const host = env.screen.element.querySelector('book-content') as HTMLElement;
+  // jsdom lays nothing out: scrollTop 0 of a 0-high flow is both edges at once.
+  const touch = (type: string, y: number) => {
+    const event = new Event(type, { bubbles: true }) as Event & { touches: unknown[]; changedTouches: unknown[] };
+    Object.assign(event, { touches: type === 'touchend' ? [] : [{ clientY: y }], changedTouches: [{ clientY: y }] });
+    host.dispatchEvent(event);
+  };
+  touch('touchstart', 500); touch('touchend', 460);
+  expect(turn).not.toHaveBeenCalled();
+  touch('touchstart', 500); touch('touchend', 400);
+  expect(turn).toHaveBeenLastCalledWith('next');
+  // A trackpad flick is one chapter: the momentum that follows inside the cooldown is not another.
+  turn.mockClear();
+  for (let i = 0; i < 10; i += 1) host.dispatchEvent(new WheelEvent('wheel', { deltaY: 120, bubbles: true }));
+  expect(turn).not.toHaveBeenCalled();
+  // Once the cooldown has passed, scrolling on past the end with the wheel turns too.
+  const later = performance.now() + 2000;
+  const clock = vi.spyOn(performance, 'now').mockReturnValue(later);
+  host.dispatchEvent(new WheelEvent('wheel', { deltaY: 120, bubbles: true }));
+  host.dispatchEvent(new WheelEvent('wheel', { deltaY: 130, bubbles: true }));
+  expect(turn).toHaveBeenCalledTimes(1);
+  expect(turn).toHaveBeenLastCalledWith('next');
+  clock.mockRestore();
+});
+
+it('lists 阅读记录 in 书籍信息 and goes back to a place from it', async () => {
+  const env = await setup(); serve(env.transport, content(['a', 'b']));
+  await env.screen.open(book);
+  const places = [
+    { bookId: book.id, locator: 'r1:0.0000:chapter:b', percentage: 0.9, chapterTitle: '章节 b', device: 'phone', updatedAt: Date.now() - 60_000 },
+    { bookId: book.id, locator: 'r1:0.5000:chapter:a', percentage: 0.25, chapterTitle: '章节 a', device: 'tablet', updatedAt: Date.now() - 3_600_000 },
+  ];
+  vi.spyOn(env.api, 'progressHistory').mockResolvedValue(places);
+  const navigate = vi.spyOn(env.screen as unknown as { navigateTool(target: string): Promise<void> }, 'navigateTool').mockResolvedValue(undefined);
+  await click(env.screen, '书籍信息');
+  await vi.waitFor(() => expect(env.screen.element.querySelectorAll('.reading-history li')).toHaveLength(2));
+  expect(env.screen.element.querySelector('.reading-history li small')?.textContent).toContain('90% · phone');
+  const older = [...env.screen.element.querySelectorAll<HTMLButtonElement>('.reading-history button')].find(button => button.textContent?.includes('tablet'))!;
+  older.click();
+  await vi.waitFor(() => expect(navigate).toHaveBeenCalledWith('r1:0.5000:chapter:a'));
+  expect(env.screen.element.querySelector('.reading-history')).toBeNull();
+});
+
+it('says 阅读记录 cannot be read offline instead of showing an empty list', async () => {
+  const env = await setup(); serve(env.transport, content(['a']));
+  await env.screen.open(book);
+  vi.spyOn(env.api, 'progressHistory').mockRejectedValue(new ApiError('offline', 'offline'));
+  await click(env.screen, '书籍信息');
+  await vi.waitFor(() => expect(env.screen.element.querySelector('.reading-history')?.textContent).toContain('离线时无法读取阅读记录'));
+});
+
+it('does not submit the previous reader’s time through a newly selected account', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  try {
+    const env = await setup(); serve(env.transport, content(['a'])); await env.screen.open(book);
+    const record = vi.spyOn(env.api, 'recordReadingTime');
+    vi.setSystemTime(Date.now() + 15_000);
+    vi.spyOn(env.api, 'currentSession').mockReturnValue({ ...session, user: { ...session.user, id: 'another-user' } });
+    await (env.screen as unknown as { readingTime: { flush(): Promise<void> } }).readingTime.flush();
+    expect(record).not.toHaveBeenCalled();
+  } finally { vi.useRealTimers(); }
 });

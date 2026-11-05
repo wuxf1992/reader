@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../context.ts';
 import { authenticate, currentUser, requireAdmin } from '../auth.ts';
-import { badRequest, notFound } from '../../lib/errors.ts';
+import { badRequest, forbidden, notFound } from '../../lib/errors.ts';
 import { parseConflictPolicy, type ConflictPolicy, type StagedUpload } from '../../services/uploads.ts';
 import { assertSafeRel, normalizeRel, resolveInside } from '../../lib/paths.ts';
 import { createHash } from 'node:crypto';
@@ -537,9 +537,10 @@ export function registerLibraryRoutes(app: FastifyInstance, ctx: AppContext): vo
    * The library as a tree.
    *
    * Every path here is library-relative and resolved through `resolveInside`, so
-   * a traversal attempt is refused before it reaches the disk. Authentication is
-   * the same as everywhere else; the mount is the only boundary, and it is the
-   * deployment's own.
+   * a traversal attempt is refused before it reaches the disk. Reading the tree
+   * is open to every user (the library browser is built on it); the writes below
+   * — move, rename, mkdir, delete and batch metadata — are the file manager's and
+   * require an administrator.
    */
   app.get('/api/v1/library/browse', { preHandler: auth }, async (request) => {
     const user = currentUser(request);
@@ -564,7 +565,7 @@ export function registerLibraryRoutes(app: FastifyInstance, ctx: AppContext): vo
   });
 
   app.post('/api/v1/library/browse/move', { preHandler: auth }, async (request) => {
-    currentUser(request);
+    requireAdmin(request);
     const body = (request.body ?? {}) as { paths?: unknown; target?: unknown };
     const paths = stringList(body.paths, 'paths');
     const target = typeof body.target === 'string' ? body.target : '';
@@ -572,7 +573,7 @@ export function registerLibraryRoutes(app: FastifyInstance, ctx: AppContext): vo
   });
 
   app.post('/api/v1/library/browse/rename', { preHandler: auth }, async (request) => {
-    currentUser(request);
+    requireAdmin(request);
     const body = (request.body ?? {}) as { path?: unknown; name?: unknown };
     if (typeof body.path !== 'string' || typeof body.name !== 'string') {
       throw badRequest('path and name are required');
@@ -581,7 +582,7 @@ export function registerLibraryRoutes(app: FastifyInstance, ctx: AppContext): vo
   });
 
   app.post('/api/v1/library/browse/mkdir', { preHandler: auth }, async (request) => {
-    currentUser(request);
+    requireAdmin(request);
     const body = (request.body ?? {}) as { path?: unknown; name?: unknown };
     const parent = typeof body.path === 'string' ? body.path : '';
     if (typeof body.name !== 'string') throw badRequest('name is required');
@@ -589,7 +590,7 @@ export function registerLibraryRoutes(app: FastifyInstance, ctx: AppContext): vo
   });
 
   app.post('/api/v1/library/browse/delete', { preHandler: auth }, async (request) => {
-    currentUser(request);
+    requireAdmin(request);
     const body = (request.body ?? {}) as { paths?: unknown };
     return ctx.browse.remove(stringList(body.paths, 'paths'));
   });
@@ -611,6 +612,7 @@ export function registerLibraryRoutes(app: FastifyInstance, ctx: AppContext): vo
 
   app.post('/api/v1/library/browse/metadata', { preHandler: auth }, async (request) => {
     const user = currentUser(request);
+    requireAdmin(request);
     const body = (request.body ?? {}) as { paths?: unknown; fields?: unknown };
     const paths = stringList(body.paths, 'paths');
     const fields = (body.fields ?? {}) as Record<string, unknown>;
@@ -662,6 +664,8 @@ export function registerLibraryRoutes(app: FastifyInstance, ctx: AppContext): vo
 
   // ---- uploads ----
 
+  const memberUploadAllowed = (): boolean => ctx.settings!.read('library').memberUpload;
+
   /**
    * Stores uploaded books in the library and indexes them.
    *
@@ -672,7 +676,15 @@ export function registerLibraryRoutes(app: FastifyInstance, ctx: AppContext): vo
    * rather than two.
    */
   app.post('/api/v1/library/upload', { preHandler: auth }, async (request) => {
-    requireAdmin(request);
+    // Members may add books, and only add them: no overwrite and no archive
+    // unpacking (see `CommitOptions.booksOnly`). Changing what is already in the
+    // library is the file manager's, and that is admin-only. Whether members may
+    // upload at all is the `library.memberUpload` business setting; it is checked
+    // before a byte is read, so a refused upload costs nothing.
+    const admin = currentUser(request).role === 'admin';
+    if (!admin && !memberUploadAllowed()) {
+      throw forbidden('member uploads are turned off', 'UPLOAD_DISABLED');
+    }
     if (!request.isMultipart()) {
       throw badRequest('expected multipart/form-data', 'NOT_MULTIPART');
     }
@@ -729,7 +741,11 @@ export function registerLibraryRoutes(app: FastifyInstance, ctx: AppContext): vo
 
     ensureTarget(target);
     if (staged.length === 0) throw badRequest('no file was uploaded', 'NO_FILES');
-    return ctx.uploads.commit(staged, target, policy);
+    if (!admin && policy === 'overwrite') {
+      await ctx.uploads.discard(staged);
+      throw forbidden('only an administrator may overwrite library files', 'ADMIN_REQUIRED');
+    }
+    return ctx.uploads.commit(staged, target, policy, { booksOnly: !admin });
   });
 
   /**
@@ -741,9 +757,9 @@ export function registerLibraryRoutes(app: FastifyInstance, ctx: AppContext): vo
    * often than this is called.
    */
   app.get('/api/v1/library/upload', { preHandler: auth }, async (request) => {
-    requireAdmin(request);
+    const allowed = currentUser(request).role === 'admin' || memberUploadAllowed();
     const listing = await ctx.browse.list('');
-    return { writable: listing.writable };
+    return { writable: listing.writable, allowed };
   });
 
   // ---- instance administration ----

@@ -1,7 +1,7 @@
 import { BusyIndicator } from './busy.tsx';
 import { MIN_BRIGHTNESS } from '../render/theme.ts';
 import { CHINESE_VARIANTS } from '../shared/chinese-variant.ts';
-import { selectTheme, selectThemeMode, systemPrefersDark, type ReaderPaper, type ReaderSurface, type ResolvedTheme, type ThemePreference } from '../shared/theme/theme.ts';
+import { resolveTheme, selectedTheme, themeOptions, themeTokens, selectTheme, selectThemeMode, systemPrefersDark, type ReaderPaper, type ReaderSurface, type ResolvedTheme, type ThemePreference } from '../shared/theme/theme.ts';
 import { ThemePicker } from '../shared/theme/theme-picker.tsx';
 import type { ChapterQuality } from '../api/sources.ts';
 import { Sheet } from './sheet.tsx';
@@ -27,11 +27,14 @@ import { FloatingNotice } from './floating-notice.tsx';
 
 import type { AppSettings } from '../store/settings.ts';
 import { DEFAULT_APP_SETTINGS, READOUT_FIELDS, READOUT_OPTIONS, type ReadoutMode } from '../store/settings.ts';
+import { formatDate } from '../lib/format.ts';
 import { ReaderIndicators } from './reader-indicators.tsx';
 import type { SpeechEngineKind } from '../render/speech.ts';
 import { type ReactNode, type JSX, useLayoutEffect, useRef, useState } from 'react';
 import { Button, IconButton, SectionTitle, SwitchRow } from './toolkit.tsx';
 import { Icon, type IconName } from './icon.tsx';
+import { ActionMenu } from './action-menu.tsx';
+import { TAP_ACTIONS, isLastMenuCell, normalizeTapZones, tapActionLabel, tapZonePreset, type TapZoneGrid } from './tap-zones.ts';
 
 /**
  * A table-of-contents row.
@@ -71,6 +74,17 @@ export interface ChromeState {
   chromeVisible: boolean;
   statusText: string;
   statusState: string;
+  /** Whether the server offers AI 章节总结; unknown (undefined) draws no button. */
+  aiSummaryAvailable?: boolean;
+  /** 阅读记录 in 书籍信息: where this account has been in the book, newest first. */
+  historyState?: 'loading' | 'ready' | 'offline' | 'error';
+  history?: Array<{ locator: string; percentage: number; chapterTitle: string; device: string; updatedAt: number }>;
+  /** The locator on screen when the history was read, so that entry is marked 当前. */
+  historyCurrent?: string;
+  /** Whether the page on screen carries a bookmark; drives the top bar's 书签 toggle. */
+  bookmarked?: boolean;
+  /** Set when the book itself could not be opened: the stage is empty, so say why and offer a way on. */
+  openFailure?: string;
   /** 0..1. */
   progress: number;
   chapterLabel: string;
@@ -132,6 +146,8 @@ export interface ChromeState {
   brightness: number;
   pageAnimation: AppSettings['pageAnimation'];
   tapZone: AppSettings['tapZone'];
+  /** 点击区域, the 3×3 grid; optional so an older state shape still renders. */
+  tapZones?: TapZoneGrid;
   txtEncoding: string;
   txtIndent: number;
   txtParagraphGap: number;
@@ -160,6 +176,12 @@ export interface ChromeState {
 export interface ChromeHandlers {
   onTools?(): void;
   onBack(): void;
+  onRetryOpen?(): void;
+  /** Goes back to a place from 阅读记录. */
+  onRestoreHistory?(locator: string): void;
+  onRetryHistory?(): void;
+  /** Adds a bookmark at the page on screen, or removes the one there. */
+  onToggleBookmark?(): void;
   toggleToc(): void;
   toggleSettings(tab?: 'appearance' | 'behavior' | 'speech'): void;
   onSetting(patch: Partial<AppSettings>): void;
@@ -190,6 +212,8 @@ export interface ChromeHandlers {
    * names.
    */
   onScrubPage(page: number): void;
+  /** Jumps to a whole-book chapter, 1-based; a comic's page slider. */
+  onScrubChapter?(chapter: number): void;
   onTurnPage(direction: 'next' | 'previous'): void;
   /**
    * The stored theme preference, what the app wears, and what the book wears (the
@@ -232,7 +256,6 @@ export function ReaderChrome({ state, stage, handlers, tools }: ReaderChromeProp
   const totalPages = Math.max(1, state.chapterPages);
   const currentPage = Math.min(totalPages, Math.max(1, state.pageInChapter));
   const pageLabel = '本章第 ' + currentPage + '/' + totalPages + ' 页';
-  const tab = state.settingsTab ?? 'behavior';
   const theme = handlers.theme();
   const dark = theme.surface.mode === 'dark';
   const toggleNight = () => handlers.onTheme(selectThemeMode(theme.preference, dark ? 'light' : 'dark'));
@@ -245,41 +268,45 @@ export function ReaderChrome({ state, stage, handlers, tools }: ReaderChromeProp
         <div className="reader-top-actions">
           {state.canSwitch && <IconButton label="切换书源" icon="sort" disabled={state.switching || state.refreshing || state.refreshingChapter || state.navigating} onClick={() => handlers.onAlternatives?.()} />}
           {state.canRefresh && <IconButton label="刷新当前章节" icon="refresh" disabled={state.switching || state.refreshing || state.refreshingChapter || state.navigating} onClick={() => handlers.onRefreshChapter?.()} />}
-          <IconButton label="AI 总结" icon="file-text" disabled={state.aiSummaryBusy || state.navigating} onClick={() => handlers.onAiSummary?.()} />
+          {handlers.onToggleBookmark && <IconButton className="reader-bookmark" icon="bookmark" label={state.bookmarked ? '移除本页书签' : '为本页加书签'} pressed={!!state.bookmarked} onClick={handlers.onToggleBookmark} />}
+          {state.aiSummaryAvailable && <IconButton label="AI 总结" icon="file-text" disabled={state.aiSummaryBusy || state.navigating} onClick={() => handlers.onAiSummary?.()} />}
         </div>
         {(state.sourceName || state.chapterUrl) && <div className="reader-source-info"><span>{state.sourceName || '当前书源'}</span>{state.chapterUrl && <a href={state.chapterUrl} target="_blank" rel="noopener noreferrer" title={state.chapterUrl}>{state.chapterUrl}</a>}</div>}
       </div>
-      {state.bookInfoOpen && <Sheet title="书籍信息" onClose={() => handlers.onBookInfo?.()}><article className="book-detail"><h3>{state.title}</h3><p className="book-detail-author">{state.author || '作者未知'}</p><dl><dt>书源</dt><dd>{state.sourceName || (state.canRefresh ? '远程书源' : '本地书籍')}</dd><dt>当前章节</dt><dd>{state.chapterLabel || '暂无信息'}</dd></dl><h4>内容简介</h4><p className="book-detail-description">{state.description || '暂无简介'}</p></article></Sheet>}
-      {state.aiSummaryBusy && <div className="floating-notice" role="status">正在生成章节总结…</div>}
+      {state.bookInfoOpen && <Sheet title="书籍信息" onClose={() => handlers.onBookInfo?.()}><article className="book-detail"><h3>{state.title}</h3><p className="book-detail-author">{state.author || '作者未知'}</p><dl><dt>书源</dt><dd>{state.sourceName || (state.canRefresh ? '远程书源' : '本地书籍')}</dd><dt>当前章节</dt><dd>{state.chapterLabel || '暂无信息'}</dd></dl><h4>内容简介</h4><p className="book-detail-description">{state.description || '暂无简介'}</p><ReadingHistory state={state} handlers={handlers} /></article></Sheet>}
+      <FloatingNotice message={state.aiSummaryBusy ? '正在生成章节总结…' : ''} busy />
       {state.aiSummary && <Sheet title="AI 章节总结" onClose={() => handlers.onAiSummary?.()}><article className="book-detail"><p className="book-detail-description">{state.aiSummary}</p></article></Sheet>}
       <StageHost stage={stage} />
+      {state.openFailure && <div className="page-state reader-open-failure" role="alert">
+        <h2>无法打开这本书</h2>
+        <p>{state.openFailure}</p>
+        <div className="empty-actions">
+          {handlers.onRetryOpen && <Button className="primary" onClick={handlers.onRetryOpen}>重试</Button>}
+          <Button onClick={handlers.onBack}>返回</Button>
+        </div>
+      </div>}
       <ReaderIndicators state={state} />
-      <div className="reader-rail" role="toolbar" aria-label="阅读快捷操作">
-        {/* Switch reading presets without changing the app appearance. */}
-        <RailButton icon={dark ? 'sun' : 'moon'}
-          label={dark ? '日间' : '夜间'}
-          onClick={toggleNight} />
-      </div>
       <div className="footer" hidden={!state.chromeVisible}>
         <div className="progress-row">
           <button type="button" className="nav-chapter" disabled={state.navigating || state.chapterIndex <= 1}
             onClick={() => handlers.onChapter(-1)}>{fixed ? '上一页' : '上一章'}</button>
-          <div className="reader-scrub">
-            <input className="progress-scrubber" type="range" min={1} max={totalPages} step={1}
-              value={currentPage} aria-label="章节内页数"
-              aria-valuetext={pageLabel} disabled={totalPages <= 1 || state.navigating}
-              onInput={(event) => handlers.onScrubPage(Number((event.currentTarget as HTMLInputElement).value))} />
-            <span className="progress-page">{pageLabel}</span>
-          </div>
+          {fixed && totalPages <= 1 && handlers.onScrubChapter
+            ? <PageScrubber key={state.chapterIndex} page={state.chapterIndex} count={state.chapterCount} disabled={state.navigating} onCommit={handlers.onScrubChapter} />
+            : <div className="reader-scrub">
+              <input className="progress-scrubber" type="range" min={1} max={totalPages} step={1}
+                value={currentPage} aria-label="章节内页数"
+                aria-valuetext={pageLabel} disabled={totalPages <= 1 || state.navigating}
+                onInput={(event) => handlers.onScrubPage(Number((event.currentTarget as HTMLInputElement).value))} />
+              <span className="progress-page">{pageLabel}</span>
+            </div>}
           <button type="button" className="nav-chapter" disabled={state.navigating || state.chapterIndex >= state.chapterCount}
             onClick={() => handlers.onChapter(1)}>{fixed ? '下一页' : '下一章'}</button>
         </div>
         <div className="reader-actions">
           <TopButton icon="menu" label="目录" onClick={handlers.toggleToc} />
-          {handlers.onTools && <TopButton icon="search" label="工具" onClick={handlers.onTools} />}
-          <TopButton icon="volume" label="朗读" onClick={() => handlers.toggleSettings('speech')} />
-          <TopButton icon="text-size" label="外观" onClick={() => handlers.toggleSettings('appearance')} />
-          <TopButton icon="settings" label="设置" onClick={() => handlers.toggleSettings('behavior')} />
+          <TopButton icon={dark ? 'sun' : 'moon'} label={dark ? '日间' : '夜间'} onClick={toggleNight} />
+          <TopButton icon="read-aloud" label={state.tts.active ? '朗读中' : '朗读'} pressed={state.tts.active} onClick={() => handlers.toggleSettings('speech')} />
+          <TopButton icon="settings" label="设置" onClick={() => handlers.toggleSettings('appearance')} />
         </div>
       </div>
       {state.tocOpen ? (
@@ -301,7 +328,7 @@ export function ReaderChrome({ state, stage, handlers, tools }: ReaderChromeProp
                 const reachable = entry.spine !== undefined && entry.spine >= 0;
                 return (
                   <li key={entry.id + index} data-section={entry.id}>
-                    {hasChildren && <button className="toc-collapse" aria-label={entry.label + (collapsed.has(entry.id) ? ' 展开' : ' 折叠')} aria-expanded={!collapsed.has(entry.id)} onClick={() => { const next = new Set(collapsed); if (next.has(entry.id)) next.delete(entry.id); else next.add(entry.id); setCollapsed(next); }}>{collapsed.has(entry.id) ? '+' : '−'}</button>}
+                    {hasChildren && <button className="toc-collapse" aria-label={entry.label + (collapsed.has(entry.id) ? ' 展开' : ' 折叠')} aria-expanded={!collapsed.has(entry.id)} onClick={() => { const next = new Set(collapsed); if (next.has(entry.id)) next.delete(entry.id); else next.add(entry.id); setCollapsed(next); }}><Icon name={collapsed.has(entry.id) ? 'chevron-right' : 'chevron-down'} size={16} /></button>}
                     <button
                       type="button"
                       aria-current={entry.id.split('#')[0] === state.currentSectionId}
@@ -352,14 +379,8 @@ export function ReaderChrome({ state, stage, handlers, tools }: ReaderChromeProp
               <Button type="button" disabled={state.switching || state.alternativeQualityBusy || !state.alternativeChapter} onClick={() => handlers.onSwitchSource?.()}>确认换源并阅读</Button></div></Sheet>}
           </section></Sheet>}
 
-      {state.settingsOpen ? (
-        <Sheet title={tab === 'appearance' ? '外观' : tab === 'speech' ? '朗读' : '阅读设置'} onClose={() => handlers.toggleSettings(tab)}>
-          {tab === 'speech' ? <>
-            {state.tts.active ? <SpeechBar state={state.tts} handlers={handlers} /> : null}
-            <SpeechSettings state={state} handlers={handlers} />
-          </> : <SettingsBody state={state} handlers={handlers} />}
-        </Sheet>
-      ) : null}
+      {state.settingsOpen && <ReaderSettings key={`${state.settingsTab}-${state.layout}`} state={state} handlers={handlers} />}
+
     </>
   );
 }
@@ -373,6 +394,35 @@ export function ReaderChrome({ state, stage, handlers, tools }: ReaderChromeProp
  * *where* the stage sits (between the status line and the footer, which is where
  * its stacking context comes from) and the screen owns its contents.
  */
+/**
+ * 阅读记录: the places this account has been in the book, on any device, newest first.
+ * A jump — a mistapped 目录 entry, a stale device, a clock that ran ahead — overwrote the
+ * one saved position for good; here the place before it is one press away.
+ */
+function ReadingHistory({ state, handlers }: { state: ChromeState; handlers: ChromeHandlers }): JSX.Element | null {
+  if (!state.historyState) return null;
+  return (
+    <section className="reading-history" aria-label="阅读记录">
+      <h4>阅读记录</h4>
+      {state.historyState === 'loading' && <p className="muted" role="status">正在读取阅读记录…</p>}
+      {state.historyState === 'offline' && <p className="muted">离线时无法读取阅读记录，连上服务端后再试。</p>}
+      {state.historyState === 'error' && <p className="muted" role="alert">阅读记录读取失败。 <Button onClick={() => handlers.onRetryHistory?.()}>重试</Button></p>}
+      {state.historyState === 'ready' && (state.history?.length
+        ? <ul>{state.history.map((entry, index) => {
+          const current = entry.locator === state.historyCurrent;
+          return <li key={`${entry.updatedAt}-${index}`}>
+            <button type="button" disabled={current} aria-current={current ? 'location' : undefined} onClick={() => handlers.onRestoreHistory?.(entry.locator)}>
+              <strong>{entry.chapterTitle || '未命名章节'}</strong>
+              <small>{Math.round(Math.max(0, Math.min(1, entry.percentage)) * 100)}% · {entry.device || '未知设备'} · {formatDate(entry.updatedAt)}</small>
+              {current && <span className="reading-history-current">当前</span>}
+            </button>
+          </li>;
+        })}</ul>
+        : <p className="muted">还没有阅读记录。</p>)}
+    </section>
+  );
+}
+
 function StageHost({ stage }: { stage: HTMLElement }): JSX.Element {
   return (
     <div
@@ -387,203 +437,92 @@ function StageHost({ stage }: { stage: HTMLElement }): JSX.Element {
   );
 }
 
-function SettingsBody({ state, handlers }: { state: ChromeState; handlers: ChromeHandlers }): JSX.Element {
-  return (
-    <>
-      {(state.settingsTab ?? 'behavior') === 'appearance' ? <>
-      {/* Most-used first. Size, spacing, theme and brightness are what a reader opens
-          this sheet to change, so they fill its first screen; the rows that are set once
-          and left alone are folded underneath instead of pushing these below the fold. */}
-      {state.layout !== 'fixed' ? <>
-      <SliderRow
-        label="字号"
-        value={state.fontScale}
-        min={0.8}
-        max={2.2}
-        step={0.05}
-        format={(value) => `${Math.round(value * 100)}%`}
-        onChange={(value) => handlers.onSetting({ fontScale: value })}
-      />
-      <SegmentedRow
-        label="行距"
-        options={LINE_HEIGHT_LADDER.map((value) => ({
-          value,
-          label: value === 'inherit' ? '原书' : value,
-        }))}
-        value={state.lineHeight}
-        onChange={(value) => handlers.onSetting({ lineHeight: value })}
-      />
-      </> : null}
-      <SliderRow
-        label="页面亮度"
-        value={state.brightness}
-        min={MIN_BRIGHTNESS}
-        max={1}
-        step={0.05}
-        format={(value) => `${Math.round(value * 100)}%`}
-        onChange={(value) => handlers.onSetting({ brightness: value })}
-      />
+type SettingsSection = 'quick' | 'text' | 'theme' | 'behavior' | 'display' | 'speech';
+const SETTINGS_TITLES: Record<SettingsSection, string> = {
+  quick: '阅读设置', text: '字体与间距', theme: '全部配色', behavior: '翻页与点击', display: '显示设置', speech: '朗读',
+};
 
-      <FoldSection state={state} handlers={handlers} section="theme" title="主题" hint="与书架和设置共用">
-        <ThemePicker preference={handlers.theme().preference} systemDark={systemPrefersDark()} onChange={handlers.onTheme} />
-      </FoldSection>
-      <SwitchRow label="液态玻璃" hint="控制栏和面板呈现半透明玻璃效果" checked={state.liquidGlass ?? false}
-        onChange={liquidGlass => handlers.onSetting({ liquidGlass })} />
+function ReaderSettings({ state, handlers }: { state: ChromeState; handlers: ChromeHandlers }): JSX.Element {
+  const [section, setSection] = useState<SettingsSection>(state.settingsTab === 'speech' ? 'speech' : 'quick');
+  const theme = handlers.theme(), systemDark = systemPrefersDark();
+  const selected = selectedTheme(theme.preference, systemDark);
+  const favorites = ['paper-white', 'local-kraft-day', 'paper-green', 'local-wechat-night'] as const;
+  return <Sheet className="reader-settings" title={SETTINGS_TITLES[section]} onClose={() => handlers.toggleSettings(state.settingsTab)}
+    actions={section !== 'quick' ? <IconButton icon="arrow-left" label="返回阅读设置" onClick={() => setSection('quick')} /> : null}
+    footer={section === 'quick' ? (<nav className="reader-settings-links" aria-label="详细阅读设置">
+        <button type="button" onClick={() => setSection('behavior')}><span>翻页与点击</span><Icon name="chevron-right" size={16} /></button>
+        <button type="button" onClick={() => setSection('display')}><span>显示设置</span><Icon name="chevron-right" size={16} /></button>
+        <button type="button" onClick={() => setSection('speech')}><span>朗读设置</span><Icon name="chevron-right" size={16} /></button>
+        {handlers.onTools && <button type="button" onClick={handlers.onTools}><span>阅读工具</span><Icon name="chevron-right" size={16} /></button>}
+      </nav>) : null}>
+    {section === 'quick' ? <div className="reader-settings-home">
+      <SliderRow label="页面亮度" value={state.brightness} min={MIN_BRIGHTNESS} max={1} step={0.05}
+        format={value => `${Math.round(value * 100)}%`} onChange={brightness => handlers.onSetting({ brightness })} />
+      {state.layout !== 'fixed' && <div className="reader-font-size">
+        <span>字号</span>
+        <div className="reader-size-stepper" role="group" aria-label="字号">
+          <IconButton icon="minus" label="减小字号" disabled={state.fontScale <= .8} onClick={() => handlers.onSetting({ fontScale: Math.max(.8, Math.round((state.fontScale - .05) * 100) / 100) })} />
+          <output aria-live="polite" aria-label="当前字号">{Math.round(state.fontScale * 100)}%</output>
+          <IconButton icon="plus" label="增大字号" disabled={state.fontScale >= 2.2} onClick={() => handlers.onSetting({ fontScale: Math.min(2.2, Math.round((state.fontScale + .05) * 100) / 100) })} />
+        </div>
+        <button type="button" className="reader-font-more" onClick={() => setSection('text')}>字体与间距<Icon name="chevron-right" size={14} /></button>
+      </div>}
+      <div className="reader-quick-themes" role="group" aria-label="常用配色">
+        {favorites.map(id => {
+          const option = themeOptions.find(item => item.value === id)!;
+          const tokens = themeTokens(resolveTheme(id, theme.surface.mode));
+          return <button type="button" key={id} aria-label={`配色：${option.label}`} aria-pressed={selected === id} onClick={() => handlers.onTheme(selectTheme(theme.preference, id))}>
+            <span className="reader-quick-color" style={{ backgroundColor: tokens.bg, color: tokens.ink }}>{selected === id && <Icon name="check" size={20} />}</span>
+            <span>{option.label}</span>
+          </button>;
+        })}
+        <button type="button" className="reader-all-themes" onClick={() => setSection('theme')}><span className="reader-quick-color"><Icon name="palette" size={20} /></span><span>更多配色</span></button>
+      </div>
+      <SwitchRow label="跟随系统明暗" hint="" checked={theme.preference.mode === 'system'} onChange={follow => handlers.onTheme(selectThemeMode(theme.preference, follow ? 'system' : theme.surface.mode))} />
 
-      {/* Plain text is the one format with no typography of its own, so its indent, gap
-          and encoding rows live with the other typography rows. They are absent for every
-          other format, where the answer to all three is "whatever the book said". */}
-      {state.layout !== 'fixed' || state.showTxtRows ? (
-        <FoldSection state={state} handlers={handlers} section="text" title="更多排版" hint="页边距 · 对齐 · 字体">
-          <p className="muted">额外留白会同时移动正文和阅读信息。</p>
-          {(['top', 'bottom', 'left', 'right'] as const).map((edge, index) => <SliderRow key={edge}
-            label={['上边距', '下边距', '左边距', '右边距'][index]!}
-            value={(state.pageInsets ?? DEFAULT_APP_SETTINGS.pageInsets)[edge]} min={0} max={80} step={2} format={value => `${value}px`}
-            onChange={value => handlers.onSetting({ pageInsets: { ...(state.pageInsets ?? DEFAULT_APP_SETTINGS.pageInsets), [edge]: value } })} />)}
-          <SegmentedRow label="繁简转换（全局）" options={[...CHINESE_VARIANTS]} value={state.chineseVariant ?? 'original'}
-            onChange={value => handlers.onSetting({ chineseVariant: value as AppSettings['chineseVariant'] })} />
-          {state.layout !== 'fixed' ? <>
-          <SliderRow
-        label="页边距"
-        value={state.pageMargin}
-        min={0}
-        max={4}
-        step={0.25}
-        format={(value) => `${value.toFixed(2)}rem`}
-        onChange={(value) => handlers.onSetting({ pageMargin: value })}
-      />
-      <SegmentedRow
-        label="对齐"
-        options={[
-          { value: 'inherit', label: '原书' },
-          { value: 'start', label: '左对齐' },
-          { value: 'justify', label: '两端对齐' },
-        ]}
-        value={state.textAlign}
-        onChange={(value) => handlers.onSetting({ textAlign: value as AppSettings['textAlign'] })}
-      />
-      {/* The stacks are the ones a Chinese reading app is expected to offer: a
-          system stack, two serif faces that are actually present on phones, and
-          "原书" which is the default and means "do not touch the book's stack". */}
-      <SelectRow
-        label="字体"
-        options={[
-          { value: 'inherit', label: '原书' },
-          { value: 'system-ui, -apple-system, "Noto Sans SC", sans-serif', label: '系统黑体' },
-          { value: '"Songti SC", "Noto Serif SC", "Source Han Serif SC", SimSun, serif', label: '宋体' },
-          { value: '"Kaiti SC", KaiTi, "Noto Serif SC", serif', label: '楷体' },
-          { value: '"PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif', label: '苹方/雅黑' },
-        ]}
-        value={state.fontFamily}
-        onChange={(value) => handlers.onSetting({ fontFamily: value })}
-      />
-          </> : null}
-          {state.showTxtRows ? (
-        <>
-          <SectionTitle>正文</SectionTitle>
-          <SliderRow
-            label="段落缩进"
-            value={state.txtIndent}
-            min={0}
-            max={4}
-            step={0.25}
-            format={(value) => (value === 0 ? '无' : `${value.toFixed(2)} 字`)}
-            onChange={(value) => handlers.onSetting({ txtIndent: value })}
-          />
-          <SliderRow
-            label="段间距"
-            value={state.txtParagraphGap}
-            min={0}
-            max={1.5}
-            step={0.05}
-            format={(value) => (value === 0 ? '无' : `${value.toFixed(2)} 字`)}
-            onChange={(value) => handlers.onSetting({ txtParagraphGap: value })}
-          />
-          <SelectRow
-            label="TXT 编码"
-            options={[
-              { value: '', label: '自动识别' },
-              { value: 'utf-8', label: 'utf-8' },
-              { value: 'gb18030', label: 'gb18030' },
-              { value: 'big5', label: 'big5' },
-              { value: 'utf-16le', label: 'utf-16le' },
-            ]}
-            value={state.txtEncoding}
-            onChange={(value) => handlers.onSetting({ txtEncoding: value })}
-          />
-        </>
-          ) : null}
-        </FoldSection>
-      ) : null}
-      <FoldSection state={state} handlers={handlers} section="readout" title="页眉页脚" hint="顶部与底部显示的信息">
-      {READOUT_FIELDS.map(({ key, label }) => (
-        <SelectRow key={key} label={label} options={READOUT_OPTIONS}
-          value={state[key] ?? DEFAULT_APP_SETTINGS[key]}
-          onChange={(value) => handlers.onSetting({ [key]: value as ReadoutMode })} />
-      ))}
-      </FoldSection>
-      </> : <FoldSection state={state} handlers={handlers} section="paging" title="翻页">
-      {state.layout !== 'fixed' ?
-      <SegmentedRow
-        label="翻页方式"
-        options={[
-          { value: 'scroll', label: '滚动' },
-          { value: 'paged', label: '翻页' },
-        ]}
-        value={state.mode}
-        onChange={(value) => handlers.onSetting({ mode: value as AppSettings['mode'] })}
-      />
-      : null}
-      <Button onClick={() => { handlers.onSetting({ pageAnimation: 'none', mode: 'paged' }); handlers.onTheme(selectTheme(handlers.theme().preference, 'paper-white')); }}>应用电纸书预设</Button>
-      <p className="muted">白纸主题、分页、无翻页动画；仅保存到当前设备，可继续单独调整。屏幕刷新由设备控制。</p>
-      <SegmentedRow
-        label="点击区域"
-        options={[
-          { value: 'standard', label: '左退右进' },
-          { value: 'reversed', label: '左进右退' },
-        ]}
-        value={state.tapZone}
-        onChange={(value) => handlers.onSetting({ tapZone: value as AppSettings['tapZone'] })}
-      />
-      <SegmentedRow
-        label="翻页动画"
-        options={[
-          { value: 'slide', label: '滑动' },
-          { value: 'fade', label: '淡入' },
-          { value: 'none', label: '无' },
-        ]}
-        value={state.pageAnimation}
-        onChange={(value) => handlers.onSetting({ pageAnimation: value as AppSettings['pageAnimation'] })}
-      />
-      {/* Rows that only apply to some books. The old panel built every row and
-          then hid the irrelevant ones by hand after each open; here they are
-          simply not part of the tree. */}
-      {state.showFitRow ? (
-        <SegmentedRow
-          label="图片适配"
-          options={[
-            { value: 'contain', label: '完整' },
-            { value: 'width', label: '适宽' },
-          ]}
-          value={state.fit}
-          onChange={(value) => handlers.onSetting({ fit: value as AppSettings['fit'] })}
-        />
-      ) : null}
-      {state.showDirectionRow ? (
-        <SegmentedRow
-          label="翻页方向"
-          options={[
-            { value: 'ltr', label: '左→右' },
-            { value: 'rtl', label: '右→左' },
-          ]}
-          value={state.comicDirection}
-          onChange={(value) => handlers.onSetting({ comicDirection: value as AppSettings['comicDirection'] })}
-        />
-      ) : null}
+    </div> : section === 'theme' ? <ThemePicker preference={theme.preference} systemDark={systemDark} onChange={handlers.onTheme} />
+      : section === 'speech' ? <>{state.tts.active && <SpeechBar state={state.tts} handlers={handlers} />}<SpeechSettings state={state} handlers={handlers} /></>
+      : <SettingsBody section={section} state={state} handlers={handlers} />}
+  </Sheet>;
+}
 
-      </FoldSection>}
-    </>
-  );
+function SettingsBody({ section, state, handlers }: { section: 'text' | 'behavior' | 'display'; state: ChromeState; handlers: ChromeHandlers }): JSX.Element {
+  if (section === 'text') return <>
+    <SliderRow label="字号" value={state.fontScale} min={.8} max={2.2} step={.05} format={value => `${Math.round(value * 100)}%`} onChange={fontScale => handlers.onSetting({ fontScale })} />
+    <SelectRow label="字体" options={[
+      { value: 'inherit', label: '原书' },
+      { value: 'system-ui, -apple-system, "Noto Sans SC", sans-serif', label: '系统黑体' },
+      { value: '"Songti SC", "Noto Serif SC", "Source Han Serif SC", SimSun, serif', label: '宋体' },
+      { value: '"Kaiti SC", KaiTi, "Noto Serif SC", serif', label: '楷体' },
+      { value: '"PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif', label: '苹方/雅黑' },
+    ]} value={state.fontFamily} onChange={fontFamily => handlers.onSetting({ fontFamily })} />
+    <SegmentedRow label="行距" options={LINE_HEIGHT_LADDER.map(value => ({ value, label: value === 'inherit' ? '原书' : value }))} value={state.lineHeight} onChange={lineHeight => handlers.onSetting({ lineHeight })} />
+    <SegmentedRow label="对齐" options={[{ value: 'inherit', label: '原书' }, { value: 'start', label: '左对齐' }, { value: 'justify', label: '两端对齐' }]} value={state.textAlign} onChange={value => handlers.onSetting({ textAlign: value as AppSettings['textAlign'] })} />
+    <SegmentedRow label="繁简转换（全局）" options={[...CHINESE_VARIANTS]} value={state.chineseVariant ?? 'original'} onChange={value => handlers.onSetting({ chineseVariant: value as AppSettings['chineseVariant'] })} />
+    {state.showTxtRows && <>
+      <SliderRow label="段落缩进" value={state.txtIndent} min={0} max={4} step={.25} format={value => value === 0 ? '无' : `${value.toFixed(2)} 字`} onChange={txtIndent => handlers.onSetting({ txtIndent })} />
+      <SliderRow label="段间距" value={state.txtParagraphGap} min={0} max={1.5} step={.05} format={value => value === 0 ? '无' : `${value.toFixed(2)} 字`} onChange={txtParagraphGap => handlers.onSetting({ txtParagraphGap })} />
+      {state.showEncodingRow && <SelectRow label="TXT 编码" options={['', 'utf-8', 'gb18030', 'big5', 'utf-16le'].map(value => ({ value, label: value || '自动识别' }))} value={state.txtEncoding} onChange={txtEncoding => handlers.onSetting({ txtEncoding })} />}
+    </>}
+  </>;
+  if (section === 'display') return <>
+    <SectionTitle>页面留白</SectionTitle>
+    {state.layout !== 'fixed' && <SliderRow label="基础页边距" value={state.pageMargin} min={0} max={4} step={.25} format={value => `${value.toFixed(2)}rem`} onChange={pageMargin => handlers.onSetting({ pageMargin })} />}
+    {(['top', 'bottom', 'left', 'right'] as const).map((edge, index) => <SliderRow key={edge} label={['上边距', '下边距', '左边距', '右边距'][index]!} value={(state.pageInsets ?? DEFAULT_APP_SETTINGS.pageInsets)[edge]} min={0} max={80} step={2} format={value => `${value}px`} onChange={value => handlers.onSetting({ pageInsets: { ...(state.pageInsets ?? DEFAULT_APP_SETTINGS.pageInsets), [edge]: value } })} />)}
+    <SectionTitle>页眉页脚</SectionTitle>
+    {READOUT_FIELDS.map(({ key, label }) => <SelectRow key={key} label={label} options={READOUT_OPTIONS} value={state[key] ?? DEFAULT_APP_SETTINGS[key]} onChange={value => handlers.onSetting({ [key]: value as ReadoutMode })} />)}
+    <SectionTitle>界面效果</SectionTitle>
+    <SwitchRow label="液态玻璃" hint="控制栏和面板呈现半透明玻璃效果" checked={state.liquidGlass ?? false} onChange={liquidGlass => handlers.onSetting({ liquidGlass })} />
+  </>;
+  return <>
+    {state.layout !== 'fixed' && <SegmentedRow label="翻页方式" options={[{ value: 'scroll', label: '滚动' }, { value: 'paged', label: '翻页' }]} value={state.mode} onChange={value => handlers.onSetting({ mode: value as AppSettings['mode'] })} />}
+    <SegmentedRow label="翻页动画" options={[{ value: 'slide', label: '滑动' }, { value: 'fade', label: '淡入' }, { value: 'none', label: '无' }]} value={state.pageAnimation} onChange={value => handlers.onSetting({ pageAnimation: value as AppSettings['pageAnimation'] })} />
+    <TapZoneEditor grid={normalizeTapZones(state.tapZones, state.tapZone)} onChange={tapZones => handlers.onSetting({ tapZones })} />
+    {state.showFitRow && <SegmentedRow label="图片适配" options={[{ value: 'contain', label: '完整' }, { value: 'width', label: '适宽' }]} value={state.fit} onChange={value => handlers.onSetting({ fit: value as AppSettings['fit'] })} />}
+    {state.showDirectionRow && <SegmentedRow label="翻页方向" options={[{ value: 'ltr', label: '左→右' }, { value: 'rtl', label: '右→左' }]} value={state.comicDirection} onChange={value => handlers.onSetting({ comicDirection: value as AppSettings['comicDirection'] })} />}
+    <Button onClick={() => { handlers.onSetting({ pageAnimation: 'none', mode: 'paged' }); handlers.onTheme(selectTheme(handlers.theme().preference, 'paper-white')); }}>应用电纸书预设</Button>
+    <p className="muted">白纸主题、分页、无翻页动画。屏幕刷新由设备控制。</p>
+  </>;
 }
 
 /**
@@ -647,7 +586,7 @@ function SpeechSettings({ state, handlers }: { state: ChromeState; handlers: Chr
         value={state.ttsAutoAdvance ? 'auto' : 'stop'}
         onChange={(value) => handlers.onSpeechSetting({ ttsAutoAdvance: value === 'auto' })}
       />
-      <FoldSection title="更多" hint={state.showPitchRow ? '音调 · 音量' : '音量'}>
+      <details className="panel-fold"><summary>音调与音量</summary>
         {state.showPitchRow ? (
           <SliderRow
             label="音调"
@@ -668,7 +607,7 @@ function SpeechSettings({ state, handlers }: { state: ChromeState; handlers: Chr
           format={(value) => `${Math.round(value * 100)}%`}
           onChange={(value) => handlers.onSpeechSetting({ ttsVolume: value })}
         />
-      </FoldSection>
+      </details>
     </>
   );
 }
@@ -715,7 +654,8 @@ function SpeechBar({ state, handlers }: { state: SpeechBarState; handlers: Chrom
         <button
           type="button"
           className="tts-chip"
-          aria-label="从头朗读这一章"
+          aria-label={`${state.chip}，从当前页重新朗读`}
+          title="从当前页重新朗读"
           onClick={handlers.onSpeakFromHere}
         >
           {state.chip}
@@ -791,20 +731,60 @@ export interface ReaderThemeState {
 }
 
 /** Rows that are set once and left alone. A native <details>: keyboard and screen-reader behaviour for free. */
-function FoldSection({ title, hint, children, state, handlers, section }: { title: string; hint?: string; children: ReactNode; state?: ChromeState; handlers?: ChromeHandlers; section?: keyof AppSettings['readerSections'] }): JSX.Element {
+const TAP_CELL_NAMES = ['左上', '上方', '右上', '左侧', '中间', '右侧', '左下', '下方', '右下'];
+
+/**
+ * 点击区域设置: the page as nine cells, each a menu of what a tap there does.
+ *
+ * Drawn as a small page rather than a list of nine selects, because the question
+ * the reader is answering is spatial — "what happens when my thumb lands *there*" —
+ * and a list makes them translate every row back into a position. The last 菜单
+ * cell cannot be changed to anything else (the menu says why): without one the
+ * bars, and this panel, could not be reached again by a tap.
+ */
+function TapZoneEditor({ grid, onChange }: { grid: TapZoneGrid; onChange(grid: TapZoneGrid): void }): JSX.Element {
+  const set = (index: number, action: TapZoneGrid[number]) => {
+    const next = [...grid];
+    next[index] = action;
+    onChange(next);
+  };
+  const mirrored = grid.map((_, index) => grid[index - (index % 3) + (2 - (index % 3))]!);
+  const isDefault = grid.every((action, index) => action === tapZonePreset('standard')[index]);
   return (
-    <details className="panel-fold" open={section ? state?.readerSections?.[section] ?? DEFAULT_APP_SETTINGS.readerSections[section] : undefined}
-      onToggle={event => { if (section && state && handlers && event.currentTarget.open !== (state.readerSections?.[section] ?? DEFAULT_APP_SETTINGS.readerSections[section])) handlers.onSetting({ readerSections: { ...DEFAULT_APP_SETTINGS.readerSections, ...state.readerSections, [section]: event.currentTarget.open } }); }}>
-      <summary>
-        <span className="panel-fold-title">{title}</span>
-        {hint ? <span className="panel-fold-hint">{hint}</span> : null}
-      </summary>
-      <div className="panel-fold-body">{children}</div>
-    </details>
+    <section className="tap-zones" aria-label="点击区域设置">
+      <div className="tap-zones-head">
+        <span className="tap-zones-title">点击区域</span>
+        <Button className="tap-zones-action" onClick={() => onChange(mirrored)}>左右互换</Button>
+        <Button className="tap-zones-action" disabled={isDefault} onClick={() => onChange(tapZonePreset('standard'))}>恢复默认</Button>
+      </div>
+      <div className="tap-zones-grid">
+        {grid.map((action, index) => {
+          const locked = isLastMenuCell(grid, index);
+          const name = TAP_CELL_NAMES[index]!;
+          return (
+            <ActionMenu
+              key={index}
+              className={`tap-zone-cell is-${action}`}
+              label={`${name}：${tapActionLabel(action)}`}
+              title={`点击${name}`}
+              icon={TAP_ACTIONS.find(item => item.value === action)?.icon ?? 'close'}
+              text={tapActionLabel(action)}
+              items={TAP_ACTIONS.map(item => ({
+                label: item.label,
+                checked: item.value === action,
+                disabled: locked && item.value !== 'menu',
+                ...(locked && item.value !== 'menu' ? { description: '至少保留一个菜单区域' } : {}),
+                onSelect: () => set(index, item.value),
+              }))}
+            />
+          );
+        })}
+      </div>
+      <p className="muted">点格子选择动作。从右到左排版的书会自动左右镜像。</p>
+    </section>
   );
 }
 
-/** A labelled range input whose value label follows the drag. */
 function SliderRow({
   label,
   value,
@@ -837,6 +817,27 @@ function SliderRow({
         value={value}
         onInput={(event) => onChange(Number((event.currentTarget as HTMLInputElement).value))}
       />
+    </div>
+  );
+}
+
+/**
+ * The slider for a comic, whose chapters are its pages (one image each): it moves
+ * through the whole book, not "this chapter's pages", which for a comic is always 1.
+ * The label follows the thumb; the page opens when the thumb is let go, so dragging
+ * across 200 pages decodes one image instead of 200.
+ */
+function PageScrubber({ page, count, disabled, onCommit }: { page: number; count: number; disabled: boolean; onCommit(page: number): void }): JSX.Element {
+  const [draft, setDraft] = useState(page);
+  const label = `第 ${draft}/${count} 页`;
+  const commit = () => { if (draft !== page) onCommit(draft); };
+  return (
+    <div className="reader-scrub">
+      <input className="progress-scrubber" type="range" min={1} max={Math.max(1, count)} step={1}
+        value={draft} aria-label="页码" aria-valuetext={label} disabled={count <= 1 || disabled}
+        onInput={(event) => setDraft(Number((event.currentTarget as HTMLInputElement).value))}
+        onPointerUp={commit} onKeyUp={commit} onBlur={commit} />
+      <span className="progress-page">{label}</span>
     </div>
   );
 }
@@ -876,48 +877,14 @@ function SelectRow({
  * is no word under them). Centred, equal-width, and full-height so the whole
  * column of the bar is the target rather than the glyph.
  */
-function TopButton({ icon, label, onClick }: { icon: IconName; label: string; onClick(): void }): JSX.Element {
+function TopButton({ icon, label, onClick, pressed }: { icon: IconName; label: string; onClick(): void; pressed?: boolean }): JSX.Element {
   return (
-    <button type="button" className="top-button" aria-label={label} onClick={onClick}>
+    <button type="button" className="top-button" aria-label={label} aria-pressed={pressed} onClick={onClick}>
       <Icon name={icon} />
       <span className="top-button-label">{label}</span>
     </button>
   );
 }
-
-/**
- * One control on the immersion rail.
- *
- * Round, thumb-sized, and matched to the rail's own width: the rail is a column of
- * circles because a reader aiming at a 2.75rem disc in the margin hits it, while a
- * reader aiming at a 2.75rem square in a list of five does not.
- */
-function RailButton({
-  icon,
-  label,
-  onClick,
-  pressed,
-}: {
-  icon: IconName;
-  label: string;
-  onClick(): void;
-  /** Set for a control whose state the icon already shows, so it reports it too. */
-  pressed?: boolean;
-}): JSX.Element {
-  return (
-    <button
-      type="button"
-      className="rail-button"
-      aria-label={label}
-      title={label}
-      {...(pressed === undefined ? {} : { 'aria-pressed': pressed })}
-      onClick={onClick}
-    >
-      <Icon name={icon} />
-    </button>
-  );
-}
-
 
 const LINE_HEIGHT_LADDER = ['inherit', '1.4', '1.6', '1.8', '2.1'];
 

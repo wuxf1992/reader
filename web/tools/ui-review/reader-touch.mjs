@@ -104,7 +104,7 @@ try {
             await page.mouse.click(box.x + box.width * .85, box.y + box.height / 2);
             await page.waitForFunction(before => Number(document.querySelector('.progress-scrubber').value) === before + 1, before.page);
             assert.equal((await state(page)).chrome, 'hidden');
-            await toggle(page); await page.getByRole('button', { name: '外观', exact: true }).click();
+            await toggle(page); await page.getByRole('button', { name: '设置', exact: true }).click();
             await page.getByRole('dialog').waitFor();
             await page.screenshot({ path: output + `${engine}-${width}-${layout}-settings.png` });
             const blocked = await state(page); await drag(page, null, -160, 180);

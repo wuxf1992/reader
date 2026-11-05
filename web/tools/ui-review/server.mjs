@@ -468,6 +468,7 @@ export function createReviewServer({ port = 5199 } = {}) {
   async function handle(request, reply) {
     const url = new URL(request.url ?? '/', `http://127.0.0.1:${port}`);
     const path = url.pathname;
+    if (path === '/api/v1/stats/reading-time' && request.method === 'POST') return json(reply, { accepted: 1, rejected: 0 });
 
     if (path.startsWith('/api/v1/books/review-pdf')) {
       if (path.endsWith('/manifest')) return json(reply, {

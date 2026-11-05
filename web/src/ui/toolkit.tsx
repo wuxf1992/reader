@@ -15,7 +15,7 @@ import type { ButtonHTMLAttributes, MouseEvent as ReactMouseEvent } from 'react'
  */
 
 import { Icon, type IconName } from './icon.tsx';
-import { type ReactNode, type JSX } from 'react';
+import { type ReactNode, type JSX, useId } from 'react';
 import { useDelayedBusy } from './busy.tsx';
 
 export { Icon, type IconName } from './icon.tsx';
@@ -38,6 +38,8 @@ export interface IconButtonProps {
    * optical weights, in one toolbar.
    */
   icon: IconName;
+  /** A toggle's state (aria-pressed); leave unset for a plain action. */
+  pressed?: boolean;
   onClick?: (event: ReactMouseEvent<HTMLButtonElement>) => void;
   disabled?: boolean;
   busy?: boolean;
@@ -56,7 +58,7 @@ export interface IconButtonProps {
  * The glyph is passed as a *name*, so it is always `.icon` — which is what makes the
  * control's own alignment guaranteed rather than inherited from a caller's layout.
  */
-export function IconButton({ label, icon, onClick, disabled, busy = false, hidden, className }: IconButtonProps): JSX.Element {
+export function IconButton({ label, icon, onClick, disabled, busy = false, hidden, className, pressed }: IconButtonProps): JSX.Element {
   const visible = useDelayedBusy(busy);
   return (
     <button
@@ -64,6 +66,7 @@ export function IconButton({ label, icon, onClick, disabled, busy = false, hidde
       className={`icon-button ${className ?? ''}${visible ? ' button-busy' : ''}`}
       aria-label={label}
       aria-busy={busy}
+      aria-pressed={pressed}
       disabled={disabled || busy}
       hidden={hidden ?? false}
       onClick={onClick}
@@ -210,17 +213,22 @@ export interface SwitchRowProps {
  * instead of from the DOM the click just modified.
  */
 export function SwitchRow({ label, hint, checked, onChange }: SwitchRowProps): JSX.Element {
+  const id = useId();
+  // The whole row is the hit target, as the note above promises: a press on the
+  // words toggles too. The button keeps the semantics and takes its name from them.
   return (
-    <div className="field switch-field">
+    <div className="field switch-field" onClick={event => { if (!(event.target as Element).closest('.switch')) onChange(!checked); }}>
       <div className="switch-text">
-        <div>{label}</div>
-        <div className="muted">{hint}</div>
+        <div id={`${id}-label`}>{label}</div>
+        <div className="muted" id={`${id}-hint`}>{hint}</div>
       </div>
       <button
         type="button"
         className="switch"
         aria-label={label}
         aria-pressed={checked}
+        aria-labelledby={`${id}-label`}
+        aria-describedby={hint ? `${id}-hint` : undefined}
         onClick={() => onChange(!checked)}
       />
     </div>

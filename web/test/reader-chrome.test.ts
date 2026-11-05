@@ -1,5 +1,3 @@
-import { vi } from 'vitest';
-import { act } from 'react';
 import { PALETTES, type ThemeMode } from '../src/render/theme.ts';
 import { render } from '../src/shared/ui/render-root.ts';
 // @vitest-environment jsdom
@@ -15,8 +13,8 @@ import { render } from '../src/shared/ui/render-root.ts';
  *    of them — stop — was pushed off the right edge and the reader could not stop
  *    the voice at all (没法停止).
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createElement as h } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, createElement as h } from 'react';
 import { ReaderChrome, type ChromeState, type ChromeHandlers, type ReaderThemeState } from '../src/ui/reader-chrome.tsx';
 import { defaultThemePreference, resolveReadingTheme, themeOptions, selectTheme, selectThemeMode, type ThemePreference } from '../src/shared/theme/theme.ts';
 
@@ -137,6 +135,12 @@ describe('ReaderChrome', () => {
 
   afterEach(() => { act(() => render(null, container)); container.remove(); });
 
+  function settingsPage(label: string) {
+  const button = [...container.querySelectorAll<HTMLButtonElement>('button')].find(button => button.getAttribute('aria-label') === label || button.textContent?.startsWith(label));
+  expect(button, label).toBeDefined();
+  act(() => button!.click());
+}
+
   function paint(state: Partial<ChromeState>): HTMLElement {
     const stage = document.createElement('div');
     stage.className = 'stage';
@@ -221,36 +225,44 @@ describe('ReaderChrome', () => {
     render(h(ReaderChrome, { state: chromeState(), stage,
       handlers: { ...handlers(), onTools: () => {} } }), container);
     const labels = [...container.querySelectorAll('.reader-actions button')].map(button => button.textContent?.trim());
-    expect(labels.indexOf('目录')).toBeLessThan(labels.indexOf('工具'));
+    expect(labels).toEqual(['目录', '夜间', '朗读', '设置']);
     expect(labels.indexOf('目录')).toBeGreaterThanOrEqual(0);
   });
 
-  it('keeps only the page-local controls on the rail', () => {
-    // 主题 / 字号 / 听书. The five that were removed all open or reach the settings
-    // sheet, so having them on the rail as well made it a worse copy of that sheet
-    // floating over the text.
-    const tree = paint({});
-    const rail = tree.querySelector('.reader-rail');
-    expect(rail).not.toBeNull();
-    const labels = [...(rail?.querySelectorAll('.rail-button') ?? [])].map((button) =>
-      button.getAttribute('aria-label'),
-    );
-    expect(labels).toEqual(['夜间']);
-    for (const gone of ['目录', '字体', '行距', '页边距', '阅读设置']) {
-      expect(labels).not.toContain(gone);
-    }
+  it('pages a comic through the whole book, opening the page only when the thumb is let go', () => {
+    const stage = document.createElement('div');
+    const onScrubChapter = vi.fn();
+    render(h(ReaderChrome, { state: chromeState({ layout: 'fixed', chapterPages: 1, pageInChapter: 1, chapterIndex: 3, chapterCount: 10 }), stage, handlers: { ...handlers(), onScrubChapter } }), container);
+    const slider = container.querySelector<HTMLInputElement>('.progress-scrubber')!;
+    expect([slider.disabled, slider.max, slider.value]).toEqual([false, '10', '3']);
+    act(() => { slider.value = '7'; slider.dispatchEvent(new Event('input', { bubbles: true })); });
+    expect(container.querySelector('.progress-page')?.textContent).toBe('第 7/10 页');
+    expect(onScrubChapter).not.toHaveBeenCalled();
+    act(() => { slider.dispatchEvent(new Event('pointerup', { bubbles: true })); });
+    expect(onScrubChapter).toHaveBeenCalledWith(7);
+  });
+
+  it('offers AI 总结 only when the server says it can answer', () => {
+    expect(paint({}).querySelector('[aria-label="AI 总结"]')).toBeNull();
+    expect(paint({ aiSummaryAvailable: false }).querySelector('[aria-label="AI 总结"]')).toBeNull();
+    expect(paint({ aiSummaryAvailable: true }).querySelector('[aria-label="AI 总结"]')).not.toBeNull();
+  });
+
+  it('keeps reading controls together without a second floating settings rail', () => {
+    expect(paint({}).querySelector('.reader-rail')).toBeNull();
   });
 
   it.each(Object.keys(PALETTES) as ThemeMode[])('selects %s as one shared theme', theme => {
     const callbacks = { ...handlers(themeState(selectTheme(defaultThemePreference, `local-${theme}`))), onTheme: vi.fn() };
     render(h(ReaderChrome, { state: chromeState({ theme, settingsOpen: true, settingsTab: 'appearance',
       lastDayTheme: 'rose-pine-dawn-day', lastNightTheme: 'nord-night' }), stage: document.createElement('div'), handlers: callbacks }), container);
+    settingsPage('更多配色');
     const palette = PALETTES[theme];
     const selected = container.querySelector<HTMLButtonElement>(`[aria-label="主题配色"] [aria-label="${palette.label}"]`)!;
     expect(selected.getAttribute('aria-pressed')).toBe('true');
     selected.click();
     expect(callbacks.onTheme).toHaveBeenLastCalledWith(selectTheme(defaultThemePreference, `local-${theme}`));
-    const rail = container.querySelector<HTMLButtonElement>('.reader-rail .rail-button')!;
+    const rail = container.querySelector<HTMLButtonElement>(`.reader-actions [aria-label="${palette.scheme === 'light' ? '夜间' : '日间'}"]`)!;
     expect(rail.getAttribute('aria-label')).toBe(palette.scheme === 'light' ? '夜间' : '日间');
     rail.click();
     expect(callbacks.onTheme).toHaveBeenLastCalledWith(selectThemeMode(selectTheme(defaultThemePreference, `local-${theme}`), palette.scheme === 'light' ? 'dark' : 'light'));
@@ -279,45 +291,64 @@ describe('ReaderChrome', () => {
     act(() => render(h(ReaderChrome, { stage,
       state: chromeState({ settingsOpen: true, settingsTab: 'appearance', pageInsets: { top: 12, bottom: 8, left: 4, right: 6 } }),
       handlers: { ...handlers(), onSetting } }), container));
+    settingsPage('显示设置');
     for (const label of ['上边距', '下边距', '左边距', '右边距']) {
       const slider = container.querySelector(`input[aria-label="${label}"]`);
-      expect(slider?.closest('details')?.querySelector('summary')?.textContent).toContain('更多排版');
+      expect(slider).not.toBeNull();
     }
-    expect(container.querySelector('input[aria-label="页边距"]')).not.toBeNull();
+    expect(container.querySelector('input[aria-label="基础页边距"]')).not.toBeNull();
     const slider = container.querySelector<HTMLInputElement>('input[aria-label="上边距"]')!;
     act(() => { slider.value = '24'; slider.dispatchEvent(new Event('input', { bubbles: true })); });
     expect(onSetting).toHaveBeenCalledWith({ pageInsets: { top: 24, bottom: 8, left: 4, right: 6 } });
   });
 
-  it('separates appearance and behavior settings and omits text controls for comics', () => {
+  it('opens detailed choices from a quick panel and omits text controls for comics', () => {
     let tree = paint({ settingsOpen: true, settingsTab: 'appearance' });
-    expect(tree.querySelector('.sheet')?.textContent).toContain('黑白灰');
-    expect(tree.querySelector('.sheet')?.textContent).not.toContain('点击区域');
-    tree = paint({ settingsOpen: true, settingsTab: 'behavior' });
-    expect(tree.querySelector('.sheet')?.textContent).toContain('点击区域');
-    expect(tree.querySelector('.sheet')?.textContent).not.toContain('字号');
+    expect(tree.querySelector('.reader-size-stepper')).not.toBeNull();
+    expect(tree.querySelector('.tap-zones-grid')).toBeNull();
+    settingsPage('翻页与点击');
+    expect(tree.querySelector('.tap-zones-grid')).not.toBeNull();
+    settingsPage('返回阅读设置');
+    settingsPage('字体与间距');
+    expect(tree.querySelector('[aria-label="字体"]')).not.toBeNull();
     tree = paint({ settingsOpen: true, settingsTab: 'appearance', layout: 'fixed' });
-    expect(tree.querySelector('.sheet')?.textContent).not.toContain('字号');
+    expect(tree.querySelector('.reader-size-stepper')).toBeNull();
   });
 
-  it('puts the most-used appearance rows first and folds the rarely changed ones', () => {
-    const tree = paint({ settingsOpen: true, settingsTab: 'appearance' });
-    const body = tree.querySelector('.sheet-body')!;
-    const order = [...body.children].map((element) =>
-      element.matches('details.panel-fold')
-        ? `fold:${element.querySelector('.panel-fold-title')?.textContent}`
-        : (element.querySelector('label')?.textContent ?? '').split(' ')[0],
-    );
-    // Size, spacing, theme and brightness fill the first screen; the readouts that
-    // used to come first are behind a fold, closed by default.
-    expect(order).toEqual(['字号', '行距', '页面亮度', 'fold:主题', '', 'fold:更多排版', 'fold:页眉页脚']);
-    expect([...body.querySelectorAll<HTMLDetailsElement>('details.panel-fold')].map(fold => fold.open)).toEqual([false, true, true]);
-    expect(body.querySelector('details.panel-fold input[aria-label="页边距"]')).not.toBeNull();
-    expect(body.querySelector('details.panel-fold select[aria-label="顶部左侧"]')).not.toBeNull();
+  it('sets each of the nine tap cells, and keeps the last 菜单 cell a menu', () => {
+    const onSetting = vi.fn();
+    const stage = document.createElement('div');
+    const grid = ['previous', 'menu', 'next', 'previous', 'next', 'next', 'previous', 'next', 'next'];
+    render(h(ReaderChrome, { state: chromeState({ settingsOpen: true, settingsTab: 'behavior', tapZones: grid as NonNullable<ChromeState['tapZones']> }), stage, handlers: { ...handlers(), onSetting } }), container);
+    settingsPage('翻页与点击');
+    const cells = [...container.querySelectorAll<HTMLButtonElement>('.tap-zones-grid .tap-zone-cell')];
+    expect(cells.map(cell => cell.textContent)).toEqual(['上一页', '菜单', '下一页', '上一页', '下一页', '下一页', '上一页', '下一页', '下一页']);
+
+    act(() => cells[8]!.click());
+    const nextChapter = [...document.querySelectorAll<HTMLButtonElement>('.action-menu [role^=menuitem]')].find(item => item.textContent === '下一章')!;
+    act(() => nextChapter.click());
+    expect(onSetting).toHaveBeenLastCalledWith({ tapZones: [...grid.slice(0, 8), 'next-chapter'] });
+
+    act(() => cells[1]!.click());
+    const items = [...document.querySelectorAll<HTMLButtonElement>('.action-menu [role^=menuitem]')];
+    expect(items.filter(item => !item.disabled).map(item => item.getAttribute('aria-label') ?? item.textContent)).toEqual(['菜单']);
+  });
+
+  it('adjusts size and brightness directly, and exposes tools from the same panel', () => {
+    const callbacks = { ...handlers(), onSetting: vi.fn(), onTools: vi.fn() };
+    act(() => render(h(ReaderChrome, { state: chromeState({ settingsOpen: true, settingsTab: 'appearance' }), stage: document.createElement('div'), handlers: callbacks }), container));
+    expect(container.querySelector('.reader-settings-home input[aria-label="页面亮度"]')).not.toBeNull();
+    expect(container.querySelectorAll('[aria-label="常用配色"] button')).toHaveLength(5);
+    settingsPage('增大字号'); expect(callbacks.onSetting).toHaveBeenLastCalledWith({ fontScale: 1.05 });
+    settingsPage('减小字号'); expect(callbacks.onSetting).toHaveBeenLastCalledWith({ fontScale: .95 });
+    settingsPage('阅读工具'); expect(callbacks.onTools).toHaveBeenCalledOnce();
+    settingsPage('显示设置');
+    expect(container.querySelector('select[aria-label="顶部左侧"]')).not.toBeNull();
   });
 
   it('offers all shared themes as swatches, and marks the current one', () => {
     const tree = paint({ settingsOpen: true, settingsTab: 'appearance' });
+    settingsPage('更多配色');
     const swatches = [...tree.querySelectorAll<HTMLButtonElement>('[aria-label="主题配色"] .theme-swatch')];
     expect(swatches.map((button) => button.querySelector('.theme-swatch-label')?.textContent)).toEqual(themeOptions.map(option => option.label));
     expect(swatches.filter((button) => button.getAttribute('aria-pressed') === 'true').map((button) => button.querySelector('.theme-swatch-label')?.textContent)).toEqual(['暖陶']);
@@ -333,6 +364,7 @@ describe('ReaderChrome', () => {
     const preview = (reading: ThemePreference['theme'], dark: boolean) => {
       render(h(ReaderChrome, { state: chromeState({ settingsOpen: true, settingsTab: 'appearance' }),
         stage: document.createElement('div'), handlers: handlers(themeState(selectTheme(defaultThemePreference, reading), dark)) }), container);
+      if (!container.querySelector('[aria-label="主题配色"]')) settingsPage('更多配色');
       return [...container.querySelectorAll<HTMLElement>('[data-reading-theme-option^="local-"] .theme-swatch-chip')]
         .map(chip => [chip.style.backgroundColor, chip.style.color]);
     };
@@ -342,17 +374,18 @@ describe('ReaderChrome', () => {
   it('changes the shared theme from the chooser and day/night shortcut', () => {
     const patches: Array<Partial<ThemePreference>> = [];
     render(h(ReaderChrome, { state: chromeState({ settingsOpen: true, settingsTab: 'appearance' }), stage: document.createElement('div'), handlers: handlers(themeState({}, true), patch => patches.push(patch)) }), container);
+    settingsPage('更多配色');
     container.querySelector<HTMLButtonElement>('[aria-label="主题配色"] [aria-label="黑白灰"]')!.click();
-    container.querySelector<HTMLButtonElement>('.reader-rail button')!.click();
+    container.querySelector<HTMLButtonElement>('.reader-actions [aria-label="日间"]')!.click();
     expect(patches).toEqual([selectTheme(defaultThemePreference, 'gray'), selectThemeMode(defaultThemePreference, 'light')]);
   });
 
-  it('keeps typography folded away for fixed layouts and offers only the readouts', () => {
+  it('keeps brightness, themes and display options available for fixed layouts', () => {
     const tree = paint({ settingsOpen: true, settingsTab: 'appearance', layout: 'fixed' });
-    const folds = [...tree.querySelectorAll('details.panel-fold .panel-fold-title')].map((element) => element.textContent);
-    expect(folds).toEqual(['主题', '页眉页脚']);
-    expect(tree.querySelector('.sheet')?.textContent).not.toContain('字号');
-    expect(tree.querySelector('.sheet')?.textContent).toContain('黑白灰');
+    expect(tree.querySelector('.reader-size-stepper')).toBeNull();
+    expect(tree.querySelector('[aria-label="页面亮度"]')).not.toBeNull();
+    settingsPage('显示设置');
+    expect(tree.querySelector('select[aria-label="顶部左侧"]')).not.toBeNull();
   });
 
   it('puts the start action first in the read-aloud sheet and folds pitch and volume', () => {

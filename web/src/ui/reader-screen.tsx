@@ -45,6 +45,8 @@ import { shouldPrefetch } from '../render/prefetch.ts';
 import { clampBrightness } from '../render/theme.ts';
 import { applyBrowserTheme } from './settings.ts';
 import { chineseText, chineseSearchQueries } from '../render/chinese.ts';
+import { tapActionAt } from './tap-zones.ts';
+import { ReadingTimeTracker } from '../features/stats/reading-time.ts';
 
 export interface ReaderScreenOptions {
   /** Where the shared app theme is stored (see the media theme service). */
@@ -185,6 +187,8 @@ export class ReaderScreen {
    */
   private content: BookContent | null = null;
   private book: Book | null = null;
+  /** 时长统计: active reading time for the open book (see ReadingTimeTracker). */
+  private readonly readingTime: ReadingTimeTracker;
   private manifest: Manifest | null = null;
   private chromeVisible = false;
   /**
@@ -221,6 +225,7 @@ export class ReaderScreen {
   private overrides: ReadingOverrides = emptyOverrides();
   private toolsOpen = false;
   private annotation: AnnotationTarget | null = null;
+  private annotationClosedAt = -Infinity;
   private toolsSelection: TextAnchor | null = null;
   private toolsReturn = '';
   private preview: SpeechEngine | null = null;
@@ -249,6 +254,23 @@ export class ReaderScreen {
     // scroll position and the shadow root with it.
     this.stage = document.createElement('div');
     this.stage.className = 'stage';
+    // Any touch, click or wheel on the page is the reader being there; page turns and
+    // scrolling also arrive through onPosition. Going to the background sends what is counted.
+    const statsServer = options.api.baseUrl, statsUser = options.api.currentSession()?.user.id;
+    this.readingTime = new ReadingTimeTracker({ recordReadingTime: (clientId, entries) => {
+      if (options.api.baseUrl !== statsServer || options.api.currentSession()?.user.id !== statsUser) return Promise.reject(new ApiError('aborted', '阅读账号已切换'));
+      return options.api.recordReadingTime(clientId, entries);
+    } }, options.platform.kv, cacheScope);
+    const active = (): void => this.readingTime.activity();
+    this.stage.addEventListener('pointerdown', active, { passive: true });
+    this.stage.addEventListener('wheel', active, { passive: true });
+    const visibility = (): void => { if (document.visibilityState === 'hidden') void this.readingTime.flush(); };
+    document.addEventListener('visibilitychange', visibility);
+    this.listeners.push(() => {
+      this.stage.removeEventListener('pointerdown', active);
+      this.stage.removeEventListener('wheel', active);
+      document.removeEventListener('visibilitychange', visibility);
+    });
 
     this.element = document.createElement('div');
     this.element.className = 'reader-screen';
@@ -329,7 +351,7 @@ export class ReaderScreen {
             confirmText="跳到最新位置" cancelText="继续当前阅读"
             onConfirm={() => void this.resolveRemoteProgress(true)} onCancel={() => void this.resolveRemoteProgress(false)} />}{this.annotation && <AnnotationPopover key={this.annotation.note?.id ?? encodeAnchor(this.annotation.anchor)} target={this.annotation}
             save={(type, comment, color) => this.saveAnnotation(type, comment, color)} remove={() => this.removeAnnotation()}
-            close={() => { this.annotation = null; this.view?.clearSelection(); this.patch({}); }} />}{this.toolsOpen && this.manifest ? <ReadingTools
+            close={() => { this.annotation = null; this.annotationClosedAt = performance.now(); this.view?.clearSelection(); this.patch({}); }} />}{this.toolsOpen && this.manifest ? <ReadingTools
             api={this.options.api} cache={this.publicationCache} offline={this.options.offline} downloads={this.options.downloads}
             sync={this.options.sync} manifest={this.manifest} selection={this.toolsSelection}
             currentChapter={this.chrome.chapterIndex}
@@ -353,6 +375,8 @@ export class ReaderScreen {
           handlers={{
             onTools: () => this.openTools(),
             onBack: () => this.options.onBack(),
+            onRetryOpen: () => { if (this.book) void this.open(this.book); },
+            onToggleBookmark: () => void this.toggleBookmark(),
             toggleToc: () => this.toggleToc(),
             toggleSettings: (tab) => this.toggleSettings(tab),
             onSetting: (patch) => void this.updateSetting(patch),
@@ -371,7 +395,9 @@ export class ReaderScreen {
             onSwitchEngine: (kind) => this.switchSpeechEngine(kind),
             onTocEntry: (ref) => void this.goToChapterRef(ref),
             onChapter: (delta) => void this.goToChapter(delta),
-            onBookInfo: () => this.patch({ bookInfoOpen: !this.chrome.bookInfoOpen }),
+            onBookInfo: () => { const open = !this.chrome.bookInfoOpen; this.patch({ bookInfoOpen: open }); if (open) void this.loadHistory(); },
+            onRetryHistory: () => void this.loadHistory(),
+            onRestoreHistory: (locator) => void this.restoreHistory(locator),
             onAiSummary: () => void this.generateAiSummary(),
             onRefresh: () => void this.refreshPublication(),
             onRefreshChapter: () => void this.refreshChapter(),
@@ -384,6 +410,7 @@ export class ReaderScreen {
             onCancelSwitch: () => this.closeAlternatives(),
             onCancelAlternative: () => { this.qualityRun?.abort(); this.patch({ alternativeChapters: undefined, alternativeChapter: '', alternativeQuality:null, alternativeQualityError:'', alternativeQualityBusy:false }); },
             onScrubPage: (page) => void this.scrubToPage(page),
+            onScrubChapter: (chapter) => { if (!this.navigating && !this.chrome.refreshing && !this.chrome.switching) void this.goToSection(chapter - 1); },
             onTurnPage: (direction) => void this.turnPage(direction),
             onSpeechToggle: () => this.toggleSpeech(),
             onSpeechPrevious: () => void this.tts?.previous(),
@@ -423,7 +450,8 @@ export class ReaderScreen {
     this.toolsOpen = false; this.annotation = null; this.toolsReturn = ''; this.toolsSelection = null; this.stopPreview();
     this.content = null; this.book = book;
     this.manualDownloadRunning = this.options.downloads.running(book.id);
-    this.patch({ title: book.title, author: book.author, description: book.description, bookInfoOpen: false, canRefresh: book.format === 'chapters', canSwitch: false, alternatives: null, refreshingChapter: false, sourceName: '', chapterUrl: '', toc: [] });
+    let opened = false;
+    this.patch({ openFailure: '', title: book.title, author: book.author, description: book.description, bookInfoOpen: false, canRefresh: book.format === 'chapters', canSwitch: false, alternatives: null, refreshingChapter: false, sourceName: '', chapterUrl: '', toc: [] });
     this.setStatus('loading', '正在载入…');
     this.setChromeVisible(false);
 
@@ -443,6 +471,15 @@ export class ReaderScreen {
         }
       } catch (error) { if (error instanceof ApiError && error.isAuthFailure) throw error; }
       if (token !== this.loadingToken) return;
+      // 无能力 → 不渲染 (ui.md §5): AI 总结 only appears when the server will answer it.
+      // An older server without the endpoint keeps the button, as it always had.
+      if (typeof this.options.api.aiCapabilities === 'function' && this.chrome.aiSummaryAvailable === undefined) {
+        void this.options.api.aiCapabilities().then(capabilities => {
+          if (!this.disposed) this.patch({ aiSummaryAvailable: capabilities.summary });
+        }).catch(error => {
+          if (!this.disposed && error instanceof ApiError && error.kind === 'not_found') this.patch({ aiSummaryAvailable: true });
+        });
+      }
       if (book.format === 'chapters' && typeof this.options.api.sourceOptions === 'function') {
         void this.options.api.sourceOptions(book.id).then(options => {
           if (token === this.loadingToken) this.patch({ canSwitch: options.canSwitch });
@@ -458,6 +495,7 @@ export class ReaderScreen {
       const staged = await this.openStaged(book, token, budget);
       if (staged) {
         this.doc = staged.doc;
+        opened = true;
         this.afterDocLoaded();
         // Cleared *after* the position is restored, not before. `restorePosition`
         // ends in `flashStatus('已恢复到上次阅读位置')`, and clearing the line first
@@ -480,6 +518,7 @@ export class ReaderScreen {
       if (token !== this.loadingToken) return;
 
       this.doc = loaded.doc;
+      opened = true;
       this.afterDocLoaded();
       if (loaded.notes.length > 0) this.setStatus('idle', loaded.notes.join(' · '));
       else this.hideStatus();
@@ -488,6 +527,8 @@ export class ReaderScreen {
     } catch (err) {
       if (token !== this.loadingToken) return;
       this.handleLoadError(err);
+      // A toast fades after a few seconds; an empty stage behind it must keep saying why.
+      if (!opened && !this.disposed && (this.chrome.statusState === 'error' || this.chrome.statusState === 'offline')) this.patch({ openFailure: this.chrome.statusText || '无法打开这本书' });
     }
   }
 
@@ -626,6 +667,7 @@ export class ReaderScreen {
     this.tts?.dispose();
     this.tts = null;
     void this.flushProgress().catch(() => undefined);
+    void this.readingTime.stop();
     this.book = null;
     if (this.progressTimer) clearTimeout(this.progressTimer);
     dismissNotice(this.noticeId);
@@ -1256,6 +1298,7 @@ export class ReaderScreen {
 
   /** Publishes what the chrome needs to know about the book that just loaded. */
   private afterDocLoaded(): void {
+    if (this.book) this.readingTime.start(this.book.id);
     this.patch({
       layout: this.doc?.layout ?? 'reflowable',
       format: this.doc?.format ?? '',
@@ -1360,11 +1403,12 @@ export class ReaderScreen {
           if (this.positionReady && this.settings.mode === 'scroll') void this.flushProgress().catch(() => undefined);
         }, 250),
       );
+      this.viewListeners.push(bindChapterPull(this.view.elementHost, () => this.settings.mode !== 'paged', direction => void this.turnPage(direction)));
     }
 
     let following = false;
     this.detachGestures = attachGestures(this.stage, {
-      onTapZone: (zone) => this.onTapZone(zone),
+      onTapZone: (column, row) => this.onTapZone(column, row),
       onSwipe: (direction) => {
         if (this.bodyGesturesBlocked()) return;
         if (this.chromeVisible) this.setChromeVisible(false);
@@ -1372,8 +1416,10 @@ export class ReaderScreen {
         // mode a horizontal swipe has no meaning and hijacking it would fight
         // the reader's own scrolling.
         if (doc.layout !== 'fixed' && this.settings.mode !== 'paged') return;
-        if (direction === 'left') void this.turnPage('next');
-        else if (direction === 'right') void this.turnPage('previous');
+        // Right-to-left (a manga) is read by swiping the other way.
+        const rtl = this.isRtl();
+        if (direction === (rtl ? 'right' : 'left')) void this.turnPage('next');
+        else if (direction === (rtl ? 'left' : 'right')) void this.turnPage('previous');
       },
       onDragDelta: (deltaX, deltaY, pointerType) => {
         if (pointerType === 'mouse' || this.bodyGesturesBlocked() || hasTextSelection(this.stage)) return;
@@ -1396,7 +1442,7 @@ export class ReaderScreen {
         view.dragTo(deltaX);
         const turn = Math.abs(deltaX) > this.stage.clientWidth * 0.3
           || (Math.abs(deltaX) >= 48 && duration < 300);
-        if (turn) void this.turnPage(deltaX < 0 ? 'next' : 'previous', true);
+        if (turn) void this.turnPage((this.isRtl() ? deltaX > 0 : deltaX < 0) ? 'next' : 'previous', true);
         else void view.endDrag(null);
         return true;
       },
@@ -1404,19 +1450,25 @@ export class ReaderScreen {
       hasSelection: () => hasTextSelection(this.stage),
     });
 
-    // Hardware keys, which is how a Bluetooth page-turner and an Android volume
-    // rocker reach the reader (the shell maps them to ArrowLeft/Right). Space is
-    // the desktop convention and costs nothing.
+    // Hardware keys: a desktop keyboard and a Bluetooth page-turner. Space and
+    // Shift+Space page as they do in every browser; S starts or pauses 朗读. The
+    // arrows follow the reading direction, so in a right-to-left comic ← is forward.
     this.viewListeners.push(
-      bindKeys(this.element, (key) => {
+      bindKeys(this.element, (key, shift) => {
         if (this.bodyGesturesBlocked()) return;
-        if (['ArrowRight', 'ArrowLeft', 'PageDown', 'PageUp'].includes(key) && this.chromeVisible) this.setChromeVisible(false);
-        if (key === 'ArrowRight' || key === 'PageDown') void this.turnPage('next');
-        else if (key === 'ArrowLeft' || key === 'PageUp') void this.turnPage('previous');
-        else if (key === ' ') this.toggleSpeech();
+        if (this.chromeVisible && ['ArrowRight', 'ArrowLeft', 'PageDown', 'PageUp', ' '].includes(key)) this.setChromeVisible(false);
+        const rtl = this.isRtl();
+        if (key === 'PageDown' || (key === ' ' && !shift) || key === (rtl ? 'ArrowLeft' : 'ArrowRight')) void this.turnPage('next');
+        else if (key === 'PageUp' || (key === ' ' && shift) || key === (rtl ? 'ArrowRight' : 'ArrowLeft')) void this.turnPage('previous');
+        else if (key === 's' || key === 'S') this.toggleSpeech();
         else if (key === 'Escape') this.setChromeVisible(false);
       }),
     );
+  }
+
+  /** Whether forward is to the left: a comic set to 右→左, or a right-to-left book. */
+  private isRtl(): boolean {
+    return (this.doc?.layout === 'fixed' ? this.settings.comicDirection : this.doc?.direction) === 'rtl';
   }
 
   private viewSettings(): Partial<ViewSettings> {
@@ -1501,22 +1553,18 @@ export class ReaderScreen {
       || !!this.element.querySelector('dialog[open]');
   }
 
-  /** The centre toggles controls; outer taps continue reading in either state. */
-  private onTapZone(zone: 'previous' | 'toggle-chrome' | 'next'): void {
-    if (this.bodyGesturesBlocked()) return;
+  private onTapZone(column: number, row: number): void {
+    if (this.bodyGesturesBlocked() || performance.now() - this.annotationClosedAt < 600) return;
 
-    if (zone === 'toggle-chrome') {
+    const action = tapActionAt(this.settings.tapZones, column, row, this.isRtl());
+    if (action === 'none') return;
+    if (action === 'menu') {
       this.setChromeVisible(!this.chromeVisible);
       return;
     }
     if (this.chromeVisible) this.setChromeVisible(false);
-
-    // `tapZone` decides which
-    // physical side is *forward*, so a left-handed reader can put next-page under
-    // the thumb that holds the phone.
-    const reversed = this.settings.tapZone === 'reversed';
-    const forward = reversed ? zone === 'previous' : zone === 'next';
-    void this.turnPage(forward ? 'next' : 'previous');
+    if (action === 'next' || action === 'previous') void this.turnPage(action);
+    else void this.goToChapter(action === 'next-chapter' ? 1 : -1);
   }
 
   private async restorePosition(book: Book, token: number, budget: OfflineReadBudget, localOnly = false): Promise<void> {
@@ -1580,14 +1628,75 @@ export class ReaderScreen {
    * and the *write* is debounced below, because a scroll is a gesture in progress
    * rather than a sequence of decisions to persist.
    */
+  /**
+   * Reads 阅读记录 for 书籍信息. The position on screen is pushed first, so the list
+   * already holds where the reader is now and that entry can be marked 当前.
+   */
+  private async loadHistory(): Promise<void> {
+    const book = this.book;
+    if (!book || typeof this.options.api.progressHistory !== 'function') return;
+    this.patch({ historyState: 'loading' });
+    try {
+      await this.flushProgress().catch(() => undefined);
+      if (typeof this.options.sync.flush === 'function') await this.options.sync.flush();
+      const history = await this.options.api.progressHistory(book.id);
+      if (this.disposed || this.book !== book) return;
+      this.patch({ historyState: 'ready', history, historyCurrent: this.view?.position()?.locator ?? '' });
+    } catch (error) {
+      if (this.disposed || this.book !== book) return;
+      if (error instanceof ApiError && error.isAuthFailure) { this.options.onSignedOut(); return; }
+      this.patch({ historyState: error instanceof ApiError && error.isConnectivity ? 'offline' : 'error' });
+    }
+  }
+
+  /** Goes back to a place from 阅读记录; that place then becomes the saved position. */
+  private async restoreHistory(locator: string): Promise<void> {
+    this.patch({ bookInfoOpen: false });
+    try {
+      await this.navigateTool(locator);
+      this.onPosition(this.view?.position() ?? null);
+      await this.flushProgress();
+      this.flashStatus('已回到这个位置', 1800);
+    } catch (error) {
+      this.setStatus('error', error instanceof Error ? error.message : '无法回到这个位置');
+    }
+  }
+
+  /** Bookmarks at this exact reading position — the same test 阅读工具 uses for 已加书签. */
+  private bookmarksHere(locator: string | undefined): Note[] {
+    if (!this.book || !locator) return [];
+    return this.options.offline.notesFor(this.book.id).filter(note => note.type === 'bookmark' && note.locator === locator);
+  }
+
+  /**
+   * One press from the top bar, where it used to take four (toolbar → 工具 → 笔记 →
+   * 加书签), and the same button shows whether this page already has one.
+   */
+  private async toggleBookmark(): Promise<void> {
+    const book = this.book, locator = this.view?.position()?.locator;
+    if (!book || !locator) return;
+    const here = this.bookmarksHere(locator);
+    if (here.length) {
+      for (const note of here) await this.options.offline.deleteNote(note.id);
+      this.flashStatus('已移除本页书签', 1800);
+    } else {
+      await this.options.offline.upsertNotes([{ id: newId(), bookId: book.id, type: 'bookmark', locator, text: book.title, comment: '', color: '', updatedAt: Date.now() }]);
+      this.flashStatus('已为本页加书签', 1800);
+    }
+    this.options.sync.schedule();
+    this.patch({ bookmarked: !here.length });
+  }
+
   private onPosition(position: Position | null): void {
     if (!position || !this.book) return;
+    this.readingTime.activity();
     this.paintNotes();
 
     const title = position.chapterTitle;
     const sectionId = position.sectionId;
     const chapterMoved = sectionId !== this.chrome.currentSectionId;
     this.patch({
+      bookmarked: this.bookmarksHere(position.locator).length > 0,
       progress: position.percentage,
       pageInChapter: position.pageInChapter,
       chapterPages: position.chapterPages,
@@ -2295,6 +2404,8 @@ export class ReaderScreen {
     // The bar follows the *engine*, not the chrome: a reader listening while
     // walking wants the controls reachable without the header covering the text.
     const active = snapshot.state === 'playing' || snapshot.state === 'paused';
+    // Listening to the book is reading it, screen on or off (时长统计).
+    this.readingTime.setSpeaking(snapshot.state === 'playing');
     // The scrub range is expressed in *sentences*, not in engine fragments, so a
     // chapter with a 2000-character paragraph still shows one tick for it.
     const sentenceIndex = this.speechQueueIndex();
@@ -2543,6 +2654,7 @@ function settingsView(
     brightness: settings.brightness,
     pageAnimation: settings.pageAnimation,
     tapZone: settings.tapZone,
+    tapZones: settings.tapZones,
     txtEncoding: settings.txtEncoding,
     txtIndent: settings.txtIndent,
     txtParagraphGap: settings.txtParagraphGap,
@@ -2601,6 +2713,57 @@ function addDebouncedListener(
 }
 
 /**
+ * Scroll mode: pulling on past the end of a chapter opens the next one (#702).
+ *
+ * Taps and keys already cross chapters (`ReaderView.next` falls through to the next
+ * section), but a reader scrolling by hand reached the last line and stopped there,
+ * with no way on except finding the toolbar's 下一章. A pull that *starts* at the end
+ * and keeps going is the request for more; one that merely arrives at the end is not,
+ * which is why the edge is read when the gesture begins. The top edge works the same
+ * way backwards.
+ *
+ * Touch events rather than pointer events: the browser cancels a pointer as soon as it
+ * starts scrolling natively, but keeps delivering touch events. The wheel is summed over
+ * a short window so one flick of a trackpad is one chapter, and a cooldown keeps the
+ * momentum that follows from turning a second one.
+ */
+function bindChapterPull(host: HTMLElement, active: () => boolean, turn: (direction: 'next' | 'previous') => void): () => void {
+  const PULL = 72, WHEEL = 240, COOLDOWN = 900;
+  const atEnd = () => host.scrollTop + host.clientHeight >= host.scrollHeight - 2;
+  const atStart = () => host.scrollTop <= 2;
+  let edge: 'end' | 'start' | null = null, startY = 0, wheel = 0, wheelAt = 0, quietUntil = 0;
+  const fire = (direction: 'next' | 'previous') => { quietUntil = performance.now() + COOLDOWN; wheel = 0; turn(direction); };
+  const onTouchStart = (event: TouchEvent) => {
+    edge = !active() || event.touches.length !== 1 ? null : atEnd() ? 'end' : atStart() ? 'start' : null;
+    startY = event.touches[0]?.clientY ?? 0;
+  };
+  const onTouchEnd = (event: TouchEvent) => {
+    const from = edge; edge = null;
+    if (!from || performance.now() < quietUntil || hasTextSelection(host)) return;
+    const dy = (event.changedTouches[0]?.clientY ?? startY) - startY;
+    if (from === 'end' && dy < -PULL && atEnd()) fire('next');
+    else if (from === 'start' && dy > PULL && atStart()) fire('previous');
+  };
+  const onWheel = (event: WheelEvent) => {
+    if (!active() || event.ctrlKey || performance.now() < quietUntil) return;
+    const down = event.deltaY > 0;
+    if (!(down ? atEnd() : event.deltaY < 0 && atStart())) { wheel = 0; return; }
+    const now = performance.now();
+    if (now - wheelAt > 600 || Math.sign(wheel) !== Math.sign(event.deltaY)) wheel = 0;
+    wheelAt = now; wheel += event.deltaY;
+    if (Math.abs(wheel) >= WHEEL) fire(down ? 'next' : 'previous');
+  };
+  host.addEventListener('touchstart', onTouchStart, { passive: true });
+  host.addEventListener('touchend', onTouchEnd, { passive: true });
+  host.addEventListener('wheel', onWheel, { passive: true });
+  return () => {
+    host.removeEventListener('touchstart', onTouchStart);
+    host.removeEventListener('touchend', onTouchEnd);
+    host.removeEventListener('wheel', onWheel);
+  };
+}
+
+/**
  * Hardware page-turn keys.
  *
  * The Android shell synthesises `ArrowRight`/`ArrowLeft` from the volume rocker
@@ -2608,21 +2771,28 @@ function addDebouncedListener(
  * page-turner. The same handler therefore serves a Bluetooth remote and a
  * desktop keyboard, with no per-host branching.
  */
-function bindKeys(target: HTMLElement, handler: (key: string) => void): () => void {
+function bindKeys(target: HTMLElement, handler: (key: string, shift: boolean) => void): () => void {
   const onKeyDown = (event: KeyboardEvent): void => {
+    // On the document, not the reader element: nothing in the reader holds focus
+    // when a book opens, so a listener on the element heard no key until the reader
+    // happened to click a toolbar button first.
+    if (!target.isConnected || event.defaultPrevented) return;
     const element = event.target as HTMLElement | null;
     const tag = element?.tagName ?? '';
     // A typing surface owns the keys: the settings panel has range inputs, and
     // space on a focused control must not also turn the page.
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || element?.isContentEditable) return;
     if (event.metaKey || event.ctrlKey || event.altKey) return;
-    // A panel that is open owns the keyboard: the arrow keys are how a range
+    // Space and Enter on a focused button press that button; they are not the page's.
+    if ((event.key === ' ' || event.key === 'Enter') && element?.closest('button, [role=button], a')) return;
+    // A sheet that is open owns the keyboard: the arrow keys are how a range
     // input is adjusted, and the settings panel is a column of range inputs.
-    if (target.querySelector('.panel:not([hidden]), dialog[open]')) return;
-    handler(event.key);
+    if (document.querySelector('dialog[open], [role=dialog], [role=alertdialog]')) return;
+    if (event.key === ' ' || event.key === 'PageDown' || event.key === 'PageUp') event.preventDefault();
+    handler(event.key, event.shiftKey);
   };
-  target.addEventListener('keydown', onKeyDown);
-  return () => target.removeEventListener('keydown', onKeyDown);
+  document.addEventListener('keydown', onKeyDown);
+  return () => document.removeEventListener('keydown', onKeyDown);
 }
 
 /**

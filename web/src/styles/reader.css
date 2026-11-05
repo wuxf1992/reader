@@ -234,14 +234,11 @@
   :where(*) { scrollbar-color: auto !important; }
 }
 
-*,
-*::before,
-*::after {
+*, *::before, *::after {
   box-sizing: border-box;
 }
 
-html,
-body {
+html, body {
   margin: 0;
   padding: 0;
   height: 100%;
@@ -265,8 +262,7 @@ html[data-reader-chrome] {
   --reader-scrim-color: #000000;
   --reader-scrim-opacity: 0.42;
 }
-html[data-reader-chrome],
-html[data-reader-chrome] body {
+html[data-reader-chrome], html[data-reader-chrome] body {
   background-color: var(--reader-browser-paper, var(--reader-paper));
   background-image: none;
 }
@@ -675,19 +671,14 @@ book-content {
   white-space: nowrap;
 }
 
-/* Shared sizing for the SVG icon primitive. */
+/* Shared sizing for the SVG icon primitive (ui/icon.tsx): 1em of the title size unless
+   the icon is given a size, which sets its font-size. */
 .icon {
   font-size: var(--text-title);
-  font-style: normal;
-  font-weight: 400;
-  font-synthesis: none;
   line-height: 1;
   display: inline-block;
   width: 1em;
-  text-align: center;
   vertical-align: middle;
-  speak: never;
-  /* The code point itself must never be selectable or copied. */
   user-select: none;
   -webkit-user-select: none;
 }
@@ -705,10 +696,6 @@ book-content {
  * area is the same box, so the pixels are the same pixels on every browser that
  * exists; saying it in terms of the box is what keeps that true when the button grows
  * a border or a padding, because the centre is still the centre.
- *
- * This is also why `.icon` must be a *line box* rather than a 1em square: a grid
- * centres the box it is given, so the ink has to be in the middle of that box for the
- * centring to be visible. See the derivation on `.icon`.
  */
 .icon-button {
   appearance: none;
@@ -787,9 +774,7 @@ book-content {
 }
 
 /* Route links use the same visual control language as their button counterparts. */
-.icon-button,
-.collection-link,
-.book-open {
+.icon-button, .collection-link, .book-open {
   text-decoration: none;
 }
 
@@ -812,23 +797,7 @@ book-content {
  * `:focus-visible` rather than `:focus` on purpose — a mouse click on a button
  * should not leave a ring behind, and a keyboard tab must always show one.
  */
-.button:focus-visible,
-.icon-button:focus-visible,
-.rail-button:focus-visible,
-.chip:focus-visible,
-.shelf-sort:focus-visible,
-.switch:focus-visible,
-.segmented button:focus-visible,
-.theme-swatch:focus-visible .theme-swatch-chip,
-.panel-fold > summary:focus-visible,
-.toc-list li button:focus-visible,
-.manager-row:focus-visible,
-.manager-crumb:focus-visible,
-.search-clear:focus-visible,
-.tts-bar button:focus-visible,
-.pager-page:focus-visible,
-.pager-step:focus-visible,
-.sheet button:focus-visible {
+.button:focus-visible, .icon-button:focus-visible, .chip:focus-visible, .shelf-sort:focus-visible, .switch:focus-visible, .segmented button:focus-visible, .theme-swatch:focus-visible .theme-swatch-chip, .panel-fold > summary:focus-visible, .toc-list li button:focus-visible, .manager-row:focus-visible, .manager-crumb:focus-visible, .search-clear:focus-visible, .tts-bar button:focus-visible, .pager-page:focus-visible, .pager-step:focus-visible, .sheet button:focus-visible {
   outline: var(--focus-ring);
   outline-offset: var(--focus-offset);
 }
@@ -842,15 +811,7 @@ book-content {
  * broken rather than responsive.
  */
 @media (hover: hover) and (pointer: fine) {
-  .icon-button:hover,
-  .button:hover,
-  .chip:hover,
-  .manager-row:hover,
-  .manager-crumb:hover,
-  .search-clear:hover,
-  .pager-page:hover,
-  .pager-step:hover,
-  .toc-list li button:hover {
+  .icon-button:hover, .button:hover, .chip:hover, .manager-row:hover, .manager-crumb:hover, .search-clear:hover, .pager-page:hover, .pager-step:hover, .toc-list li button:hover {
     background: color-mix(in srgb, var(--reader-ink) 6%, transparent);
   }
 
@@ -878,16 +839,7 @@ book-content {
  * one. A control's feedback should be the same speed as every other control's
  * feedback, or the app feels like it was assembled from several apps.
  */
-.button,
-.icon-button,
-.chip,
-.manager-row,
-.manager-crumb,
-.search-clear,
-.pager-page,
-.pager-step,
-.toc-list li button,
-.segmented button {
+.button, .icon-button, .chip, .manager-row, .manager-crumb, .search-clear, .pager-page, .pager-step, .toc-list li button, .segmented button {
   transition:
     background-color var(--motion-duration) var(--motion-ease),
     border-color var(--motion-duration) var(--motion-ease),
@@ -921,9 +873,7 @@ book-content {
  * either — anything smaller makes iOS Safari zoom the page on focus, which leaves
  * the layout scrolled and half off-screen with no way back except a pinch.
  */
-.field input,
-.field select,
-.field textarea {
+.field input, .field select, .field textarea {
   appearance: none;
   border: 1px solid var(--reader-line);
   background: var(--reader-surface);
@@ -1026,12 +976,6 @@ book-content {
   /* The title is the one piece of text on this screen at a display size, so it gets
      the optical correction the smaller sizes do not need: `-0.02em` closes the gaps
      that a large weight opens between Chinese glyphs and Latin capitals alike. */
-}
-
-.shelf-subtitle {
-  margin: 0.25rem 0 0;
-  font-size: var(--text-meta);
-  line-height: 1.35;
 }
 
 .shelf-head-actions {
@@ -1182,8 +1126,7 @@ book-content {
  * a control the reader has to hit with a thumb. The app owns this affordance (see
  * `.search-clear`), so the platform's is removed rather than left to duplicate it.
  */
-.shelf-search input::-webkit-search-cancel-button,
-.shelf-search input::-webkit-search-decoration {
+.shelf-search input::-webkit-search-cancel-button, .shelf-search input::-webkit-search-decoration {
   appearance: none;
   display: none;
 }
@@ -1248,11 +1191,6 @@ book-content {
   margin-inline: auto;
 }
 
-.shelf-section-head {
-  display: flex;
-  align-items: baseline;
-  gap: 0.5rem;
-}
 
 /*
  * A section heading that reads as a heading rather than as bold body text.
@@ -1263,13 +1201,6 @@ book-content {
  * heading *of* the section, so it also loses the underline the toolbar used to carry:
  * two horizontal rules 40px apart made the count row look like a separate band.
  */
-.shelf-section-title {
-  margin: 0.9rem 0 0.55rem;
-  font-size: var(--text-label);
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  color: var(--reader-muted);
-}
 
 /* ---- toolbar: the count and the sort, pinned to their section ---- */
 
@@ -1330,16 +1261,7 @@ book-content {
   cursor: pointer;
 }
 
-.shelf-refresh {
-  font-size: var(--text-label);
-  color: var(--reader-muted);
-  text-align: center;
-  padding: 0.35rem 0;
-}
 
-.shelf-refresh[hidden] {
-  display: none;
-}
 
 
 /* ---- the pager ----
@@ -1364,8 +1286,7 @@ book-content {
  * there so the reader who overshot does not have to find their page number and aim
  * at it.
  */
-.shelf-pager,
-.manager-pager {
+.shelf-pager, .manager-pager {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1381,8 +1302,7 @@ book-content {
  * is a target that needs the eye rather than the thumb. The box is what is sized, so
  * the numbers stay quiet while the hit area is not.
  */
-.pager-page,
-.pager-step {
+.pager-page, .pager-step {
   appearance: none;
   border: 1px solid transparent;
   background: transparent;
@@ -1414,8 +1334,7 @@ book-content {
   font-weight: 600;
 }
 
-.pager-page:disabled,
-.pager-step:disabled {
+.pager-page:disabled, .pager-step:disabled {
   /*
    * `disabled` rather than hidden: the buttons sit in fixed positions, so a control
    * that disappears at page one moves the numbers sideways under the thumb that is
@@ -1452,8 +1371,7 @@ book-content {
   /* Nothing animates here, and that is deliberate: a page turn is a new list, and a
      list that fades is a list the reader waits for. This block exists so the next
      person adding a transition to this control has to delete it on purpose. */
-  .pager-page,
-  .pager-step {
+  .pager-page, .pager-step {
     transition: none;
   }
 }
@@ -1607,8 +1525,7 @@ book-content {
   transition: opacity var(--motion-duration) var(--motion-ease);
 }
 
-.book-card .book-more:focus-visible,
-.book-card .book-more:active {
+.book-card .book-more:focus-visible, .book-card .book-more:active {
   opacity: 1;
 }
 @media (hover: hover) and (pointer: fine) {
@@ -1831,8 +1748,7 @@ book-content {
   width: 55%;
 }
 
-.book-grid.is-skeleton .cover,
-.skeleton-line {
+.book-grid.is-skeleton .cover, .skeleton-line {
   background-image: linear-gradient(
     100deg,
     transparent 20%,
@@ -1900,21 +1816,21 @@ book-content {
   margin-top: 0.85rem;
 }
 
-/* ---- shelf settings sheet ---- */
+/* ---- switch rows (SwitchRow: sheets and the 偏好设置 page) ---- */
 
-.sheet .switch-field {
+.switch-field {
   flex-direction: row;
   align-items: center;
   gap: 0.75rem;
 }
 
-.sheet .switch-text {
+.switch-text {
   flex: 1 1 auto;
   min-width: 0;
   font-size: var(--text-ui);
 }
 
-.sheet .switch-text .muted {
+.switch-text .muted {
   font-size: var(--text-meta);
   margin-top: 0.15rem;
 }
@@ -1927,7 +1843,7 @@ book-content {
  * this on" — a separate class would be a second one, and the two would eventually
  * disagree.
  */
-.sheet .switch {
+.switch {
   flex: 0 0 auto;
   position: relative;
   width: 2.7rem;
@@ -1939,7 +1855,7 @@ book-content {
   transition: background var(--motion-duration) var(--motion-ease);
 }
 
-.sheet .switch::after {
+.switch::after {
   content: '';
   position: absolute;
   top: 0.2rem;
@@ -1952,11 +1868,11 @@ book-content {
   transition: inset-inline-start var(--motion-duration) var(--motion-ease);
 }
 
-.sheet .switch[aria-pressed='true'] {
+.switch[aria-pressed='true'] {
   background: var(--reader-fill);
 }
 
-.sheet .switch[aria-pressed='true']::after {
+.switch[aria-pressed='true']::after {
   inset-inline-start: 1.3rem;
 }
 
@@ -1964,22 +1880,16 @@ book-content {
   /* The chrome's own show/hide is a state change, not decoration: it still has to
      happen, it just does not have to be animated. Collapsing every duration to a
      hair keeps the reader's preference without leaving the bands half-way. */
-  .topbar,
-  .footer,
-  .reader-rail {
+  .topbar, .footer {
     transition-duration: 1ms;
     animation: none;
   }
 
-  .sheet .switch,
-  .sheet .switch::after {
+  .switch, .switch::after {
     transition: none;
   }
 
-  .book-card .cover,
-  .book-card .book-more,
-  .book-grid.is-skeleton .cover,
-  .book-grid.is-skeleton .skeleton-line {
+  .book-card .cover, .book-card .book-more, .book-grid.is-skeleton .cover, .book-grid.is-skeleton .skeleton-line {
     animation: none;
     transition: none;
   }
@@ -2041,51 +1951,10 @@ book-content {
 }
 
 /* The grab handle. Decorative, so it is `aria-hidden` in the markup. */
-.panel-grip {
-  flex: 0 0 auto;
-  width: 2.25rem;
-  height: 0.25rem;
-  margin: 0.5rem auto 0.125rem;
-  border-radius: var(--radius-pill);
-  background: var(--reader-line);
-}
-
-.panel-header {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.25rem 0.5rem 0.5rem 0.9rem;
-  border-bottom: 1px solid var(--reader-line);
-}
-
-.panel-header h2 {
-  margin: 0;
-  font-size: var(--text-title);
-  font-weight: 600;
-}
 
 /* The count beside the title. Right-aligned against the ✕ rather than next to the
    title, so the header reads as "title … count … close" and the closing control
    stays exactly where the reader's thumb expects it. */
-.panel-subtitle {
-  flex: 1 1 auto;
-  text-align: end;
-  font-size: var(--text-meta);
-  color: var(--reader-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.panel-body {
-  flex: 1 1 auto;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  /* `overscroll-behavior: contain` stops a flick at the end of the list from
-     scrolling the *chapter* behind the sheet, which is the classic bottom-sheet
-     annoyance: the list stops moving, the text underneath starts, and the reader
-     has lost their place. */
-  overscroll-behavior: contain;
-  padding: var(--space-3) 0.9rem calc(var(--space-3) + var(--safe-bottom));
-}
 
 .toc-list {
   list-style: none;
@@ -2314,13 +2183,6 @@ book-content {
  * The two buttons are text-with-chevron rather than bare chevrons — the whole row
  * is a labelled destination, and a bare "‹" beside a bare "›" is a guess.
  */
-.footer-row.chapter-nav {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  padding: 0.15rem var(--reader-band-inset) 0.65rem;
-}
 
 /*
  * The chapter buttons' horizontal padding is *zero*.
@@ -2358,16 +2220,6 @@ book-content {
   cursor: default;
 }
 
-.nav-progress {
-  flex: 1 1 auto;
-  text-align: center;
-  font-size: var(--text-label);
-  color: var(--reader-muted);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 
 /* ---- quick-action rail ----
  *
@@ -2401,53 +2253,6 @@ book-content {
  * reader who tapped twice quickly left the rail visible over a hidden toolbar.
  */
 
-.reader-rail {
-  position: absolute;
-  inset-inline-end: calc(0.35rem + var(--safe-right));
-  /*
-   * Below the top of the screen, within comfortable
-   * reach: a hand holding a phone at the bottom of the screen reaches this band.
-   * Keeping controls at the side also leaves the centre clear for reading.
-   */
-  top: calc(22% + var(--safe-top));
-  /*
-   * A ceiling, and it is the whole of why the rail can be trusted to show what it
-   * contains.
-   *
-   * Without one the column was as tall as its buttons and simply ran off the bottom
-   * of a short screen: a phone in landscape, or a phone whose status bar and
-   * browser chrome leave 500px, showed the first four controls and nothing else —
-   * with no scrollbar, no fade and no hint that there was more. That is the
-   * standing report ("竖排工具栏显示为 主题切换、听书") described exactly: a reader who
-   * counts what they can see and concludes that is what the rail does.
-   *
-   * `--reader-chrome-bottom` and `--reader-chrome-top` are the same two numbers the
-   * reading column reserves for the bars, so the rail cannot extend under either of
-   * them however many controls it holds; `max-height` rather than `height` so a rail
-   * with three buttons is three buttons tall and does not float in an empty column.
-   */
-  max-height: calc(100% - 22% - var(--safe-top) - var(--reader-chrome-bottom) - 0.5rem);
-  overflow-y: auto;
-  /*
-   * `overscroll-behavior: contain`, so reaching the end of the rail does not hand
-   * the rest of the gesture to the page underneath it. Without it, a flick that
-   * finds the last button turns into a chapter scroll — the reader's finger was on a
-   * control and the book moved.
-   */
-  overscroll-behavior: contain;
-  z-index: var(--reader-layer-rail);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  padding: 0.2rem;
-  opacity: 1;
-  transform: none;
-  transition:
-    opacity var(--motion-duration) var(--motion-ease),
-    transform var(--motion-duration) var(--motion-ease),
-    visibility 0s linear;
-}
-
 /*
  * The rail's scrollbar is *drawn*, not hidden.
  *
@@ -2458,14 +2263,6 @@ book-content {
  * rail floats over the text, and a 12px opaque gutter would be a band of the page
  * the reader cannot see through for no information.
  */
-.reader-rail::-webkit-scrollbar {
-  inline-size: 3px;
-}
-
-.reader-rail::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--reader-ink) 22%, transparent);
-  border-radius: var(--radius-pill);
-}
 
 /*
  * Hidden: it slides out to the right and fades, the direction its own entry motion
@@ -2478,85 +2275,18 @@ book-content {
  * a control that is on its way off the screen cannot be tapped or reached by a
  * screen reader, and `pointer-events: none` covers the interval.
  */
-.reader-screen[data-chrome='hidden'] .reader-rail {
-  visibility: hidden;
-  opacity: 0;
-  transform: translateX(0.5rem);
-  pointer-events: none;
-  transition:
-    opacity var(--motion-duration) var(--motion-ease),
-    transform var(--motion-duration) var(--motion-ease),
-    visibility 0s linear var(--motion-duration);
-}
-
-.rail-button {
-  display: grid;
-  place-items: center;
-  width: 2.75rem;
-  height: 2.75rem;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--reader-ink);
-  font-size: var(--text-title);
-  cursor: pointer;
-  touch-action: manipulation;
-  transition: transform var(--motion-duration) var(--motion-ease);
-}
-
-.rail-button:active { transform: scale(0.92); }
 
 /* On a wide screen the rail moves into the gutter the measure leaves, so it is
    beside the text rather than on top of it. `--reader-measure` is the same token
    the column uses, so the two cannot disagree about where the text ends. */
-@media (min-width: 60rem) {
-  .reader-rail {
-    inset-inline-end: max(0.75rem, calc((100% - var(--reader-measure)) / 2 - 3.5rem));
-  }
-}
 
 /* ---- quick rows in the settings sheet ---- */
 
-.quick-row {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--space-2);
-  padding: 0 0 var(--space-2);
-}
 
-.quick-button {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.15rem;
-  padding: 0.55rem 0.3rem;
-  border: 1px solid color-mix(in srgb, var(--reader-line) 80%, transparent);
-  border-radius: var(--reader-radius);
-  background: color-mix(in srgb, var(--reader-ink) 4%, transparent);
-  color: var(--reader-ink);
-  font: inherit;
-  cursor: pointer;
-  touch-action: manipulation;
-}
 
-.quick-button:active {
-  background: color-mix(in srgb, var(--reader-ink) 10%, transparent);
-}
 
-.quick-button:disabled {
-  opacity: 0.55;
-  cursor: default;
-}
 
-.quick-button .quick-label {
-  font-size: var(--text-meta);
-  color: var(--reader-muted);
-}
 
-.quick-button .quick-value {
-  font-size: var(--text-label);
-  font-variant-numeric: tabular-nums;
-}
 
 /* ---- read-aloud bar ---- */
 
@@ -2716,9 +2446,7 @@ book-content {
  */
 @media (pointer: coarse) {
   .chip { position: relative; }
-  .chip::before,
-  .book-card .book-more::before,
-  .book-card .book-shelve::before {
+  .chip::before, .book-card .book-more::before, .book-card .book-shelve::before {
     content: '';
     position: absolute;
     inset: -0.5rem;
@@ -2800,9 +2528,7 @@ book-content {
   grid-template-columns: 1fr;
 }
 
-.field > .segmented,
-.field > select,
-.field > input[type='range'] {
+.field > .segmented, .field > select, .field > input[type='range'] {
   justify-self: stretch;
   min-width: 0;
 }
@@ -2896,18 +2622,76 @@ book-content {
   transform: rotate(225deg);
 }
 
-.panel-fold-title {
-  font-size: var(--text-body);
-  font-weight: 600;
-}
-
 .panel-fold-hint {
   font-size: var(--text-meta);
   color: var(--reader-muted);
 }
 
-.panel-fold-body {
-  padding-bottom: var(--space-2);
+/* 点击区域设置: the page drawn small, nine cells, each a menu trigger. The grid is
+ * portrait like the page it stands for, so a cell's place reads as the place on
+ * the screen; its height is capped so the sheet still shows the rows around it. */
+.tap-zones {
+  margin-bottom: var(--space-3);
+}
+
+.tap-zones-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.tap-zones-title {
+  margin-inline-end: auto;
+  font-size: var(--text-label);
+  color: var(--reader-muted);
+}
+
+.tap-zones-head .tap-zones-action {
+  padding: 0.35rem 0.6rem;
+  font-size: var(--text-label);
+}
+
+.tap-zones-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  gap: var(--space-1);
+  width: min(100%, 15rem);
+  aspect-ratio: 3 / 4;
+  margin-inline: auto;
+  padding: var(--space-1);
+  border: 1px solid var(--reader-line);
+  border-radius: var(--reader-radius);
+  background: var(--reader-paper);
+}
+
+.tap-zones-grid .tap-zone-cell {
+  flex-direction: column;
+  min-width: 0;
+  min-height: 44px;
+  height: 100%;
+  padding: var(--space-1);
+  border-style: dashed;
+  background: transparent;
+  font-size: var(--text-label);
+}
+
+.tap-zones-grid .tap-zone-cell.is-menu {
+  border-style: solid;
+  border-color: var(--reader-accent);
+  background: var(--reader-fill);
+  color: var(--reader-on-fill);
+}
+
+.tap-zones-grid .tap-zone-cell.is-none {
+  color: var(--reader-muted);
+}
+
+.tap-zones > .muted {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-meta);
+  text-align: center;
 }
 
 /* The one action the read-aloud sheet exists for: full width, first, and tall enough to hit. */
@@ -2924,8 +2708,7 @@ book-content {
 
 /* ---- misc ---- */
 
-.empty-state,
-.centered-form {
+.empty-state, .centered-form {
   margin: auto;
   max-width: 24rem;
   width: 100%;
@@ -2944,7 +2727,7 @@ book-content {
 .login-heading p { font-size:var(--text-title); line-height:1.7; margin:.3rem 0 0; color:var(--reader-muted); }
 .login-card .field { display: flex; flex-direction: column; align-items: stretch; gap: .5rem; margin: 0 0 1rem; }
 .login-card .field label { font-size: var(--text-title); color: var(--reader-ink); }
-.login-card .field label em { color:#e66d67; font-style:normal; }
+.login-card .field label em { color:var(--color-danger); font-style:normal; }
 .login-card input { width: 100%; min-width: 0; min-height: 46px; box-sizing:border-box; padding: .65rem .85rem; font-size: var(--text-title); border:1px solid var(--reader-line); border-radius:var(--radius-xs); background:var(--reader-surface); color:var(--reader-ink); }
 .login-card input:focus { border-color:var(--reader-accent); outline:2px solid color-mix(in srgb,var(--reader-accent) 28%,transparent); outline-offset:1px; }
 .login-connection { margin-bottom: 1.4rem; border-bottom: 1px solid var(--reader-line); padding-bottom: .9rem; }
@@ -2953,8 +2736,8 @@ book-content {
 .login-connection[open] .field { margin: 1rem 0 0; }
 .login-server-input { position:relative; }
 .login-server-input input { padding-right:3.25rem; }
-.login-server-status { position:absolute; right:.45rem; top:50%; transform:translateY(-50%); display:grid; place-items:center; min-width:1.8rem; height:1.8rem; border-radius:50%; background:#51b95b; color:#fff; font-size:var(--text-label); font-weight:700; }
-.login-server-status.is-probing { background:#9aa3ae; }
+.login-server-status { position:absolute; right:.45rem; top:50%; transform:translateY(-50%); display:grid; place-items:center; min-width:1.8rem; height:1.8rem; border-radius:50%; background:var(--color-brand); color:var(--color-on-brand); font-size:var(--text-label); font-weight:700; }
+.login-server-status.is-probing { background:var(--reader-line); color:var(--reader-muted); }
 .login-server-meta { display:flex; align-items:center; justify-content:space-between; color:var(--reader-muted); font-size:var(--text-ui); margin-top:.35rem; }
 .login-password-input { position:relative; }
 .login-password-input input { padding-right:3rem; }
@@ -3069,6 +2852,17 @@ book-content {
   margin: 0;
 }
 
+/* A book that could not open: covers the empty stage, under the bars so 返回 still works. */
+.reader-open-failure {
+  position: absolute;
+  inset: 0;
+  z-index: var(--reader-layer-readout);
+  min-height: 0;
+  padding: var(--space-4);
+  text-align: center;
+  background: var(--reader-paper);
+}
+
 .segmented {
   display: flex;
   border: 1px solid var(--reader-line);
@@ -3117,8 +2911,7 @@ book-content {
  * the wrapper with no reader-visible effect and one more way for a stale selector to
  * silently stop matching.
  */
-.library-screen,
-.manager-screen {
+.library-screen {
   position: relative;
   display: flex;
   flex-direction: column;
@@ -3136,10 +2929,6 @@ book-content {
  * bar off the bottom of the phone. `display: contents` makes the host vanish for
  * layout purposes and keeps the tree's children exactly where they were.
  */
-.library-ui,
-.manager-ui {
-  display: contents;
-}
 
 /* ---- library: the header's two-page switch ---- */
 
@@ -3165,6 +2954,16 @@ book-content {
  * and a search field that stopped growing while the covers beside it kept going would
  * be the row that disagrees with the page.
  */
+/* 书库's subfolders: one scrollable row of chips under the search field, on its gutter. */
+.library-folders {
+  display: flex;
+  gap: var(--space-1);
+  overflow-x: auto;
+  padding: 0 var(--shelf-search-inset) var(--space-2);
+  scrollbar-width: none;
+}
+.library-folders .chip { display: inline-flex; align-items: center; gap: var(--space-1); flex: none; white-space: nowrap; }
+
 .library-search {
   max-width: none;
   /*
@@ -3272,15 +3071,7 @@ book-content {
  * sentence and an empty one should cost no space at all: a blank 18px row above a
  * grid of covers is a gap the reader reads as a rendering mistake.
  */
-.library-preview-hint {
-  padding: 0.5rem calc(0.9rem + var(--shelf-search-inset)) 0;
-  font-size: var(--text-meta);
-  line-height: 1.4;
-}
 
-.library-preview-hint:empty {
-  display: none;
-}
 
 /*
  * A preview card: the shelf's card, with a *second* control on it.
@@ -3627,7 +3418,7 @@ book-content {
   gap: 0.5rem;
   align-items: center;
   padding: 0.6rem 0.75rem;
-  padding-bottom: calc(0.6rem + env(safe-area-inset-bottom));
+  padding-bottom: calc(0.6rem + var(--safe-bottom));
   border-top: 1px solid var(--reader-line);
   background: var(--reader-surface);
   overflow-x: auto;
@@ -3649,23 +3440,7 @@ book-content {
   white-space: nowrap;
 }
 
-.manager-selection {
-  position: absolute;
-  inset-block-start: calc(env(safe-area-inset-top) + 0.25rem);
-  inset-inline-start: 50%;
-  transform: translateX(-50%);
-  background: var(--reader-ink);
-  color: var(--reader-paper);
-  border-radius: var(--radius-pill);
-  padding: 0.2rem 0.7rem;
-  font-size: var(--text-meta);
-  pointer-events: none;
-  z-index: 25;
-}
 
-.manager-selection[hidden] {
-  display: none;
-}
 
 .button.danger {
   border-color: color-mix(in srgb, #c0392b 55%, transparent);
@@ -3679,21 +3454,6 @@ book-content {
  * laid out still takes a tab stop, and this one has no meaning of its own — the
  * button beside it is what the user operates.
  */
-.manager-upload-input {
-  /* Android WebView may reject click() on an input with display:none. Keep the
-     native picker in the layout as an invisible, non-obstructing control. */
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  border: 0;
-  opacity: 0;
-  clip: rect(0 0 0 0);
-  clip-path: inset(50%);
-  overflow: hidden;
-  white-space: nowrap;
-}
 
 /* ---- reduced motion ---- */
 
@@ -3714,9 +3474,7 @@ book-content {
     --motion-duration: 0.001s;
   }
 
-  *,
-  *::before,
-  *::after {
+  *, *::before, *::after {
     animation-duration: 0.001s !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001s !important;
@@ -3734,8 +3492,7 @@ book-content {
 .sources-card { max-width:64rem; margin:0 auto 1rem; padding:1rem; border:1px solid var(--reader-line); border-radius:var(--radius-lg); }
 .sources-card h2 { margin:.25rem 0 1rem; font-size:var(--text-title); }
 .sources-card label, .extension-sheet-form label { display:flex; flex-direction:column; gap:.4rem; margin:.75rem 0; }
-.sources-card input:not([type=checkbox]), .sources-card select, .sources-card textarea,
-.extension-sheet-form input:not([type=checkbox]), .extension-sheet-form select, .extension-sheet-form textarea { width:100%; box-sizing:border-box; padding:.65rem; border:1px solid var(--reader-line); border-radius:var(--radius-sm); background:var(--reader-surface); color:inherit; font:inherit; }
+.sources-card input:not([type=checkbox]), .sources-card select, .sources-card textarea, .extension-sheet-form input:not([type=checkbox]), .extension-sheet-form select, .extension-sheet-form textarea { width:100%; box-sizing:border-box; padding:.65rem; border:1px solid var(--reader-line); border-radius:var(--radius-sm); background:var(--reader-surface); color:inherit; font:inherit; }
 .sources-card textarea { min-height:6rem; }
 .sources-row { display:flex; flex-wrap:wrap; gap:1rem; align-items:center; justify-content:space-between; padding:1rem 0; border-top:1px solid var(--reader-line); }
 .sources-row > div:first-child { flex:1 1 15rem; min-width:0; overflow-wrap:anywhere; }
@@ -3746,7 +3503,7 @@ book-content {
 .source-navigation { flex-wrap:wrap; margin:.5rem 0 1rem; }
 .sources-hub .source-navigation { display:flex; gap:.5rem; }
 .library-files-screen .manager-status { padding:.65rem 1rem 1rem; }
-.library-files-screen .collection-link.is-disabled { opacity:.5; pointer-events:none; }
+.collection-link.is-disabled { opacity:.5; pointer-events:none; }
 .sources-actions { display:flex; flex-wrap:wrap; gap:.5rem; align-items:center; }
 .sources-actions label { margin:0; }
 .sources-card .sources-consent { flex-direction:row; align-items:center; }
@@ -3842,10 +3599,8 @@ svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; verti
 .reading-indicator > span { min-width: 0; flex: 0 1 auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
 .indicator-left { text-align: start; }
 .indicator-right { text-align: end; }
-.reading-indicator > span[data-mode='book'],
-.reading-indicator > span[data-mode='chapter'] { flex: 1; }
-.reading-indicator > span[data-mode='time'],
-.reading-indicator > span[data-mode='progress'] { flex-shrink: 0; }
+.reading-indicator > span[data-mode='book'], .reading-indicator > span[data-mode='chapter'] { flex: 1; }
+.reading-indicator > span[data-mode='time'], .reading-indicator > span[data-mode='progress'] { flex-shrink: 0; }
 .reading-indicator > span:empty { flex: 0; }
 /* Keep the same fixed element at top:0 across toggles; move only its contents. */
 .reader-screen[data-chrome='visible'] .reading-indicator-top { padding-top: calc(5rem + var(--safe-top)); height: calc(6.3rem + var(--safe-top)); background: var(--reader-surface); }
@@ -3886,24 +3641,13 @@ svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; verti
 .reader-screen .progress-scrubber { width: 100%; min-height: 28px; margin: 0; }
 .reader-screen .progress-page { font-size: var(--text-micro); color: var(--reader-muted); }
 .reader-actions { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0.25rem; }
+.reader-actions .top-button[aria-pressed='true'] { color: var(--reader-accent); }
+/* The page's bookmark: filled in the accent colour when this page has one. */
+.reader-bookmark[aria-pressed='true'] { color: var(--reader-accent); }
+.reader-bookmark[aria-pressed='true'] .icon { fill: currentColor; }
 .reader-actions .top-button { min-width: 0; max-width: none; min-height: 60px; padding: 0.45rem 0; gap: 0.45rem; }
 .reader-actions .icon { font-size: var(--text-display); }
 .reader-actions .top-button-label { font-size: var(--text-meta); font-weight: 400; }
-.reader-screen .reader-rail {
-  top: auto;
-  bottom: calc(var(--reader-footer-height) + 1rem);
-  left: auto;
-  right: max(1rem, var(--safe-right));
-  width: auto;
-  max-height: none;
-  padding: 0;
-  transform: none;
-  border: none;
-  background: transparent;
-  box-shadow: none;
-}
-.reader-screen .rail-button { width: 48px; height: 48px; border-radius: 50%; background: var(--reader-surface); box-shadow: 0 3px 12px #00000020; }
-.reader-screen .rail-button .icon { font-size: var(--text-display); }
 @media (max-width: 700px) {
   .reader-screen .sheet:not([data-size='compact']) {
     height: min(62vh, calc(100vh - var(--safe-top) - 1.5rem));
@@ -3955,11 +3699,8 @@ svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; verti
 .extension-screen input[type=checkbox] { width: 1.25rem; height: 1.25rem; }
 .extension-actions form + form { margin-top: 0; }
 .extension-actions .extension-form-inline { border-top: 1px solid var(--reader-line); padding-top: .75rem; }
-.extension-confirm { border: 1px solid var(--reader-line); border-radius: var(--radius-sm); padding: .75rem; margin-top: .5rem; }
-.extension-confirm p { margin: 0 0 .75rem; }
-.extension-confirm button + button { margin-inline-start: .5rem; }
-.extension-screen button, .source-next-step .button { min-height: 44px; }
-.source-catalog, .source-editor { scroll-margin-top: 1rem; }
+.extension-screen button { min-height: 44px; }
+.source-catalog { scroll-margin-top: 1rem; }
 @media (max-width: 600px) {
   .extension-screen .extension-form-inline label { flex-basis: 100%; }
   .extension-screen .extension-form-inline label[data-field-type=number] { flex: 1 1 9rem; }
@@ -4031,7 +3772,6 @@ svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; verti
 .shelf-screen .shelf-links .collection-link.button > span { flex: 0 0 auto; }
 .shelf-head-actions { margin-top: 0; }
 .shelf-head .icon-button, .collection-heading .icon-button { width: 44px; height: 44px; border-radius: var(--radius-md); }
-.shelf-subtitle { margin-top: .45rem; line-height: 1.5; }
 .collection-header { padding: calc(1.25rem + var(--safe-top)) calc(.9rem + var(--safe-right)) .75rem calc(.9rem + var(--safe-left)); flex: none; }
 .collection-heading { display: flex; align-items: center; gap: .5rem; }
 .collection-heading-text { flex: 1; min-width: 0; }
@@ -4060,9 +3800,7 @@ svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; verti
 .collection-empty .button { min-height: 44px; font-size: var(--text-ui); }
 .shelf-screen .shelf-filters { display: flex; align-items: center; flex-wrap: wrap; gap: .35rem; margin: .15rem 0 .55rem; }
 .shelf-screen .shelf-state-filter { display: flex; flex-wrap: wrap; gap: .25rem; min-width: 0; }
-.shelf-screen .shelf-state-filter .chip,
-.shelf-screen .shelf-group,
-.shelf-screen .shelf-group-active { min-height: 44px; padding: .35rem .6rem; font-size: var(--text-meta); }
+.shelf-screen .shelf-state-filter .chip, .shelf-screen .shelf-group, .shelf-screen .shelf-group-active { min-height: 44px; padding: .35rem .6rem; font-size: var(--text-meta); }
 .shelf-screen .shelf-group-active { display: inline-flex; align-items: center; gap: .1rem; min-width: 0; max-width: 12rem; }
 .shelf-screen .shelf-group-active > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .shelf-screen .shelf-toolbar { justify-content: space-between; gap: .5rem; }
@@ -4104,6 +3842,9 @@ svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; verti
   .file-manager-header .collection-links { justify-content: stretch; }
   .file-manager-header .collection-link.button { flex: 1 1 0; min-width: 0; }
 }
+/* The sticky section titles meet the sheet header: no body padding above them for the
+   controls to scroll through (the rule was lost when .panel-body became .sheet-body). */
+.sheet.shelf-settings > .sheet-body { padding-top: 0; }
 .shelf-settings .section-title:first-child { margin-top: 0; }
 .shelf-discovery { display: contents; }
 /* Desktop keeps navigation compact and settings beside the collection. */
@@ -4144,7 +3885,6 @@ svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; verti
   .reader-screen .reader-actions .top-button { flex-direction: row; min-width: 4.75rem; min-height: 44px; padding: .5rem .7rem; border-radius: var(--radius-md); }
   @media (hover: hover) and (pointer: fine) { .reader-screen .reader-actions .top-button:hover { background: color-mix(in srgb, var(--reader-accent) 10%, transparent); }}
   .reader-screen .reader-actions .icon { font-size: var(--text-title); }
-  .reader-screen .reader-rail { right: max(1rem, calc((100% - var(--desktop-page-width)) / 2 - 4.5rem)); bottom: 2.25rem; }
   .reader-screen[data-chrome='visible'] .reading-indicator-bottom { bottom: 6rem; }
   .reader-screen .reading-indicator { width: var(--desktop-page-width); max-width: 100%; margin-inline: auto; padding-inline: 1.5rem; font-size: var(--text-meta); }
   .reader-screen .sheet::backdrop { background: color-mix(in srgb, var(--reader-ink) 12%, transparent); }
@@ -4174,6 +3914,15 @@ svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; verti
 .book-detail-author { color: var(--reader-muted); }
 .book-detail dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: .6rem 1rem; padding-block: .8rem; border-block: 1px solid var(--reader-line); }
 .book-detail dt { color: var(--reader-muted); }
+/* 阅读记录 in 书籍信息: one row per place, the one on screen marked and not pressable. */
+.reading-history ul { display: grid; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
+.reading-history button { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0 var(--space-2); width: 100%; min-height: 44px; padding: var(--space-1) var(--space-2); border: 1px solid var(--reader-line); border-radius: var(--radius-sm); background: transparent; color: var(--reader-ink); font: inherit; text-align: start; cursor: pointer; }
+.reading-history button strong { grid-column: 1; font-weight: 500; overflow-wrap: anywhere; }
+.reading-history button small { grid-column: 1; color: var(--reader-muted); font-size: var(--text-meta); }
+.reading-history button:disabled { cursor: default; border-color: transparent; background: var(--color-brand-soft); }
+.reading-history button:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.reading-history-current { grid-column: 2; grid-row: 1 / span 2; color: var(--reader-accent); font-size: var(--text-meta); }
+@media (hover: hover) and (pointer: fine) { .reading-history button:not(:disabled):hover { border-color: var(--reader-accent); } }
 .book-detail dd { margin: 0; overflow-wrap: anywhere; }
 .book-detail-description { white-space: pre-wrap; line-height: 1.8; overflow-wrap: anywhere; }
 
@@ -4187,10 +3936,6 @@ svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; verti
 .catalog-book:has(.catalog-source-count) { display: flex; align-items: center; gap: 1rem; }
 .catalog-book:has(.catalog-source-count) > div { flex: 1; min-width: 0; }
 .catalog-source-count { display: inline-flex; align-items: center; gap: .5rem; flex: none; min-height: 44px; white-space: nowrap; }
-.catalog-source-heading { padding-block: 1rem; border-bottom: 1px solid var(--reader-line); }
-.catalog-source-heading h3 { margin: 0; font-size: var(--text-title); overflow-wrap: anywhere; }
-.catalog-source-heading p { margin: .4rem 0; color: var(--reader-muted); }
-.catalog-source-heading small { color: var(--reader-muted); }
 .catalog-source-item { padding-block: 1rem; border-bottom: 1px solid var(--reader-line); }
 .catalog-source-item:last-child { border-bottom: 0; }
 .catalog-source-item strong { overflow-wrap: anywhere; }
@@ -4223,13 +3968,6 @@ svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; verti
 .source-switch .catalog-feedback { margin-top: 1rem; }
 
 /* Reading tools share the reader modal, including narrow phone layouts. */
-@media (max-width: 63.99rem) {
-  .reading-tools-modal { position: fixed; inset: auto 0 0; margin: 0; width: 100%; max-width: none; box-sizing: border-box; max-height: 78dvh; border-radius: var(--radius-lg) var(--radius-lg) 0 0; padding-bottom: env(safe-area-inset-bottom, 0px); }
-  .reading-tools-modal[open] { animation: sheet-in var(--motion-duration) var(--motion-ease) both; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .reading-tools-modal[open] { animation: none; }
-}
 .reading-tools { display: flex; flex-direction: column; overflow: hidden; overflow-wrap: anywhere; }
 .reading-tool-tabs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); flex: none; padding: .35rem .75rem 0; border-bottom: 1px solid var(--reader-line); }
 .reading-tool-tab { min-height: 48px; padding: .5rem .2rem; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--reader-ink); cursor: pointer; }
@@ -4261,7 +3999,6 @@ svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; verti
 .reading-tool-empty { text-align: center; padding: 1.5rem .5rem; }
 .reading-tool-empty strong { font-weight: 500; }
 .reading-tool-empty .button { margin-top: .75rem; }
-.reading-tool-feedback { padding: .6rem .75rem; border-radius: var(--radius-sm); background: var(--reader-surface); color: var(--reader-accent); }
 .annotation-popover { position: fixed; z-index: 60; box-sizing: border-box; padding: .6rem; border: 1px solid var(--reader-line); border-radius: var(--radius-md); box-shadow: 0 6px 28px #0003; background: var(--reader-paper); color: var(--reader-ink); font: var(--text-ui)/1.5 system-ui,sans-serif; }
 .annotation-actions { display: flex; gap: .25rem; }
 .annotation-actions button { flex: 1; min-height: 44px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--reader-accent); font: inherit; cursor: pointer; }
@@ -4295,22 +4032,14 @@ svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; verti
 .reading-tools p { margin: .3rem 0; font-size: var(--text-ui); line-height: 1.6; }
 .reading-tool-results .button { text-align: start; width: 100%; margin-top: .25rem; }
 .reading-tools blockquote { border-inline-start: 3px solid var(--reader-accent); padding: .5rem .75rem; line-height: 1.6; }
-.source-capabilities { margin-block: 12px; overflow-wrap: anywhere; }
-.source-capabilities summary { cursor: pointer; }
 .extension-workbench { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; align-items: start; }
 .extension-workbench > div { min-width: 0; }
 .extension-workbench textarea { min-height: 28rem; resize: vertical; font-family: ui-monospace, monospace; tab-size: 2; }
 .extension-workbench pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 65vh; overflow: auto; }
 @media (max-width: 800px) { .extension-workbench { grid-template-columns: minmax(0, 1fr); } .extension-workbench textarea { min-height: 20rem; } }
-.sources-row > .source-capabilities { flex-basis: 100%; }
-.source-capabilities dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
-.source-capabilities dl > div { padding: 8px; border: 1px solid currentColor; border-radius: var(--radius-sm); }
-.source-capabilities dd { margin: 4px 0 0; }
 
 /* A frozen outgoing page; its shadow contents retain the original typography. */
-.reader-page-fade,
-.reader-page-snapshot,
-.reader-page-drag {
+.reader-page-fade, .reader-page-snapshot, .reader-page-drag {
   position: absolute;
   overflow: hidden;
   pointer-events: none;
@@ -4329,10 +4058,6 @@ svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; verti
 @media (prefers-reduced-motion: reduce) {
   .reader-page-fade { display: none; }
 }
-
-.reading-tools-modal .source-modal-header { padding: .75rem 1.25rem; }
-.reading-tools-modal .source-modal-header h2 { font-size: var(--text-title); }
-.reading-tools-modal .source-modal-header .icon-button { width: 40px; height: 40px; border-radius: var(--radius-md); }
 .reading-cache-auto { margin: 0 0 1rem; padding: .75rem 0; border: 0; border-block: 1px solid var(--reader-line); }
 .reading-cache-auto legend { padding: 0; font-size: var(--text-title); font-weight: 600; }
 .reading-cache-auto label { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-block: .65rem; }
@@ -4343,22 +4068,6 @@ svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; verti
 .reading-cache-auto select { flex: 0 0 auto; width: auto; min-width: 6rem; }
 
 /* The class is on the sheet's <input> itself; a 16px font keeps iOS from zooming on focus. */
-.catalog-source-search { display:block; flex:none; width:100%; min-height:44px; box-sizing:border-box; padding:.6rem .8rem; border:1px solid var(--reader-line); border-radius:var(--radius-md); background:var(--reader-paper); color:var(--reader-ink); font:inherit; font-size:var(--text-title); }
-.catalog-source-search:focus { border-color:var(--reader-accent); outline:2px solid color-mix(in srgb,var(--reader-accent) 25%,transparent); outline-offset:1px; }
-.catalog-source-search::placeholder { color:color-mix(in srgb,var(--reader-muted) 85%,transparent); }
-.catalog-source-search::-webkit-search-cancel-button, .catalog-source-search::-webkit-search-decoration { appearance:none; display:none; }
-
-.reader-screen .reader-settings-section > summary.section-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 44px;
-  margin: 0 0 var(--space-2);
-  cursor: pointer;
-  list-style: none;
-}
-.reader-settings-section > summary::-webkit-details-marker { display: none; }
-.reader-settings-section[open] > summary .icon { transform: rotate(90deg); }
 
 :root, .theme-swatch-chip { --reader-paper-texture: none; }
 .reader-screen[data-reading-theme='local-parchment-day'], [data-reading-theme-option='local-parchment-day'] .theme-swatch-chip {
@@ -4367,9 +4076,7 @@ svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; verti
 .reader-screen[data-reading-theme='local-kraft-day'], [data-reading-theme-option='local-kraft-day'] .theme-swatch-chip {
   --reader-paper-texture: url('../assets/textures/kraft-paper.webp');
 }
-body, .reader-screen .stage, .reader-screen .stage::before,
-.reader-screen .footer, .reader-screen .reading-indicator,
-.reader-page-fade, .theme-swatch-chip {
+body, .reader-screen .stage, .reader-screen .stage::before, .reader-screen .footer, .reader-screen .reading-indicator, .reader-page-fade, .theme-swatch-chip {
   background-image: var(--reader-paper-texture);
   background-repeat: repeat;
   background-size: 768px 768px;
@@ -4407,10 +4114,27 @@ body, .reader-screen .stage, .reader-screen .stage::before,
 .theme-settings .theme-swatches { color: var(--color-ink); }
 .theme-settings .theme-swatch { color: inherit; }
 .theme-settings .theme-swatch[aria-pressed='true'] .theme-swatch-chip { border-color: var(--color-brand-text); }
-.theme-settings .theme-chips, .panel-fold-body .theme-chips { margin-bottom: var(--space-4); }
+.theme-settings .theme-chips { margin-bottom: var(--space-4); }
 .theme-system-pair { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-4); }
 .theme-system-pair label { display: flex; flex: 1 1 10rem; flex-direction: column; gap: var(--space-2); }
 .theme-system-pair select { min-height: 44px; max-width: 100%; color: var(--color-ink); background: var(--color-surface); border: 1px solid var(--color-line); border-radius: var(--radius-sm); padding: var(--space-2); font: inherit; }
 .reader-screen .theme-chips button, .theme-settings .theme-chips button { flex: 1; min-height: 44px; padding: 0 var(--space-3); border: 0; border-radius: var(--radius-sm); background: var(--color-surface-2); color: var(--color-muted); font: inherit; cursor: pointer; }
 .reader-screen .theme-chips button[aria-pressed='true'], .theme-settings .theme-chips button[aria-pressed='true'] { background: var(--color-surface); color: var(--color-ink); font-weight: 600; outline: 1px solid var(--color-brand-text); outline-offset: -1px; }
 .theme-settings > .theme-settings-note { margin-bottom: var(--space-4); }
+
+/* Reader settings keep frequent controls together and details one step away. */
+.reader-settings-home { display: grid; gap: var(--space-3); }
+.reader-font-size { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-label); }
+.reader-size-stepper { display: flex; align-items: center; flex: 1; justify-content: space-between; background: var(--color-bg); border-radius: var(--radius-md); }
+.reader-size-stepper output { font-size: var(--text-body); font-variant-numeric: tabular-nums; }
+.reader-font-more { display: inline-flex; align-items: center; gap: var(--space-1); min-height: 44px; padding: var(--space-2); border: 0; border-radius: var(--radius-md); background: transparent; color: var(--color-ink); }
+.reader-quick-themes { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--space-1); }
+.reader-quick-themes > button { display: flex; flex-direction: column; align-items: center; gap: var(--space-1); min-width: 44px; min-height: 44px; padding: var(--space-2) 0; border: 0; background: transparent; color: var(--color-ink); font-size: var(--text-meta); }
+.reader-quick-color { display: grid; place-items: center; width: 44px; height: 44px; border: 1px solid var(--color-line); border-radius: 50%; }
+.reader-quick-themes [aria-pressed='true'] .reader-quick-color { outline: 2px solid var(--color-brand); outline-offset: 3px; }
+.reader-settings .reader-settings-home > .field { margin: 0; padding-block: var(--space-1); }
+.reader-settings-links { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
+.reader-settings-links > button { display: flex; justify-content: space-between; align-items: center; gap: var(--space-1); min-height: 44px; padding: var(--space-2) var(--space-3); border: 0; border-radius: var(--radius-md); background: var(--color-bg); color: var(--color-ink); text-align: start; font-size: var(--text-label); }
+@media (hover: hover) and (pointer: fine) {
+  .reader-settings-links > button:hover, .reader-font-more:hover { color: var(--color-brand); }
+}

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
+import { ApiError } from '../src/api/errors.ts';
 import { resolveReaderBook } from '../src/features/reader/resolve-book.ts';
 import { OfflineStore } from '../src/store/offline.ts';
 import type { Book } from '../src/api/types.ts';
@@ -12,7 +13,7 @@ function storage() {
     remove: async (key: string) => { rows.delete(key); } };
 }
 async function resolve(offline: OfflineStore, getBook: () => Promise<{ book: Book }>) {
-  try { return await resolveReaderBook({ getBook: async () => ({ ...await getBook(), progress: null }) }, offline, book.id); } catch { return null; }
+  try { return await resolveReaderBook({ getBook: async () => ({ ...await getBook(), progress: null }) }, offline, book.id, { manifest: async () => null }); } catch { return null; }
 }
 describe('book links survive offline reopening', () => {
   it('persists a directly opened book and resolves it after a fresh offline load', async () => {
@@ -48,4 +49,25 @@ describe('book links survive offline reopening', () => {
     await reopened.setScope('server:two');
     expect(reopened.books()).toEqual([]);
   });
+});
+
+it('opens a downloaded manifest when the book was never mirrored, but does not bypass access denial', async () => {
+  const offline = new OfflineStore(storage()); await offline.setScope('one');
+  const cached = { manifest: vi.fn(async () => ({ book })) } as any;
+  const api = { getBook: async () => { throw new ApiError('offline', 'offline'); } };
+  expect(await resolveReaderBook(api, offline, book.id, cached)).toEqual(book);
+  const other = new OfflineStore(storage()); await other.setScope('two');
+  cached.manifest.mockClear();
+  await expect(resolveReaderBook({ getBook: async () => { throw new ApiError('forbidden', 'denied'); } }, other, book.id, cached)).rejects.toThrow('denied');
+  expect(cached.manifest).not.toHaveBeenCalled();
+});
+it('discards a manifest fallback that finishes after an account switch', async () => {
+  const offline = new OfflineStore(storage()); await offline.setScope('one');
+  let finish!: (manifest: unknown) => void;
+  const cached = { manifest: vi.fn(() => new Promise(resolve => { finish = resolve; })) } as any;
+  const pending = resolveReaderBook({ getBook: async () => { throw new ApiError('offline', 'offline'); } }, offline, book.id, cached);
+  await vi.waitFor(() => expect(cached.manifest).toHaveBeenCalled());
+  await offline.setScope('two'); finish({ book });
+  await expect(pending).rejects.toThrow('阅读账号已切换');
+  expect(offline.books()).toEqual([]);
 });

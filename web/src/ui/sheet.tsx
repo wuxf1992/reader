@@ -20,12 +20,12 @@
  * in a portal so it inherits the theme of the screen that opened it (the reader's
  * 黑白灰, the media aliases) without each caller re-declaring it.
  *
- * Three exits, always the same: the ✕ in the header, Escape, and a tap on the
- * backdrop. `busy` disables all three, so a save in flight cannot be abandoned
+ * The ✕ in the header, Escape, a backdrop tap and a mobile header pull all close
+ * the sheet. `busy` disables every exit, so a save in flight cannot be abandoned
  * halfway.
  */
 
-import { type JSX, type ReactNode, useLayoutEffect, useRef } from 'react';
+import { type JSX, type ReactNode, type PointerEvent as ReactPointerEvent, useLayoutEffect, useRef } from 'react';
 import { Button, IconButton } from './toolkit.tsx';
 import { placeNotifications } from './notifications.ts';
 import '../styles/sheet.css';
@@ -70,6 +70,7 @@ export function Sheet({
   const native = useRef(false);
   /** A backdrop tap is a press *and* a release outside, so a drag out of a field is not a close. */
   const pressedOutside = useRef(false);
+  const drag = useRef<{ id: number; y: number; at: number; distance: number } | null>(null);
   const state = useRef({ busy, onClose });
   state.current = { busy, onClose };
   const closing = useRef(false);
@@ -148,6 +149,39 @@ export function Sheet({
       });
     }, duration);
   };
+  const resetDrag = () => {
+    drag.current = null;
+    ref.current?.removeAttribute('data-dragging');
+    ref.current?.style.removeProperty('--sheet-drag-y');
+  };
+  useLayoutEffect(() => { if (busy) resetDrag(); }, [busy]);
+  const startDrag = (event: ReactPointerEvent<HTMLDialogElement>) => {
+    if (state.current.busy || closing.current || matchMedia(WIDE).matches || !event.isPrimary || event.button !== 0) return;
+    const target = event.target as HTMLElement;
+    // Only the grip/title owns a dismiss gesture; fields and body scrolling keep theirs.
+    if (target.closest('dialog') !== event.currentTarget || !target.closest('.sheet-grip, .sheet-header') || target.closest('button, input, select, textarea, a')) return;
+    event.currentTarget.getAnimations?.().forEach(animation => animation.cancel());
+    drag.current = { id: event.pointerId, y: event.clientY, at: performance.now(), distance: 0 };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+  const moveDrag = (event: ReactPointerEvent<HTMLDialogElement>) => {
+    const active = drag.current;
+    if (!active || active.id !== event.pointerId) return;
+    active.distance = Math.max(0, event.clientY - active.y);
+    if (active.distance < 6) return;
+    event.preventDefault();
+    event.currentTarget.setAttribute('data-dragging', '');
+    event.currentTarget.style.setProperty('--sheet-drag-y', `${active.distance}px`);
+  };
+  const finishDrag = (event: ReactPointerEvent<HTMLDialogElement>) => {
+    const active = drag.current;
+    if (!active || active.id !== event.pointerId) return;
+    const dismiss = active.distance >= Math.min(100, event.currentTarget.getBoundingClientRect().height * .3)
+      || active.distance >= 40 && performance.now() - active.at < 300;
+    if (dismiss && !matchMedia(WIDE).matches) requestClose();
+    resetDrag();
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  };
   const outside = (event: { clientX: number; clientY: number; target: EventTarget; currentTarget: HTMLDialogElement }) => {
     if (event.target !== event.currentTarget) return false;
     const rect = event.currentTarget.getBoundingClientRect();
@@ -164,7 +198,11 @@ export function Sheet({
       aria-label={title}
       aria-busy={busy}
       onCancel={(event) => { event.preventDefault(); event.stopPropagation(); requestClose(); }}
-      onPointerDown={(event) => { pressedOutside.current = outside(event); }}
+      onPointerDown={(event) => { pressedOutside.current = outside(event); startDrag(event); }}
+      onPointerMove={moveDrag}
+      onPointerUp={finishDrag}
+      onPointerCancel={resetDrag}
+      onLostPointerCapture={resetDrag}
       onClick={(event) => {
         if (pressedOutside.current && outside(event)) requestClose();
         pressedOutside.current = false;

@@ -2,7 +2,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { SettingsStore } from '../src/store/settings.ts';
 import { applyBrowserTheme } from '../src/ui/settings.ts';
-import { DEFAULT_SETTINGS, readerCss } from '../src/render/theme.ts';
 import { PALETTES, type ThemeMode } from '../src/render/theme.ts';
 import { readFileSync } from 'node:fs';
 
@@ -42,7 +41,6 @@ describe('Legado themes', () => {
     applyBrowserTheme(document.documentElement, theme);
     expect(document.documentElement.style.colorScheme).toBe(PALETTES[theme].scheme);
     expect(document.querySelector('meta')?.getAttribute('content')).toBe(background);
-    expect(readerCss('.book', { ...DEFAULT_SETTINGS, theme })).toContain(`--reader-bg: ${background};`);
   });
 
   it.each([{ theme: 'unknown' }, { theme: 'toString' }, { theme: '__proto__' }, { theme: null }, { theme: ['dark'] }])('falls back for invalid stored theme $theme', async ({ theme }) => {

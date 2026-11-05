@@ -22,14 +22,14 @@ async function showChrome(page) {
 }
 async function appearance(page) {
   await showChrome(page);
-  await page.getByRole('button', { name: '外观', exact: true }).click();
-  const font = page.getByRole('slider', { name: '字号', exact: true });
-  await page.waitForFunction(() => { const box = document.querySelector('input[aria-label="字号"]')?.getBoundingClientRect(); return box && box.y >= 0 && box.bottom <= innerHeight; });
+  await page.getByRole('button', { name: '设置', exact: true }).click();
+  const font = page.getByLabel('当前字号', { exact: true });
+  await font.waitFor();
+  await page.getByRole('dialog').evaluate(el => Promise.all(el.getAnimations().map(animation => animation.finished.catch(() => {}))));
   const box = await font.boundingBox();
   assert.ok(box && box.y >= 0 && box.y + box.height <= page.viewportSize().height, 'font size is visible before scrolling');
-  const fold = page.locator('details').filter({ has: page.locator('[aria-label="主题配色"]') });
-  await page.screenshot({ path: output + `${page.viewportSize().width}-${page.context().browser().browserType().name()}-appearance-first-screen.png` });
-  if (!await fold.evaluate(el => el.open)) await fold.locator('summary').click();
+  await page.screenshot({ path: output + `${page.viewportSize().width}-${page.context().browser().browserType().name()}-settings-first-screen.png` });
+  await page.getByRole('button', { name: '更多配色', exact: true }).click();
 }
 async function closeDialog(page) {
   await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click();
@@ -41,11 +41,12 @@ try {
     try {
       for (const width of [390, 1440]) {
         const page = await browser.newPage({ viewport: { width, height: width === 390 ? 844 : 768 }, serviceWorkers: 'block' });
-        let reloading = false;
+        let reloading = false, closing = false;
         page.on('requestfailed', request => { if (request.url().startsWith(origin + '/api/')) report.failedRequests.push({ engine, width, reloading, url: request.url(), error: request.failure()?.errorText }); });
         page.on('pageerror', error => {
-          const entry = { engine, width, reloading, message: error.message };
+          const entry = { engine, width, reloading, closing, message: error.message };
           if (engine === 'webkit' && reloading && error.message === `/${new URL(origin).host}/api/v1/books?scope=shelf&page=1&pageSize=60&sort=recent&order=desc due to access control checks.`) report.navigationAbortWarnings.push(entry);
+          else if (engine === 'webkit' && closing && error.message === `/${new URL(origin).host}/api/v1/stats/reading-time due to access control checks.`) report.navigationAbortWarnings.push(entry);
           else report.errors.push(entry);
         });
         await page.route('https://wuxf.top/**', route => route.abort());
@@ -120,6 +121,7 @@ try {
         assert.equal(saved.brightness, .65); assert.equal(saved.fontScale, 1.15); assert.equal(saved.pageInsets.bottom, 18);
         console.log(engine, width, 'shared themes passed');
         report.cases.push({ engine, width, migrated: true, persisted: true, sharedAcrossRoutes: true, systemPair: true, themes: cases });
+        closing = true;
         await page.close();
       }
     } finally { await browser.close(); }

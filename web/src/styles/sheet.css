@@ -165,11 +165,14 @@
   font-family: inherit;
 }
 
-/* A switch row: label and hint take the width, the switch sits on the trailing edge. */
-.sheet .switch-field {
+/* A switch row: label and hint take the width, the switch sits on the trailing edge.
+   The row is the 44px hit target (ui.md §3.3); SwitchRow forwards a press on the words. */
+.field.switch-field {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
+  min-height: 44px;
+  cursor: pointer;
 }
 
 /* A list of choices: one full-width row per option. */
@@ -382,4 +385,9 @@
 @media (prefers-reduced-motion: reduce) {
   .sheet[open]::backdrop { animation-duration: 0.001s !important; }
   .sheet[data-closing]::backdrop { animation-duration: 80ms !important; }
+}
+
+@media (max-width: 700px) {
+  .sheet-grip, .sheet-header { touch-action: none; }
+  .sheet[data-dragging] { transform: translateY(var(--sheet-drag-y, 0px)); user-select: none; will-change: transform; }
 }

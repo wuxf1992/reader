@@ -25,41 +25,6 @@ export function shelfOrder(sort: ShelfSort): 'asc' | 'desc' {
   return sort === 'title' || sort === 'author' ? 'asc' : 'desc';
 }
 
-/**
- * The key the *server* knows this sort by.
- *
- * The client and the server do not have the same vocabulary for two reasons, and
- * neither is negotiable:
- *
- *  - **`recent` has no server equivalent.** It orders by *reading* time, and the
- *    progress rows that carry it live on the `/library/continue` endpoint rather
- *    than on the book list. The client has that data (it is the same store the
- *    shelf draws its progress bars from), so the ordering is done on this side.
- *  - **`updated` is not a server sort key.** The server offers `title`, `author`,
- *    `added` and `updated`, and `updated` there means the *file's* mtime, which is
- *    a different question from "when did I acquire this" — so the client only ever
- *    asks for `added`.
- *
- * A device-local ordering also has the property the reader wants from it: it is
- * stable while a page is turned, because it does not depend on the network.
- */
-export function shelfServerSort(sort: ShelfSort): 'title' | 'author' | 'added' {
-  return sort === 'title' || sort === 'author' ? sort : 'added';
-}
-
-/**
- * Whether a sort is done on the client, over the whole cached shelf.
- *
- * This decides something visible, which is why it is a named function rather than
- * a condition at one call site: a **client-side sort must fetch every book**, because
- * sorting one page of sixty and drawing it under a pager that says "page 1 of 34"
- * is a lie about the order of the other thirty-three pages. A server-side sort can
- * page, because the server is the one doing the ordering.
- */
-export function isLocalSort(sort: ShelfSort): boolean {
-  return sort === 'recent';
-}
-
 /** A book's sortable key, as a string so every branch compares the same way. */
 export function shelfSortKey(book: Book, sort: ShelfSort): string {
   switch (sort) {

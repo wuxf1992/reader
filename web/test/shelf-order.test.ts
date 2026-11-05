@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isLocalSort, shelfOrder, shelfServerSort, shelfSortKey, sortBooks, sortByRecency } from '../src/ui/shelf-order.ts';
+import { shelfOrder, shelfSortKey, sortBooks, sortByRecency } from '../src/ui/shelf-order.ts';
 import type { Book } from '../src/api/types.ts';
 
 /**
@@ -41,27 +41,6 @@ describe('shelfOrder', () => {
     expect(shelfOrder('author')).toBe('asc');
     expect(shelfOrder('recent')).toBe('desc');
     expect(shelfOrder('added')).toBe('desc');
-  });
-});
-
-describe('the client/server sort split', () => {
-  it('translates every client sort into one the server knows', () => {
-    // `recent` is a reading-time order and the server has no equivalent, so it
-    // rides on an `added` page the client is about to re-sort. Sending the client's
-    // own vocabulary would be a 400 the day the server validates the parameter.
-    expect(shelfServerSort('recent')).toBe('added');
-    expect(shelfServerSort('added')).toBe('added');
-    expect(shelfServerSort('title')).toBe('title');
-    expect(shelfServerSort('author')).toBe('author');
-  });
-
-  it('says which sorts must be done over the whole shelf', () => {
-    // A client-side sort cannot page: sorting one page and drawing it under a pager
-    // that says "page 1 of 34" is a lie about the other thirty-three.
-    expect(isLocalSort('recent')).toBe(true);
-    expect(isLocalSort('added')).toBe(false);
-    expect(isLocalSort('title')).toBe(false);
-    expect(isLocalSort('author')).toBe(false);
   });
 });
 

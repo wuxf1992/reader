@@ -1,4 +1,5 @@
 import { clampBrightness, type ThemeMode } from '../render/theme.ts';
+import { shouldPrefetch } from '../render/prefetch.ts';
 import type { BookDoc, Section, StagedBook } from '../formats/types.ts';
 import type { BookContent } from '../net/api.ts';
 import type { NativePageHost } from './native-page.ts';
@@ -427,12 +428,19 @@ export class ReaderView {
     return this.windowOffset + this.sectionIndex;
   }
 
+  private relayoutPending = false;
+
   applySettings(next?: Partial<ViewSettings>): void {
     const previous = this.settings;
-    // Measurements must describe the final layout, not an in-flight transform.
-    if (next) this.animatePage('none');
-    // Capture the live position before typography changes its scroll extent.
-    if (next) {
+    // Brightness is an overlay over the page: nothing moves, so there is nothing to
+    // measure or restore — and a slider sends one of these per step of a drag.
+    const changed = next ? (Object.keys(next) as Array<keyof ViewSettings>).filter(key => next[key] !== previous[key]) : null;
+    const relayout = !changed || changed.some(key => key !== 'brightness');
+    // Capture the live position before typography changes its scroll extent — once
+    // per frame. A drag delivers several steps before the restore below runs, and a
+    // second measurement would read the half-reflowed page and lose the place.
+    if (next && relayout) { this.cancelDrag(); this.animatePage('none'); }
+    if (next && relayout && !this.relayoutPending) {
       this.measureWithin();
       if (previous.mode === 'scroll') this.textPageAnchor = this.leadingTextRange();
     }
@@ -462,7 +470,14 @@ export class ReaderView {
     this.syncPagedHeight();
     // Toggling pagination changes the column count, so the stored offset has to
     // be re-applied after the browser has laid out the new column box.
-    requestAnimationFrame(() => { this.restoreOffset(); this.repaintMarks(); });
+    if (relayout && !this.relayoutPending) {
+      this.relayoutPending = true;
+      requestAnimationFrame(() => {
+        this.relayoutPending = false;
+        this.restoreOffset();
+        this.repaintMarks();
+      });
+    }
 
     // A page turn is the only place an animation is wanted, and only the two
     // settings that change where a page *is* can start one.
@@ -789,6 +804,7 @@ export class ReaderView {
     try { if (this.staged) await this.staged.loadSection(index); }
     catch (error) { if (epoch !== this.openingEpoch) return; throw error; }
     if (epoch !== this.openingEpoch) return;
+    if (this.staged && !this.doc.sections[index]?.id.startsWith('chapter:') && shouldPrefetch()) void this.staged.loadSection(index + 1).catch(() => undefined);
     this.sectionIndex = index;
     this.searchAnchor = null;
     this.textPageAnchor = null;

@@ -31,6 +31,7 @@ try {
   else if(p==='/api/v1/books/extension-book')json={book,progress:null};
   else if(p.endsWith('/extension-book/manifest'))json={book,files:[],contentUrl:'',coverUrl:null,content:content(revision),...content(revision)};
   else if(p.endsWith('/extension-book/source-options'))json={canSwitch:true};
+  // Alternatives stream like a search (event: results … event: done).
   else if(p.endsWith('/extension-book/alternatives'))return route.fulfill({contentType:'text/event-stream',body:'event: results\ndata: '+JSON.stringify({title:'其它书源',items:[{ref:'candidate',title:book.title,authors:[book.author],sourceName:'示例书源 B',description:'【示例书源 B】'}]})+'\n\nevent: done\ndata: {}\n\n'});
   else if(p.endsWith('/extension-book/switch-preview'))json={chapters:[{id:'new-one',title:'第一章 初见'},{id:'new-two',title:'第二章 远行'}]};
   else if(p.endsWith('/extension-book/switch-source')) {
@@ -60,7 +61,8 @@ try {
  for (const width of [1024, 1366, 1920]) {
   await page.setViewportSize({width,height:900});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
-  assert.ok(await page.locator('.sources-body').evaluate(el=>el.getBoundingClientRect().width >= Math.min(el.closest('.sources-screen').getBoundingClientRect().width - 48, 1280)), 'desktop source page uses the shared content measure');
+  // Measured against the content column beside the sidebar nav, not the whole window.
+  assert.ok(await page.locator('.sources-body').evaluate(el=>el.getBoundingClientRect().width >= Math.min(document.querySelector('.app-shell-body').clientWidth - 64, 1200)), 'desktop source page uses the shared content measure');
   assert.ok(await page.getByRole('tab').first().evaluate(el=>el.getBoundingClientRect().width<240), 'desktop tabs stay compact');
   await page.screenshot({path:join(shots,`plugin-config-desktop-${width}.png`),animations:'disabled'});
   const bounds = selector => page.locator(selector).first().evaluate(el => {const r=el.getBoundingClientRect(); return {left:r.left,width:r.width};});

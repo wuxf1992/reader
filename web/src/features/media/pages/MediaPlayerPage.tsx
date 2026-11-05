@@ -1,12 +1,13 @@
+import { Icon } from '../../../ui/icon.tsx';
 import { createPortal } from 'react-dom';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ChevronLeft } from 'lucide-react';
-import { usePlaybackStore } from '../stores/playback.store.ts';
+import { playerPath, usePlaybackStore } from '../stores/playback.store.ts';
 import { useRuntime } from '../../../app/providers/runtime-context.tsx';
 import { PlaybackControls, type PlaybackPanel } from '../components/playback-controls.tsx';
 import { VideoControls } from '../components/video-controls.tsx';
 import { restorePlaybackEntries } from '../services/restore-playback.ts';
 import { useEffect, useState } from 'react';
+import { FloatingNotice } from '../../../ui/floating-notice.tsx';
 import { resolveAppTheme, themes } from '../../../shared/theme/theme.ts';
 import { useThemeState } from '../../../shared/theme/use-theme.ts';
 
@@ -41,10 +42,21 @@ export function MediaPlayerPage() {
   // The player element lives outside the routed React tree so playback survives
   // navigation. A player route is the explicit full-screen/expanded view; mirror
   // that lifecycle here and collapse the persistent mini-player when leaving it.
+  // While a link cannot be restored, its explanation is the page: whatever else is
+  // playing stays in the mini player instead of covering it.
   useEffect(() => {
-    runtime.player.setControlsExpanded(true);
+    runtime.player.setControlsExpanded(!restoreError);
     return () => runtime.player.setControlsExpanded(false);
-  }, [runtime]);
+  }, [runtime, restoreError]);
+  // The address names what is playing (item/part), so a refresh restores it: kept in
+  // step when the track changes, and carried by every panel switch below.
+  const itemId = usePlaybackStore(state => state.itemId), partId = usePlaybackStore(state => state.partId);
+  const here = (value: PlaybackPanel | 'main') => playerPath({ channel, itemId, partId }, value === 'main' ? '' : value);
+  useEffect(() => {
+    if (!active || !itemId || !partId || restoreError) return;
+    if (params.get('item') === itemId && params.get('part') === partId) return;
+    navigate(here(requested), { replace: true });
+  }, [active, itemId, partId, restoreError]);
   useEffect(() => {
     const itemId = params.get('item') ?? '', partId = params.get('part') ?? '';
     if (!itemId || !partId || (runtime.player.currentItemId === itemId && runtime.player.currentPartId === partId)) return;
@@ -59,19 +71,21 @@ export function MediaPlayerPage() {
   // chapter sub-panels; only the main player view exits back to the catalogue.
   const back = () => {
     if (requested !== 'main') {
-      navigate(`/media/${channel}/player`, { replace: true });
+      navigate(here('main'), { replace: true });
       return;
     }
     navigate(-1);
   };
   return <div className={rootClassName} data-theme={immersiveTheme} data-mode={immersiveTheme ? 'dark' : undefined}>
     {videoPage && <header className="media-heading">
-      <button type="button" className="media-back-button" aria-label="← 返回浏览" title="返回浏览" onClick={back}><ChevronLeft size={20} aria-hidden="true" /></button>
+      <button type="button" className="media-back-button" aria-label="← 返回浏览" title="返回浏览" onClick={back}><Icon name="chevron-left" size={20} /></button>
       <strong>视频播放</strong>
     </header>}
     {restoreError ? <div className="page-state" role="alert"><h2>无法恢复播放</h2><p>{restoreError}</p><button type="button" onClick={() => navigate(`/media/${channel}`)}>返回频道</button></div>
+      // A link naming item/part is being restored: say so rather than flash 当前没有播放内容.
+      : !active && params.get('item') && params.get('part') ? <FloatingNotice message="正在恢复播放…" busy />
       : !active ? <div className="media-player-empty"><p>当前没有播放内容。</p><button type="button" onClick={() => navigate(`/media/${channel}`)}>选择作品</button></div>
       : video ? createPortal(<VideoControls player={runtime.player} api={runtime.mediaApi} onBack={back} />, runtime.player.videoControlsHost)
-      : <PlaybackControls player={runtime.player} api={runtime.mediaApi} panel={requested} onPanelChange={value => navigate(value === 'main' ? `/media/${channel}/player` : `/media/${channel}/player/${value}`, { replace: true })} onBack={back} />}
+      : <PlaybackControls player={runtime.player} api={runtime.mediaApi} panel={requested} onPanelChange={value => navigate(here(value), { replace: true })} onBack={back} />}
   </div>;
 }

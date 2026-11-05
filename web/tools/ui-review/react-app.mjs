@@ -128,10 +128,11 @@ async function capture(page, name, checks, errors) {
         pageOverflow: root.scrollWidth > window.innerWidth + 1,
         screenOverflow: !!screen && screen.scrollWidth > screen.clientWidth + 1,
         pageErrors: 0,
+        wide: [...document.querySelectorAll('.media-screen *')].filter(el => el.getBoundingClientRect().right > (screen?.getBoundingClientRect().right ?? innerWidth) + 1).slice(0, 8).map(el => el.tagName + '.' + el.className + ' ' + Math.round(el.getBoundingClientRect().right)),
       };
     });
     assert.equal(metrics.pageOverflow, false, `${name} ${width}px: document horizontal overflow`);
-    assert.equal(metrics.screenOverflow, false, `${name} ${width}px: screen horizontal overflow`);
+    assert.equal(metrics.screenOverflow, false, `${name} ${width}px: screen horizontal overflow ${JSON.stringify(metrics.wide)}`);
     const file = `${name}-${width}.png`;
     await page.screenshot({ path: join(output, file), fullPage: true });
     checks.push({ name, width, file, ...metrics });
@@ -277,6 +278,37 @@ async function runMediaReview(browser, fixture, checks, errors) {
     { id: fixture.reviewMemberId, username: 'review-member', displayName: '林间', role: 'member' },
   ] }) }));
   // 媒体库管理 shows the scan switches, read from the business settings the fixture does not serve.
+  // The fixture serves media only; 扫描与刮削 asks which AI features are switched on.
+  await page.route('**/api/v1/ai/capabilities', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ summary: false, scan: true }) }));
+  // 时长统计 has no recorded time in the fixture; serve a month of plausible numbers.
+  await page.route(/\/api\/v1\/(media\/)?stats\//, route => {
+    const url = new URL(route.request().url());
+    const media = url.pathname.includes('/media/');
+    const json = body => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+    if (url.pathname.endsWith('/users')) return json({ users: media
+      ? [{ userId: 'reviewer', channel: 'video', seconds: 15300 }, { userId: fixture.reviewMemberId, channel: 'music', seconds: 4200 }]
+      : [{ userId: 'reviewer', username: 'reviewer', displayName: '评测', seconds: 40200 }, { userId: fixture.reviewMemberId, username: 'review-member', displayName: '林间', seconds: 7260 }] });
+    const group = url.searchParams.get('group'), from = new Date(Number(url.searchParams.get('from')));
+    const pad = n => String(n).padStart(2, '0');
+    const keys = group === 'day' ? Array.from({ length: 20 }, (_, i) => `${from.getFullYear()}-${pad(from.getMonth() + 1)}-${pad(i + 1)}`)
+      : group === 'month' ? Array.from({ length: 10 }, (_, i) => `${from.getFullYear()}-${pad(i + 1)}`)
+        : Array.from({ length: 3 }, (_, i) => String(from.getFullYear() + 3 + i));
+    const scale = group === 'day' ? 1 : group === 'month' ? 20 : 200;
+    if (media) return json({
+      series: keys.flatMap((key, i) => [
+        i % 3 === 0 && { key, channel: 'video', seconds: (2400 + i * 300) * scale },
+        i % 4 === 1 && { key, channel: 'audiobook', seconds: 1800 * scale },
+        i % 2 === 0 && { key, channel: 'music', seconds: 900 * scale },
+      ].filter(Boolean)),
+      works: [{ id: 'review-film', channel: 'video', kind: 'movie', title: '人工保留标题', seconds: 15300, lastAt: Date.now() },
+        { id: 'review-audiobook', channel: 'audiobook', kind: 'audiobook', title: '一本很长很长很长的有声书名字用于测试截断', seconds: 9000, lastAt: Date.now() }],
+    });
+    return json({
+      series: keys.map((key, i) => ({ key, seconds: (1200 + ((i * 937) % 3600)) * scale })),
+      works: [{ id: 'b1', title: '剑来', author: '烽火戏诸侯', coverUrl: null, seconds: 40200, lastAt: Date.now() }],
+      total: 0,
+    });
+  });
   await page.route('**/api/v1/admin/settings**', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ groups: [] }) }));
   // Start the authenticated session on the real review library route. This
   // avoids an initial browse request without a library query before the first
@@ -291,7 +323,14 @@ async function runMediaReview(browser, fixture, checks, errors) {
     ['media-history', '/#/media/video/history', '播放历史', '.media-screen'],
     ['media-queue', '/#/media/queue', '待播队列', '.media-screen'],
     ['media-folders', '/#/media/video/folders/review-lib', '文件夹浏览', '.media-folders'],
-    ['media-settings', '/#/me/browse', '影音浏览', '.media-settings'],
+    // 我的: every preference is a section of one page; administration is one page per job.
+    ['preferences', '/#/me/settings', '偏好设置', '.settings-section'],
+    ['preferences-shelf', '/#/me/settings?section=shelf', '偏好设置', '.settings-section .switch-field'],
+    ['preferences-playback', '/#/me/settings?section=playback', '偏好设置', '.settings-section'],
+    ['account', '/#/me/account', '账号与连接', '.media-account-panel'],
+    ['admin-services', '/#/me/admin/services', '服务配置', '.business-settings'],
+    ['stats', '/#/me/stats', '时长统计', '.stats-bars .stats-segment'],
+    ['stats-month', '/#/me/stats?g=month&sel=' + new Date().getFullYear() + '-03', '时长统计', '.stats-bar[aria-pressed="true"]'],
     ['media-permissions', '/#/media/video/settings/libraries/review-lib/permissions', '访问权限', '.media-permissions-page'],
   ];
   for (const [name, path, heading, target] of pages) {
@@ -304,6 +343,25 @@ async function runMediaReview(browser, fixture, checks, errors) {
     }
     await capture(page, name, checks, errors);
   }
+
+  // 偏好设置 is a page, not a sheet: the shelf's switches must still be drawn there, and a
+  // theme changes use the shared preference component and confirm that the choice was saved.
+  await page.goto(`${origin}/#/me/settings?section=shelf`);
+  await waitMediaHeading(page, '偏好设置');
+  const switches = await page.locator('.settings-section .switch').evaluateAll(nodes => nodes.map(node => {
+    const box = node.getBoundingClientRect();
+    const style = getComputedStyle(node);
+    return { width: box.width, height: box.height, background: style.backgroundColor, radius: parseFloat(style.borderTopLeftRadius) };
+  }));
+  assert.equal(switches.length, 2, 'shelf preferences should show 显示作者 and 显示阅读进度');
+  for (const box of switches) {
+    assert.ok(box.width >= 40 && box.height >= 24 && box.height < 32 && box.radius >= box.height / 2, `settings switch is not the toolkit pill: ${JSON.stringify(box)}`);
+    assert.notEqual(box.background, 'rgba(0, 0, 0, 0)', 'settings switch has no track colour');
+  }
+  await page.goto(`${origin}/#/me/settings`);
+  await waitMediaHeading(page, '偏好设置');
+  await page.locator('.theme-swatches [aria-pressed="false"]').first().click();
+  await page.locator('.theme-settings [role=status]').filter({ hasText: '主题已保存' }).waitFor({ state: 'visible' });
 
   // The browse fixture includes one playable, partially watched video.  Keep
   // this assertion close to the route sweep so the recent continuation card

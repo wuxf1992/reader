@@ -15,7 +15,8 @@ try {
     try {
       const context = await browser.newContext({ ...phone, serviceWorkers: 'block' });
       let release, waiting = Promise.resolve(), heldRef = '', held = false;
-      const requests = [], errors = [];
+      const requests = [], errors = [], navigationAbortWarnings = [];
+      let interruption = null;
       const waitHeld = async page => { const deadline = Date.now() + 10000; while (!held && Date.now() < deadline) await page.waitForTimeout(10); assert(held, 'the pending download reaches the held resource'); };
       const hold = ref => { heldRef = ref; held = false; waiting = new Promise(resolve => { release = resolve; }); };
       try {
@@ -39,7 +40,10 @@ try {
           return route.continue();
         });
         const page = await context.newPage(); page.setDefaultTimeout(10000);
-        page.on('pageerror', error => errors.push(error.message));
+        page.on('pageerror', error => {
+          if (engineName === 'webkit' && interruption && error.message === `/${new URL(origin).host}/api/v1/stats/reading-time due to access control checks.`) navigationAbortWarnings.push({ interruption, message: error.message });
+          else errors.push(error.message);
+        });
         await page.goto(origin + '/#/shelf');
         await page.getByText('更换服务地址', { exact: true }).click(); await page.locator('input[type=url]').fill(origin);
         await page.locator('input[autocomplete=username]').fill('review'); await page.locator('input[type=password]').fill('password12');
@@ -53,7 +57,7 @@ try {
           if (await page.locator('.reader-screen').getAttribute('data-chrome') === 'hidden') {
             const box = await page.locator('book-content').boundingBox(); await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
           }
-          await page.getByRole('button', { name: '工具', exact: true }).click();
+          await page.getByRole('button', { name: '设置', exact: true }).click(); await page.getByRole('button', { name: /^阅读工具/ }).click();
           await page.getByRole('button', { name: '离线缓存', exact: true }).click();
         };
         const dialog = page.getByRole('dialog', { name: '阅读工具', exact: true });
@@ -77,8 +81,10 @@ try {
         await dialog.getByLabel('起始章', { exact: true }).fill('2'); hold('resource:r1:3');
         await dialog.getByRole('button', { name: '下载 / 继续', exact: true }).click(); await waitHeld(page);
         await dialog.getByText('正在下载 · 2/9', { exact: true }).waitFor();
+        interruption = 'reload';
         await page.reload(); release();
         await page.waitForFunction(() => document.querySelector('book-content')?.shadowRoot?.textContent?.includes('下载测试正文'));
+        interruption = null;
         await tools();
         // WebKit can persist the reload's network error before the document disappears.
         try { await dialog.getByRole('status').filter({ hasText: /· 2\/9$/ }).waitFor(); }
@@ -91,12 +97,13 @@ try {
         await dialog.getByText('所选章节已可离线阅读 · 9/9', { exact: true }).waitFor();
         assert.equal(requests.filter(ref => ref === 'resource:r1:1').length, completedCount, 'resume reuses completed resources');
         await close();
+        interruption = 'offline';
         await context.route('**/api/v1/**', route => route.abort());
         await page.reload();
         await page.waitForFunction(() => document.querySelector('book-content')?.shadowRoot?.textContent?.includes('下载测试正文'));
         await tools(); await dialog.getByText('所选章节已可离线阅读 · 9/9', { exact: true }).waitFor();
         assert.deepEqual(errors, []);
-        reports.push({ engine: engineName, toolsDismissal: true, shelfNavigation: true, noDuplicateResources: true, interruptedRangeRestored: true, resumeReusesResources: true, offlineReopen: true });
+        reports.push({ engine: engineName, toolsDismissal: true, shelfNavigation: true, noDuplicateResources: true, interruptedRangeRestored: true, resumeReusesResources: true, offlineReopen: true, navigationAbortWarnings });
         console.log(`${engineName}: manual background downloads, recovery and offline reopen passed`);
       } finally { release?.(); await context.close(); }
     } finally { await browser.close(); }

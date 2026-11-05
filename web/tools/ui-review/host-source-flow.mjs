@@ -28,20 +28,25 @@ const config = { booksDir: join(root, 'books'), dataDir: join(root, 'data'), hos
 let app, db, browser, page, registry;
 const previousRegistry = process.env.npm_config_registry;
 const button = name => page.getByRole('button', { name, exact: true });
+// Toasts outlive navigation; a step that measures one starts with none on screen.
+const dismissNotices = async () => { while (await button('关闭提示').count()) { await button('关闭提示').first().click(); await page.waitForTimeout(400); } };
 const tab = name => page.getByRole('tab', { name, exact: true });
+// The tab is in the URL (?tab=), so selection lands a render after focus moves: wait for it.
+const selectedTab = name => page.locator('[role=tab][aria-selected="true"]').filter({ hasText: name }).waitFor();
 async function idle() { await page.waitForFunction(() => !document.querySelector('[role=status]')?.textContent?.includes('正在处理')); }
 async function shot(name) {
   await idle();
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, name + ' overflows');
   await page.screenshot({ path: join(shots, 'sources-e2e-' + name + '.png'), animations: 'disabled' });
 }
+// 添加来源 opens the editor page (/sources/manage/new); saving returns to the hub.
 async function addSource(name) {
   await page.getByRole('link', { name: '添加来源', exact: true }).click(); await page.getByLabel('来源类型').selectOption('reader.source.demo/demo-chapters');
   await page.getByLabel('名称', { exact: true }).fill(name); await button('保存').click();
   await tab('书源管理').click();
   await page.locator('.sources-row').getByText(name, { exact: true }).waitFor(); await idle();
   assert.equal(await page.getByRole('dialog').count(), 0);
-  assert.equal(new URL(page.url()).hash, '#/sources');
+  assert.equal(new URL(page.url()).hash, '#/sources?tab=sources');
 }
 async function openInstaller(mode) {
   await button('安装插件').click();
@@ -94,7 +99,7 @@ try {
   await page.getByRole('status').filter({ hasText: '已安装 Demo chapter source' }).waitFor();
   for (const width of [390, 1920]) {
     await page.setViewportSize({ width, height: 900 });
-    const bounds = await page.locator('.global-notice').evaluate(node => {
+    const bounds = await page.locator('.global-notice').first().evaluate(node => {
       const rect = node.getBoundingClientRect();
       return { width: rect.width, left: rect.left, right: rect.right, position: getComputedStyle(node.closest('.notyf')).position };
     });
@@ -103,7 +108,7 @@ try {
     await shot('plugin-feedback-' + width);
   }
   const beforeDismiss = await page.locator('.sources-body').boundingBox();
-  await button('关闭提示').click(); await page.locator('.global-notice').waitFor({ state: 'hidden' });
+  await dismissNotices();
   assert.deepEqual(await page.locator('.sources-body').boundingBox(), beforeDismiss, 'dismissing feedback does not move the page');
   await openInstaller('本地文件');
   assert.equal(await page.getByLabel('插件包（.tgz）', { exact: true }).inputValue(), '');
@@ -128,14 +133,14 @@ try {
   await tab('书源管理').click(); await addSource('示例章节源'); await addSource('第二个章节源');
   await page.reload(); await tab('书源管理').click(); await page.locator('.sources-row').getByText('示例章节源', { exact: true }).waitFor();
   await tab('书源管理').focus(); await page.keyboard.press('ArrowRight');
-  assert.equal(await tab('自动追更').getAttribute('aria-selected'), 'true');
+  await selectedTab('自动追更');
   await shot('hub-updates-mobile');
   await page.keyboard.press('End');
-  assert.equal(await tab('插件管理').getAttribute('aria-selected'), 'true');
+  await selectedTab('插件管理');
   await shot('hub-plugins-mobile');
   await page.keyboard.press('Home');
-  assert.equal(await tab('搜书').getAttribute('aria-selected'), 'true');
-  assert.equal(await button('添加来源').count(), 0);
+  await selectedTab('搜书');
+  assert.equal(await page.getByRole('link', { name: '添加来源', exact: true }).count(), 0);
   await shot('search-empty-mobile');
   await tab('书源管理').click();
   const row = page.locator('.sources-row').filter({hasText:'示例章节源'});
@@ -196,11 +201,11 @@ try {
     };
     await assertActiveVisible();
     await tab('浏览器').focus(); await page.keyboard.press('Home');
-    assert.equal(await tab('来源设置').getAttribute('aria-selected'), 'true');
+    await selectedTab('来源设置');
     await assertActiveVisible();
     await shot('extension-tabs-first-' + width);
     await page.keyboard.press('End');
-    assert.equal(await tab('浏览器').getAttribute('aria-selected'), 'true');
+    await selectedTab('浏览器');
     await assertActiveVisible();
     const layout = await page.locator('.extension-tabs').evaluate(list => ({
       overflow: list.scrollWidth > list.clientWidth,
@@ -215,7 +220,7 @@ try {
     await page.setViewportSize({ width, height: 900 });
     await page.goto(base + '/#/sources/feedback-fixture/settings');
     await tab('来源设置').click();
-    await button('保存配置').waitFor(); await idle();
+    await button('保存配置').waitFor(); await idle(); await dismissNotices();
     const bodyBounds = await page.locator('.sources-body').boundingBox();
     const toolbarBounds = await page.locator('.extension-toolbar').boundingBox();
     for (const failed of [true, false]) {
@@ -249,19 +254,14 @@ try {
     : route.continue());
   for (const width of [390, 1920]) {
     await page.setViewportSize({ width, height: 900 });
-    const before = await page.locator('.sources-body').boundingBox();
-    const feedback = page.locator('.global-notice:not(.notyf__toast--disappear)').filter({ hasText: '保存失败，请稍后重试。' });
+    const feedback = page.locator('.sources-body [role=alert]').filter({ hasText: '保存失败，请稍后重试。' });
     await button('保存').click();
-    await feedback.getByRole('alert').waitFor();
-    assert.equal(await page.locator('.notyf').count(), 1);
-    assert.deepEqual(await page.locator('.sources-body').boundingBox(), before);
+    await feedback.waitFor();
     assert.equal(await page.getByLabel('名称', { exact: true }).inputValue(), '保留的草稿');
-    await shot('global-notice-dialog-' + width);
-    await feedback.getByRole('button', { name: '关闭提示', exact: true }).click(); await feedback.waitFor({ state: 'hidden' });
-    assert.deepEqual(await page.locator('.sources-body').boundingBox(), before);
+    assert.equal(await button('保存').isEnabled(), true);
+    await shot('source-draft-save-error-' + width);
   }
-  await button('取消').click();
-  assert.equal(await page.locator('body > .notyf').count(), 1);
+  await button('取消').click(); await page.waitForURL(/#\/sources(?:\?tab=sources)?$/);
   assert.deepEqual(errors, []);
   console.log('PASS real HTTP + SQLite + stdio plugin + production Web: registration, tgz upload, npm registry install, auto-enable, independent instances, tabs, layout, streamed search, acquisition and chapter reading');
   console.log('PASS extension feedback fixtures: mobile/desktop floating busy/error/success, bounded width and stable content position');

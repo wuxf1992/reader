@@ -1,11 +1,12 @@
-import { Clapperboard, Music2, Headphones } from 'lucide-react';
-import { channelCategories } from '../hooks/use-media-channel.ts';
+import { Link, useLocation } from 'react-router-dom';
+import { channelCategories, channelLabels } from '../hooks/use-media-channel.ts';
+import type { MediaChannel } from '../api/media-api.ts';
 
 /** The three media channels. Reading, home and the account page live in the app navigation. */
 export const mediaChannels = [
-  { id: 'video', label: '影视', icon: Clapperboard },
-  { id: 'music', label: '音乐', icon: Music2 },
-  { id: 'audiobook', label: '有声书', icon: Headphones },
+  { id: 'video', label: '影视', icon: 'video' },
+  { id: 'music', label: '音乐', icon: 'music' },
+  { id: 'audiobook', label: '有声书', icon: 'audiobook' },
 ] as const;
 
 export const channelPath = (id: string) => `/media/${id}`;
@@ -19,6 +20,23 @@ export function ChannelSegments({ current }: { current: string }) {
     {mediaChannels.map(({ id, label }) =>
       <a key={id} href={'#' + channelPath(id)} aria-current={id === current ? 'page' : undefined}>{label}</a>)}
   </nav>;
+}
+
+/**
+ * A channel's category tabs (影视: 首页 电影 剧集; 有声书: 有声书 演播者 …), shared by the
+ * generic catalog and the narrator page so both draw the same row.
+ */
+export function CatalogTabs({ channel }: { channel: MediaChannel }) {
+  const { pathname } = useLocation();
+  const categories = channelCategories[channel];
+  return <nav className="media-tabs" aria-label={`${channelLabels[channel]}分类`}>{categories.map((item, index) => {
+    const isDefault = index === 0;
+    // The first category answers at both the channel's bare path and its own one
+    // (/media/music redirects to /media/music/albums), so either marks it current.
+    const own = item.path ? `/media/${channel}/${item.path}` : `/media/${channel}`;
+    const selected = pathname === own || (isDefault && pathname === `/media/${channel}`);
+    return <Link key={item.path} className="media-tab-link" to={isDefault ? `/media/${channel}` : own} aria-current={selected ? 'page' : undefined}>{item.label}</Link>;
+  })}</nav>;
 }
 
 /**

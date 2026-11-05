@@ -1,6 +1,6 @@
 import { Button, Callout, Segmented } from '../../../ui/toolkit.tsx';
 import { Sheet } from '../../../ui/sheet.tsx';
-import { ChevronRight } from 'lucide-react';
+import { Icon } from '../../../ui/icon.tsx';
 import { useEffect, useState } from 'react';
 import { useCover } from '../../../ui/use-cover.ts';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -48,7 +48,7 @@ export function SourceBookDetails({ entry, sourceId, sourceName, inShelf, canPre
       </div>
     </div>
     <dl><dt>书源</dt><dd>{entry.sourceName || sourceName || '暂无信息'}</dd><dt>最新章节</dt><dd>{entry.latestChapter || '暂无信息'}</dd></dl>
-    {canPreview && <button type="button" className="source-directory-trigger" aria-label="查看目录" aria-haspopup="dialog" onClick={() => { navigate({ pathname: location.pathname, search: location.search, hash: location.hash }, { state: { ...location.state, sourceDirectory: sourceId + ':' + entry.ref }, preventScrollReset: true }); }}><strong>章节目录</strong><span>{count === undefined ? '章数待获取' : `共 ${count} 章`}<ChevronRight size={18} aria-hidden="true" /></span></button>}
+    {canPreview && <button type="button" className="source-directory-trigger" aria-label="查看目录" aria-haspopup="dialog" onClick={() => { navigate({ pathname: location.pathname, search: location.search, hash: location.hash }, { state: { ...location.state, sourceDirectory: sourceId + ':' + entry.ref }, preventScrollReset: true }); }}><strong>章节目录</strong><span>{count === undefined ? '章数待获取' : `共 ${count} 章`}<Icon name="chevron-right" size={18} aria-hidden="true" /></span></button>}
     {directoryOpen && <Sheet onClose={() => navigate(-1)} title="章节目录" className="source-directory-modal" size="wide">
       <section className="source-book-directory" aria-label={entry.title + '章节目录'}>
         <div className="source-directory-heading"><div><h3>{entry.title}</h3><p>{count === undefined ? '章数待获取' : `共 ${count} 章`}</p></div><Segmented label="章节排序" value={descending ? 'desc' : 'asc'} onChange={value => setDescending(value === 'desc')} options={[{ value: 'desc', label: '倒序' }, { value: 'asc', label: '正序' }]} /></div>

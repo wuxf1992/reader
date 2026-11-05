@@ -1,4 +1,4 @@
-import { combineAbortSignals } from '../core/abort.ts';
+import { abortedError, abortFailure, combineAbortSignals, isAbortError } from '../core/abort.ts';
 import type { ChapterQuality, CredentialStatus, OpdsCredential } from './sources.ts';
 import type { ReadingOverrides } from './types.ts';
 import { eventStream } from './event-stream.ts';
@@ -29,7 +29,8 @@ import type {
 } from './types.ts';
 import type { Platform } from '../core/platform.ts';
 import type { SourceType, SourceInstance, SourcePlugin, SourceEntry, SourcePage, SourceAcquisition, ChapterSubscription, SourceChapter } from './sources.ts';
-import { affectedNavigationQuery, createReaderQueryClient, isNavigationQuery, readerQueryKey } from './query.ts';
+import { isCancelledError } from '@tanstack/query-core';
+import { affectedNavigationQuery, createReaderQueryClient, isLiveNavigationQuery, isNavigationQuery, readerQueryKey } from './query.ts';
 
 export interface SessionStore {
   load(): Promise<Session | null>;
@@ -602,10 +603,14 @@ export class ReaderApi {
     return this.call('/api/v1/library/browse/shelf', 'POST', { ...target, action }, options);
   }
 
-  /** Whether the mount accepts an upload at all; asked before sending bytes. */
-  async uploadProbe(options: RequestOptions = {}): Promise<boolean> {
-    const result = await this.get<{ writable: boolean }>('/api/v1/library/upload', options);
-    return result.writable;
+  /**
+   * Whether the mount accepts an upload at all, and whether this user may upload
+   * (members only when the `library.memberUpload` setting is on); asked before
+   * sending bytes.
+   */
+  async uploadProbe(options: RequestOptions = {}): Promise<{ writable: boolean; allowed: boolean }> {
+    const result = await this.get<{ writable: boolean; allowed?: boolean }>('/api/v1/library/upload', options);
+    return { writable: result.writable, allowed: result.allowed ?? true };
   }
 
   /**
@@ -740,6 +745,31 @@ export class ReaderApi {
    * Single progress write. Cheaper than a batch and used for the periodic
    * "still reading" report, where there is nothing to reconcile.
    */
+  /** Where this account has been in a book, newest first (server keeps the latest 50). */
+  async progressHistory(bookId: string, options: RequestOptions = {}): Promise<Progress[]> {
+    const result = await this.get<{ history: Progress[] }>(
+      `/api/v1/sync/progress/${encodeURIComponent(bookId)}/history`,
+      options,
+    );
+    return result.history;
+  }
+
+  // ---- 时长统计 ----
+
+  /** Active reading seconds per book per 15-minute slot; the server keeps the larger total per slot. */
+  async recordReadingTime(clientId: string, entries: ReadingTimeEntry[], options: RequestOptions = {}): Promise<{ accepted: number; rejected: number }> {
+    return this.call('/api/v1/stats/reading-time', 'POST', { clientId, entries }, options);
+  }
+
+  async readingStats(query: TimeStatsQuery, options: RequestOptions = {}): Promise<ReadingStats> {
+    return this.get<ReadingStats>(`/api/v1/stats/reading?${statsParams(query)}`, options);
+  }
+
+  /** Administrators: every account's reading total in the range. */
+  async readingStatsUsers(query: TimeStatsQuery, options: RequestOptions = {}): Promise<UserReadingTotal[]> {
+    return (await this.get<{ users: UserReadingTotal[] }>(`/api/v1/stats/reading/users?${statsParams(query)}`, options)).users;
+  }
+
   async putProgress(progress: ProgressInput, options: RequestOptions = {}): Promise<Progress | null> {
     const result = await this.call<{ progress: Progress | null }>(
       `/api/v1/sync/progress/${encodeURIComponent(progress.bookId)}`,
@@ -801,21 +831,39 @@ export class ReaderApi {
     return new Blob([new Uint8Array(result.bytes??[]).buffer],{type:result.headers['content-type']||'audio/mpeg'});
   }
   async businessAiModels(values?:{baseUrl?:string;apiKey?:string}):Promise<string[]> { return (await this.call<{models:string[]}>('/api/v1/admin/ai/models','POST',values??{})).models; }
+  /** What the server's AI can do for a reader; older servers answer 404. */
+  async aiCapabilities(options: RequestOptions = {}): Promise<{ summary: boolean; scan?: boolean }> { return this.get('/api/v1/ai/capabilities', options); }
   async aiSummary(bookId:string,chapterId:string,content:string):Promise<{summary:string;cached:boolean}>{ return this.call('/api/v1/ai/summary','POST',{bookId,chapterId,content}); }
 
   private async get<T>(path: string, options: RequestOptions = {}): Promise<T> {
     if (!isNavigationQuery(path)) return (await this.request(path, 'GET', undefined, options)).json as T;
     const generation = this.sessionGeneration;
     const key = readerQueryKey(this.currentBaseUrl, this.session?.user.id, this.queryScope, path);
-    const result = await this.queryClient.fetchQuery<T>({
-      queryKey: key,
-      ...(options.fresh || /^\/api\/v1\/books\?/.test(path) && new URLSearchParams(path.split('?')[1]).get('sort') === 'recent' ? { staleTime: 0 } : {}),
-      // Keep the caller's AbortSignal semantics intact. These class-based
-      // screens already abort requests when disposed; letting fetchQuery own the
-      // signal would turn normal auth/session transitions into CancelledError.
-      queryFn: () => this.request(path, 'GET', undefined, options)
-        .then(response => response.json as T),
-    });
+    let result: T;
+    try {
+      result = await this.queryClient.fetchQuery<T>({
+        queryKey: key,
+        // Keep the caller's AbortSignal semantics intact. These class-based
+        // screens already abort requests when disposed; letting fetchQuery own the
+        // signal would turn normal auth/session transitions into CancelledError.
+        queryFn: () => this.request(path, 'GET', undefined, options)
+          .then(response => response.json as T),
+        // Availability-bearing media resources are shared while in flight but
+        // always revalidated, so an explicit refresh reaches the server.
+        ...(options.fresh || /^\/api\/v1\/books\?/.test(path) && new URLSearchParams(path.split('?')[1]).get('sort') === 'recent' || isLiveNavigationQuery(path) ? { staleTime: 0 } : {}),
+      });
+    } catch (error) {
+      // A QueryClient cancellation (cache cleared on account change) or a raw
+      // AbortError is the same outcome as an aborted transport request.
+      const aborted = error instanceof ApiError ? error.kind === 'aborted' : isCancelledError(error) || isAbortError(error);
+      if (!aborted) throw error;
+      // fetchQuery shares one in-flight request per path, run with the *first*
+      // caller's signal. When that caller goes away (a screen replaced right after
+      // login), a later caller that is still live must not inherit its abort.
+      if (options.signal?.aborted) throw error instanceof ApiError ? error : abortedError();
+      this.assertSession(generation);
+      result = (await this.request(path, 'GET', undefined, options)).json as T;
+    }
     // A response that completed after login/logout must never escape through a
     // cache promise, even when QueryClient returned a previously resolved value.
     this.assertSession(generation);
@@ -880,9 +928,13 @@ export class ReaderApi {
       if (generation !== this.sessionGeneration) await response.stream?.cancel().catch(() => {});
       assertCurrent();
       return response;
-    } catch (err) {
+    } catch (caught) {
       assertCurrent();
+      // Transports other than FetchTransport may still reject with the signal's
+      // raw reason; callers only ever see ApiError('aborted') for cancellation.
+      const err = caught instanceof ApiError ? caught : abortFailure(caught, options.signal) ?? caught;
       if (!(err instanceof ApiError)) throw err;
+      if (err.kind === 'aborted') throw err;
       this.platform.reportError?.(err);
       // Only an expired access token is worth a retry, and only if there is a
       // refresh token to spend. `TOKEN_INVALID` means the signature or payload
@@ -963,3 +1015,17 @@ export class ReaderApi {
 }
 
 export { ApiError, errorForStatus, parseErrorBody };
+
+export interface ReadingTimeEntry { bookId: string; slot: number; seconds: number }
+export type TimeStatsGroup = 'day' | 'month' | 'year';
+export interface TimeStatsQuery { from: number; to: number; tz: number; group: TimeStatsGroup }
+export interface ReadingStats {
+  series: Array<{ key: string; seconds: number }>;
+  works: Array<{ id: string; title: string; author: string; coverUrl: string | null; seconds: number; lastAt: number }>;
+  total: number;
+}
+export interface UserReadingTotal { userId: string; username: string; displayName: string; seconds: number }
+
+export function statsParams(query: TimeStatsQuery): string {
+  return new URLSearchParams({ from: String(query.from), to: String(query.to), tz: String(query.tz), group: query.group }).toString();
+}

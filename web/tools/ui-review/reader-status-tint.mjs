@@ -60,7 +60,7 @@ try {
           await page.locator('book-content .book-flow p').first().waitFor();
           if (await page.locator('.reader-screen').getAttribute('data-chrome') === 'hidden') await toggleChrome(page, width, 'visible', false);
           for (const brightness of [1, 0.75, 0.5]) {
-            await page.getByRole('button', { name: '外观', exact: true }).click();
+            await page.getByRole('button', { name: '设置', exact: true }).click();
             await page.getByRole('slider', { name: '页面亮度', exact: true }).evaluate((slider, value) => {
               slider.value = String(value); slider.dispatchEvent(new Event('input', { bubbles: true }));
             }, brightness);

@@ -1,11 +1,11 @@
+import { Icon } from '../../../ui/icon.tsx';
 import { Sheet } from '../../../ui/sheet.tsx';
 import { ActionMenu } from '../../../ui/action-menu.tsx';
 import { Button, Callout, IconTextButton } from '../../../ui/toolkit.tsx';
 import { SourcesHeader } from '../components/SourcesHeader.tsx';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronRight, Plus, Search } from 'lucide-react';
 import type { ExtensionField, SourceEntry, SourcePage } from '../../../api/sources.ts';
 import { useRuntime } from '../../../app/providers/runtime-context.tsx';
 import { FloatingNotice } from '../../../ui/floating-notice.tsx';
@@ -19,6 +19,7 @@ import { CatalogFeedback } from '../../../ui/catalog-feedback.tsx';
 import { PluginManager } from '../components/PluginManager.tsx';
 
 type SourceTab = 'search' | 'sources' | 'updates' | 'plugins';
+const SOURCE_TABS: SourceTab[] = ['search', 'sources', 'updates', 'plugins'];
 type SearchState = 'idle' | 'searching' | 'stopped' | 'complete' | 'error' | 'limited';
 
 export function SourcesPage() {
@@ -27,7 +28,13 @@ export function SourcesPage() {
   const queryClient = useQueryClient();
   const admin = useAuthStore(state => state.verifiedUser?.role === 'admin');
   // /sources/plugins opens the hub on its 插件管理 tab.
-  const [tab, setTab] = useState<SourceTab>(useLocation().pathname === '/sources/plugins' ? 'plugins' : 'search');
+  // The tab is part of the URL (?tab=), so back from a source's editor or a reload
+  // returns to it; /sources/plugins stays the plugins tab's own address.
+  const [params, setParams] = useSearchParams();
+  const pluginsPath = useLocation().pathname === '/sources/plugins';
+  const requested = params.get('tab') as SourceTab | null;
+  const tab: SourceTab = requested && SOURCE_TABS.includes(requested) ? requested : pluginsPath ? 'plugins' : 'search';
+  const setTab = (next: SourceTab) => setParams(previous => { const merged = new URLSearchParams(previous); if (next === 'search' && !pluginsPath) merged.delete('tab'); else merged.set('tab', next); return merged; }, { replace: true });
   const [sourceId, setSourceId] = useState('');
   const [keyword, setKeyword] = useState('');
   const [catalogPage, setCatalogPage] = useState<SourcePage>();
@@ -135,34 +142,36 @@ export function SourcesPage() {
   }, [selectedSourceId]);
   useEffect(() => { if (detail && detailQuery.data) setDetail({ ...detail, ...detailQuery.data }); }, [detailQuery.data]);
   const detailInShelf = !!detail && (acquired?.ref === detail.ref || !!detail.shelfBookId);
+  const tabList = ([['search', '搜书'], ['sources', '书源管理'], ['updates', '自动追更'], ...(admin ? [['plugins', '插件管理']] : [])] as Array<[SourceTab, string]>);
   return <div className="sources-screen sources-hub">
     <SourcesHeader title="书源与追更" backTo="/shelf" />
-    <nav className="sources-tabs" role="tablist" aria-label="书源功能" onKeyDown={event => {
-      if (event.altKey || event.ctrlKey || event.metaKey) return;
-      const tabs = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role=tab]')];
-      const index = tabs.indexOf(document.activeElement as HTMLButtonElement);
-      if (index < 0) return;
-      const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length : event.key === 'ArrowLeft' ? (index - 1 + tabs.length) % tabs.length : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : -1;
-      if (next < 0) return;
-      event.preventDefault(); tabs[next]!.click(); tabs[next]!.focus();
-    }}>
-      {([['search', '搜书'], ['sources', '书源管理'], ['updates', '自动追更'], ...(admin ? [['plugins', '插件管理']] : [])] as Array<[SourceTab, string]>).map(([id, label]) => <button key={id} type="button" role="tab" tabIndex={tab === id ? 0 : -1} aria-selected={tab === id} onClick={() => setTab(id)}>{label}{id === 'updates' && (subscriptions.data ?? []).some(item => item.newChapters > 0) && <span className="sources-tab-dot" aria-label="有更新" />}</button>)}
+    <nav className="sources-tabs" role="tablist" aria-label="书源功能">
+      {tabList.map(([id, label], index) => <button key={id} id={`sources-tab-${id}`} type="button" role="tab" aria-selected={tab === id} aria-controls="sources-panel" tabIndex={tab === id ? 0 : -1} onClick={() => setTab(id)} onKeyDown={event => {
+        // Arrow keys move between tabs, one tab stop for the whole row (WAI-ARIA tabs).
+        const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+        const target = event.key === 'Home' ? 0 : event.key === 'End' ? tabList.length - 1 : step ? (index + step + tabList.length) % tabList.length : -1;
+        if (target < 0) return;
+        event.preventDefault();
+        const next = tabList[target]![0];
+        setTab(next);
+        document.getElementById(`sources-tab-${next}`)?.focus();
+      }}>{label}{id === 'updates' && (subscriptions.data ?? []).some(item => item.newChapters > 0) && <span className="sources-tab-dot" aria-label="有更新" />}</button>)}
     </nav>
-    <main className="sources-body" role="tabpanel">
+    <main className="sources-body" role="tabpanel" id="sources-panel" aria-labelledby={`sources-tab-${tab}`}>
       {tab === 'search' && <>
         <section className="sources-card source-picker">
-          <div><h2>搜书</h2><p className="muted">选择来源，发现想读的书。</p></div>
-          <SearchableSelect label="选择来源" value={selectedSourceId} options={enabledSources.map(source => ({ value: source.id, label: source.name + (source.isDefault ? '（默认）' : '') }))} onChange={setSourceId} />
-          {!selectedSourceId && <p className="muted">{enabledSources.length ? '选择来源后，即可搜索书籍或浏览目录。' : '暂无可用来源，请先添加或启用来源。'}</p>}
+          {/* The tab already says 搜书; with no source there is nothing to pick, so no disabled picker either. */}
+          {enabledSources.length > 0 && <SearchableSelect label="选择来源" value={selectedSourceId} options={enabledSources.map(source => ({ value: source.id, label: source.name + (source.isDefault ? '（默认）' : '') }))} onChange={setSourceId} />}
+          {!selectedSourceId && <p className="muted">{enabledSources.length ? '选择来源后，即可搜索书籍或浏览目录。' : sources.isPending ? '正在读取来源…' : '还没有可用的书源。添加或启用一个书源后，就能在这里搜书。'}</p>}
           {/* An empty state names its way out: the fix for "no source" lives on the next tab. */}
-          {!selectedSourceId && !enabledSources.length && <IconTextButton className="primary source-picker-cta" icon="plus" label="前往书源管理" onClick={() => setTab('sources')} />}
+          {!selectedSourceId && !enabledSources.length && !sources.isPending && <IconTextButton className="primary source-picker-cta" icon="plus" label="前往书源管理" onClick={() => setTab('sources')} />}
         </section>
         {selectedSource && <section className="sources-card source-catalog"><h2>搜索与浏览</h2>
           {catalogError && <Callout tone="error" onDismiss={() => setCatalogError('')}>{catalogError}</Callout>}
           {selectedSource.descriptor?.capabilities.includes('search') && <form className="sources-search" onSubmit={event => { event.preventDefault(); void searchSources(resume); }}>
             {sourceFilters.data?.filter(field => field.type === 'select').map(field => <SearchableSelect key={field.key} label={field.label} value={catalogFilters[field.key] ?? ''} disabled={catalogBusy} options={filterOptions(field)} onChange={value => setCatalogFilters(previous => { const next = { ...previous, [field.key]: value }; for (const dependent of sourceFilters.data ?? []) { if ((dependent.changeAction ?? dependent.dependsOn) === field.key && !dependent.options?.some(option => option.value === next[dependent.key] && (!option.parentValues || !value || option.parentValues.includes(value)))) next[dependent.key] = ''; } return next; })} />)}
             <label className="source-keyword">搜索书籍<input type="search" placeholder="输入书名或作者" required disabled={catalogBusy} value={keyword} onChange={event => setKeyword(event.currentTarget.value)} /></label>
-            {searchState === 'searching' ? <button className="button search-stop" type="button" onClick={stopSearch}>停止搜索</button> : <div className="search-split"><button className="button primary" type="submit" disabled={catalogBusy}><Search size={16} />{resume ? '继续搜索' : '搜索'}</button>{searchRequest.current && <ActionMenu className="button primary search-menu-toggle" label="搜索选项" items={[
+            {searchState === 'searching' ? <button className="button search-stop" type="button" onClick={stopSearch}>停止搜索</button> : <div className="search-split"><button className="button primary" type="submit" disabled={catalogBusy}><Icon name="search" size={16} />{resume ? '继续搜索' : '搜索'}</button>{searchRequest.current && <ActionMenu className="button primary search-menu-toggle" label="搜索选项" items={[
                 { label: '继续搜索', description: '保留结果，继续未完成的来源', disabled: !canResume, onSelect: () => void searchSources(true) },
                 { label: '重新搜索', description: '清空结果，从头搜索', onSelect: () => void searchSources(false) },
               ]} />}</div>}
@@ -173,14 +182,14 @@ export function SourcesPage() {
           {catalogPage && <CatalogFeedback page={catalogPage} count={results.length} merged={searchState !== 'idle'} searching={searchState === 'searching'} compact={!catalogPage.items.length && !!catalogPage.navigation?.length} />}
           {catalogPage?.navigation && <div className="source-navigation">{catalogPage.navigation.map(item => <Button className="button" key={item.ref} onClick={() => void loadCatalog(item.ref)}>{item.title}</Button>)}</div>}
           {catalogBusy && !catalogPage && <FloatingNotice message={searchState === 'searching' ? '正在搜索书籍…' : '正在加载目录…'} busy />}
-          {catalogPage && <div className="source-results">{results.filter(group => { const q = resultGroupQuery.trim().toLocaleLowerCase(); return !q || group.entry.title.toLocaleLowerCase().includes(q) || group.entry.authors?.some(author => author.toLocaleLowerCase().includes(q)); }).map(group => { const countEntry = group.entries.find(entry => sourceChapterCount(entry) !== undefined) ?? group.entry; return <article className="sources-row catalog-book" key={group.key}><div><strong>{group.entry.title}</strong><small>{group.entry.authors?.join(' / ') || '作者未知'}</small>{hasChapters && <small>{sourceChapterLabel(countEntry)}{grouped && sourceChapterCount(countEntry) !== undefined && ` · ${countEntry.sourceName ?? selectedSource?.name}`}</small>}{!grouped && group.entry.description && <p className="source-description">{group.entry.description}</p>}</div>{grouped ? <button className="button catalog-source-count" type="button" onClick={() => setResultGroupKey(group.key)}><span>{group.entries.length} 条书源</span><ChevronRight size={16} /></button> : <div className="sources-actions"><button className="button" type="button" onClick={() => setDetail(group.entry)}>详情</button>{(group.entry.options?.length ? group.entry.options : [{ id: '', label: '加入书架' }]).map(option => <button className="button primary" type="button" key={option.id} disabled={option.available === false || acquire.isPending} onClick={() => acquireEntry(group.entry, option.id)}>{option.label}</button>)}</div>}</article>; })}</div>}
+          {catalogPage && <div className="source-results">{results.filter(group => { const q = resultGroupQuery.trim().toLocaleLowerCase(); return !q || group.entry.title.toLocaleLowerCase().includes(q) || group.entry.authors?.some(author => author.toLocaleLowerCase().includes(q)); }).map(group => { const countEntry = group.entries.find(entry => sourceChapterCount(entry) !== undefined) ?? group.entry; return <article className="sources-row catalog-book" key={group.key}><div><strong>{group.entry.title}</strong><small>{group.entry.authors?.join(' / ') || '作者未知'}</small>{hasChapters && <small>{sourceChapterLabel(countEntry)}{grouped && sourceChapterCount(countEntry) !== undefined && ` · ${countEntry.sourceName ?? selectedSource?.name}`}</small>}{!grouped && group.entry.description && <p className="source-description">{group.entry.description}</p>}</div>{grouped ? <button className="button catalog-source-count" type="button" onClick={() => setResultGroupKey(group.key)}><span>{group.entries.length} 条书源</span><Icon name="chevron-right" size={16} /></button> : <div className="sources-actions"><button className="button" type="button" onClick={() => setDetail(group.entry)}>详情</button>{(group.entry.options?.length ? group.entry.options : [{ id: '', label: '加入书架' }]).map(option => <button className="button primary" type="button" key={option.id} disabled={option.available === false || acquire.isPending} onClick={() => acquireEntry(group.entry, option.id)}>{option.label}</button>)}</div>}</article>; })}</div>}
           {catalogPage && !catalogBusy && !catalogPage.items.length && !catalogPage.navigation?.length && <div className="catalog-empty"><strong>{searchState === 'idle' ? '暂无可浏览内容' : '没有找到匹配书籍'}</strong><p>{searchState === 'idle' ? '可以搜索书名，或选择其他来源。' : '试试其他关键词，或调整搜索范围。'}</p></div>}
           {searchState === 'complete' && catalogPage?.nextCursor && <div className="catalog-pagination"><button className="button" type="button" disabled={!canResume} onClick={() => void searchSources(true)}>加载更多结果</button></div>}
           {acquired && <button className="button" type="button" onClick={() => navigate(`/book/${encodeURIComponent(acquired.id)}`)}>阅读《{acquired.title}》</button>}
         </section>}
       </>}
       {tab === 'sources' && <section className="sources-card sources-list">
-        <div className="sources-list-heading"><h2>我的来源 <span className="source-count">{sources.data?.length ?? 0}</span></h2>{admin && <Link className="button source-add" to="/sources/manage/new"><Plus size={16} />添加来源</Link>}</div>
+        <div className="sources-list-heading"><h2>我的来源 <span className="source-count">{sources.data?.length ?? 0}</span></h2>{admin && <Link className="button source-add" to="/sources/manage/new"><Icon name="plus" size={16} />添加来源</Link>}</div>
         {sources.isPending && <FloatingNotice message="正在加载书源…" busy />}{sources.error && <p className="notice error">{sources.error.message}</p>}{!sources.isPending && !sources.data?.length && <p className="muted">还没有配置书源。请添加来源或启用插件。</p>}
         {(sources.data ?? []).map(source => <article className="sources-row source-entry" key={source.id}><div className="source-entry-top"><div className="source-entry-info"><strong>{source.name}{source.isDefault && <span className="source-default-badge">默认</span>}</strong><small>{source.descriptor?.label ?? sourceTypeLabel(source.sourceType)}</small><span className={'source-state' + (source.enabled ? ' is-enabled' : '')}>{source.enabled ? '已启用' : '已暂停'}</span></div><div className="source-entry-actions">{source.descriptor?.credentialKeys?.length ? <Link className="button" to={'/sources/' + encodeURIComponent(source.id) + '/credentials'}>书源登录</Link> : null}{admin && <ActionMenu label="管理" title={`${source.name}管理`} items={[
             ...(source.descriptor?.extensions?.pages ?? []).map(page => ({ label: page.title, onSelect: () => navigate('/sources/' + encodeURIComponent(source.id) + '/' + encodeURIComponent(page.id)) })),
