@@ -344,3 +344,9 @@ React 全流程浏览器回归已通过，40 张手机 / 桌面截图，无页�
 - 先复现旧版失败：390×844 模拟 PWA 有 156.52px 面板多余空白、13.6px 底栏空闲高度，并额外叠加 6.4px 普通底边距。修复后面板/底栏空闲高度约为 0，PWA 底部保留 34px 安全区；动态变为 50px 后恢复，页码与底栏保持贴合。
 - 144 项阅读设置/拖动/朗读/配色/阅读布局/样式引用测试通过，类型检查与构建通过。Chromium/WebKit × 普通模式及模拟 PWA 共 12 组布局/持久化/30 项配色/真实指针或触摸拖动通过；96 项系统取色（含渲染像素）、小说/EPUB 翻页与取消、PWA 根路径/子路径更新及离线通过。
 - 网络依据及下一次合并约束见 [iPhone PWA 与底部安全区](docs/reader-settings.md#iphone-pwa-与底部安全区)。本次仅前端修复；未重复服务端或全量网页测试，模拟独立模式不是 iPhone 真机复验。证据 `../reader-assessment-20261105/iphone-fix/`。
+
+### iPhone 修复发布回执
+
+- 发布源码 `c48edb57a3c2b1a44685e48fcc75f8817c65a5db`，标签 `custom-release-reader-iphone-20261105`，回退标签 `custom-before-reader-iphone-20261105`；个人 origin 的 custom 及两标签已推送。北京时间 2026-11-05 21:20 发布前端。
+- 旧网页完整备份 `/opt/reader/backups/web-reader-iphone-20261105-132046`。60 个构建文件逐一匹配 HTTP 源站，HTML/SW/入口/CSS/manifest 匹配公网 HTTPS 且证书验证正常，健康接口通过。入口 `assets/client-DdlLtYWb.js`，样式 `assets/index-Ca9wb6BO.css`；保留旧资源供现有页面更新。
+- 仅更新网页，服务未重启；数据库、账号、阅读进度与插件保持原样。发布失败路径可恢复完整旧前端。完整回执、修复前后截图及检查记录在 `../reader-assessment-20261105/iphone-fix/`；尚未由真实 iPhone 复验。
