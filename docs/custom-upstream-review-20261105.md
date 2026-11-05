@@ -47,6 +47,8 @@ The expected load is the existing personal Docker instance, with multiple accoun
 - Android shell contract passes. A Node 24 candidate container passes authentication, statistics and payload rejection checks. Two migrations of a private database copy preserve all existing rows in 29 tables; the old image can still open the migrated schema.
 - Release preparation uses the official stopped-server backup and verification commands, copies Compose/books/frontend, preserves old hashed assets, keeps member uploads disabled, and verifies every built file at the origin plus key files over public HTTPS.
 
+Production result: Published source `23ee384` at 2026-11-05 17:48 Asia/Shanghai. The stopped-server backup and its verification passed (36,200 data files). All 60 frontend files match the origin; key files match public HTTPS with certificate verification. Both databases pass integrity and foreign-key checks. Existing account, book, note, source and plugin identities remain present; the enabled novel plugin remains 1.6.6.
+
 Verdict: Ship.
 
 Not checked: Physical iPhone gestures/lock-screen behavior, a complete Android APK, remote CI and a fresh dependency vulnerability audit. Browser emulation does not replace hardware checks. The existing large reader JavaScript chunk still triggers Vite's size warning; no new dependency was added.
