@@ -373,3 +373,9 @@ React 全流程浏览器回归已通过，40 张手机 / 桌面截图，无页�
 - 两项修复前回归均先失败：手机朗读控制挤在进度行同一高度；右侧点击收起后仍执行next。修复后149项相关测试、类型检查/构建通过；Chromium/WebKit手机模拟PWA与桌面共4组验证朗读开始/暂停/继续/停止、按钮几何与首次收起后不翻页。既有小说/EPUB真实触摸或指针跟手、取消、对话框阻断及PWA根/子路径更新与离线检查通过。
 - 旧前端备份 `/opt/reader/backups/web-reader-speech-tap-20261105-142103/web`；60个产物匹配HTTP源站，HTML/SW/入口/CSS/manifest匹配公网HTTPS并校验证书，健康正常。入口 `assets/client-D2b2Uxiu.js`，样式 `assets/index-C8KYplhA.css`。保留旧静态资源供已有页面升级；仅前端，未重启服务或修改账号/书籍/进度/插件数据。
 - 证据 `../reader-assessment-20261105/speech-tap/`；语音使用浏览器测试替身，未测真实iPhone或系统/HTTP/Android音频引擎，未重跑全量网页或服务端测试。
+
+## 设置滚动穿透修复：2026-11-05
+
+- 发布源码 `7831e5cecd297a80efd535e3811875e1ec7371ed`，标签 `custom-release-reader-sheet-scroll-20261105`；北京时间22:52上线。共享Sheet拦截无可滚动内容或已到边界的纵向触摸/滚轮；保留内部/嵌套滚动、水平滑块、轻微抖动点击及缩放。正文拉章同时检查模态状态，已开始手势也不能在面板后触发翻章。
+- 按要求简单测试：133项相关测试、字体/朗读设置的Chromium/WebKit手机/桌面共8场景、PWA根/子路径更新与离线通过。Chromium手机使用原生触摸，其他环境补事件或桌面滚轮；WebKit调整字号时既有ResizeObserver通知单列处理，其他页面错误仍失败。未做真机或全量测试。
+- 60个构建文件匹配HTTP源站，关键资源匹配公网HTTPS且证书/健康正常；旧前端备份 `/opt/reader/backups/web-reader-sheet-scroll-20261105-145235/web`，回退标签 `custom-before-reader-sheet-scroll-20261105`。仅前端，未重启服务或修改正式数据。证据 `../reader-assessment-20261105/sheet-scroll/`。
