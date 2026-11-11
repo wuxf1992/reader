@@ -24,8 +24,11 @@ The expected load is the existing personal Docker instance. Several accounts and
 - The unchanged server source already passed type checking, build, 531 default tests and eight real FFmpeg checks covering seven fixture-dependent skips during this merge. Android shell checks also passed. Those results remain in `reader-assessment-20261111`.
 - Browser fixtures use local disposable data and block the production domain. The media-permissions fixture now sets its local server explicitly, so the production bundle cannot send fixture logins to the real service.
 - Release checks, the actual Node 24 image, migration compatibility, stopped-server backup, origin/public HTTPS hashes and final publication status are recorded separately in `UPSTREAM-SYNC.md` and `reader-release-20261111`.
+- The actual Node 24 image passed isolated registration, authentication, resource-token range requests, incremental sync with an old client clock, body limits and media permissions. The Reader process runs as uid 100 with zero capabilities.
+- All nine release browser fixtures passed, including Chromium/WebKit offline restart and hanging-network startup. Database-copy migrations were repeatable and the old image could still read and write the migrated copy.
+- Production was published at 20:17 Beijing time. All 310 frontend files match the local HTTP release hashes, and seven key files match over public HTTPS. Both databases pass integrity and foreign-key checks. Existing primary keys, progress, settings, plugins and the signing key are preserved. The existing admin, books and plugin 1.6.8 pass read-only API checks.
 - No new runtime dependency or new storage layer was added for these fixes.
 
-Verdict: Ship after the recorded release checks pass. No unresolved blocker was found in the reviewed code and connected callers.
+Verdict: Ship. Both findings are fixed and the release checks passed. No unresolved blocker was found in the reviewed code and connected callers.
 
 Not checked: Physical iPhone or lock-screen behavior, a complete Android APK, remote CI, every external source site, or exploitability of inherited dependency advisories. The dependency versions behind those advisories are unchanged by this merge.

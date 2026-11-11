@@ -395,3 +395,20 @@ React 全流程浏览器回归已通过，40 张手机 / 桌面截图，无页�
 - 使用 Node 22.23.1 与锁定依赖；仅引入上游 pdfjs-dist 及传递依赖，保留 opencc-js。独立网络小说插件仍为 1.6.8（`69183cb`），未改容器、正式账号、书架、进度或插件数据。
 - 限制：未验证真实 iPhone/锁屏、完整 Android APK、Node 24 或远端 CI；保留 Vite 大 chunk 警告。`npm audit --omit=dev` 仍报告 Web 6 项（5 high、1 critical）、server 6 项（1 high、4 moderate、1 low），涉及版本全部与合并前相同，本次未额外升级或判断实际可利用性。依赖审计与基线比对在验收目录保存。
 - 个人 origin 备份范围为 custom/main 和本次非 `v*` 回退标签，不触发镜像发布。后续部署需另按本文核对生产配置、备份与数据库/插件兼容性，并发布包含 PDF.js 资源的完整构建。
+
+
+## Ponytail 审查与正式发布：2026-11-11
+
+- 用户授权在 Ponytail code review 通过后上线并上传 GitHub；继续以上游 `67c4fbb` 为基础保留个人定制。完整审查见 [Ponytail review](docs/custom-upstream-review-20261111.md)，结论 **Ship**。审查范围为 `727c386..a748fd8` 及发布修复，按现有个人实例、多账号/多标签及 SQLite/影音工作进程评估。
+- 修复提交 `59f8d4d1cea94ab6f41530a851b100e2438fe026`：后台 flush 保存服务端返回的远端记录，只有记录持久化成功后才推进增量游标；发送确认保留旧下载游标，响应落盘失败后仍可重拉。另修复可选用户资料缓存写满时误退出有效账号，保留凭据并应用当前权限。共新增三个能在修复前复现失败的测试；未新增依赖。媒体浏览器 fixture 明确选择本地服务并阻断生产域名。
+- 修复后网页全量 155 个测试文件、1,453 项 Vitest 测试和 22 项 Node 检查通过；关联 5 个文件 86 项回归、typecheck、生产配置 build 通过。修复未改变后端源码，沿用本次合并已通过的后端 typecheck/build、531 项默认测试及补齐七个依赖样本跳过项的八项真实 FFmpeg 检查；Android shell 检查通过。
+- 当前发布包九项浏览器验收全部通过：offline-sync、media-features、react-app、manual-background-download、reader-touch、pwa/smoke、book-cover-cache、novel-cache-open、pwa/startup。Chromium/WebKit 均通过离线重启、挂起网络时开书和本地位置保留；未放宽原断言。早先合并的其余浏览器/排版验收记录仍有效。
+- 实际候选镜像 Node v24.21.0 完成隔离注册/鉴权、资源令牌及 Range、旧客户端时钟下的增量同步、影音权限/独立工作进程、8 MiB 请求限制验收；Reader 业务进程 uid 100、有效 capabilities 为零。验收初次只读 books fixture 被既有入口脚本的 chown 拒绝；改为与生产一致的可写 fixture 后通过，生产挂载未改。
+- 对正式数据的私有 SQLite 副本两次迁移通过，原有 reader 31 表及 media 32 表旧列记录哈希一致；旧镜像能读写迁移后的副本，两库 integrity/FK 通过。副本已清理，恢复备份另按正式停服流程创建。
+- 第一次发布于北京时间 20:15 自动回退：严格设置全等校验发现上游 BusinessSettings 在启动时新增 `modules` 默认行（mediaEnabled/newUserMediaEnabled 均 true、revision 1）。核对后确认原有十组设置未改；保护条件仅允许该已知新增默认行，仍拒绝任何原有设置变化。保留旧应用恢复记录及首份已验证备份 `/opt/reader/backups/upstream-20261111-20261111-121520`，回退未覆盖最新数据库/阅读进度。
+- 第二次发布于北京时间 **2026-11-11 20:17:05** 完成。实际源码 `59f8d4d`，镜像 `reader-github:upstream-20261111-59f8d4d`，镜像 ID `sha256:8cf437b101380db9b063176a86b82508459f434ef79cc4ab273cbc3375579180`。仅更新编译后的后端和完整网页，复用已核对依赖的既有运行镜像，未调整 entrypoint、Chromium 校准、Compose 端口/挂载或私有环境。
+- 发布前停服备份并用官方维护工具 verify：`/opt/reader/backups/upstream-20261111-20261111-121644`，包含旧 Compose/完整网页、原书及完整 DATA_DIR（6,752 文件、258,098,400 字节）。旧镜像 `reader-github:upstream-settings-20261105-23ee384` 保留；应用回退使用旧 Compose/网页并保留最新数据库，禁止覆盖之后的阅读进度。停服至新健康约 16 秒。
+- 本地 HTTP 对完整 310 个构建文件逐项 SHA-256 校验，公网 HTTPS 对 index、sw、入口 JS、CSS、manifest、PDF worker、WASM 七项逐项匹配；旧哈希资源额外保留 153 个，便于已有页面继续使用。两库完整性/外键、全部既有主键、进度不回退、业务设置/插件及签名密钥保留检查通过；现有管理员只读 API 认证、书籍列表、插件 1.6.8 enabled、mediaState ready 均正常。未创建正式测试账号或刷新令牌，其他容器未重启。
+- GitHub：`59f8d4d` 和源码回退标签 `custom-before-release-20261111`（`75fb5b0`）已先行推送个人 origin；正式发布标签 `custom-release-upstream-20261111` 固定实际上线源码 `59f8d4d`。本文和审查报告的最终发布记录单独提交并推送 custom，main 仍为纯上游 `67c4fbb`；不推上游，不触发 `v*` 镜像工作流。
+- 构建、测试、迁移、首次回退和正式发布回执：`../reader-release-20261111/`，含 build-manifest.json、migration-verification.json、runtime-verification.json、browser-release-*.json、first-attempt-rollback.json、publication.json、live-verification.json。构建环境文件保持 ignored，不上传运行数据或凭据。
+- 未验证：iPhone 真机/锁屏、完整 Android APK、远端 CI、全部外部书站。既有 npm audit 告警（web 六项、server 六项）版本与本次合并前一致；未做无关依赖升级或强制 audit fix。Vite 大包提示仍在。后续发布预检应包含 BusinessSettings 启动初始化，而非只跑 Db 迁移，避免把合法新增设置误判为数据改写。
