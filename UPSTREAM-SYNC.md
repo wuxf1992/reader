@@ -379,3 +379,19 @@ React 全流程浏览器回归已通过，40 张手机 / 桌面截图，无页�
 - 发布源码 `7831e5cecd297a80efd535e3811875e1ec7371ed`，标签 `custom-release-reader-sheet-scroll-20261105`；北京时间22:52上线。共享Sheet拦截无可滚动内容或已到边界的纵向触摸/滚轮；保留内部/嵌套滚动、水平滑块、轻微抖动点击及缩放。正文拉章同时检查模态状态，已开始手势也不能在面板后触发翻章。
 - 按要求简单测试：133项相关测试、字体/朗读设置的Chromium/WebKit手机/桌面共8场景、PWA根/子路径更新与离线通过。Chromium手机使用原生触摸，其他环境补事件或桌面滚轮；WebKit调整字号时既有ResizeObserver通知单列处理，其他页面错误仍失败。未做真机或全量测试。
 - 60个构建文件匹配HTTP源站，关键资源匹配公网HTTPS且证书/健康正常；旧前端备份 `/opt/reader/backups/web-reader-sheet-scroll-20261105-145235/web`，回退标签 `custom-before-reader-sheet-scroll-20261105`。仅前端，未重启服务或修改正式数据。证据 `../reader-assessment-20261105/sheet-scroll/`。
+
+## 源码同步与验收：2026-11-11（上游 67c4fbb）
+
+- 本次范围为源码合并及个人 GitHub 备份，**未部署线上**。固定上游 `67c4fbb2abe2a71fc70d9361d69608b8b1dd42b8`，合并提交 `a748fd808ae7e784524e86d2e5d9140e1af3e761`；共同祖先 `dc6cbf5`，吸收 17 个上游提交、168 个变动文件，与定制交集 37 个文件，解决 21 个冲突文件。独立 worktree 整合并保留双方历史，main 保持纯上游镜像。
+- 合并前 custom 为 `727c3864e0e14ea518d8c942f459b32d67c58746`；回退标签 `custom-before-upstream-20261111-67c4fbb`。已验证 Git bundle、差异预审、构建摘要、完整日志及浏览器回执位于 `../reader-assessment-20261111/`，整合候选在 `../reader-sync-20261111/`。
+- 按用户要求以上游为基础，重叠处在共享实现上补回定制：接入扫描流式读取、PDF.js/Range、资源令牌、同步分页、媒体开关、全局搜索、错误提示、懒加载和滚动记忆；不恢复两套主题、设置、缓存或账号发布路径。
+- CORS 同时保留封面 ETag/If-None-Match 与 PDF HEAD/Range/字节范围头；认证使用上游能力刷新和播放器按需初始化，补回缓存启动、3 秒验证预算、账号/服务边界和卸载取消。离线作用域仍只由登录路径选择；同步分页保留本地重读进度及待发送更新保护。
+- 保留小说缓存优先开书和远端位置确认、迟到响应保护、手动下载跨路由继续、封面本地优先、统一主题/纸纹/亮度、整数 16–44 字号、紧凑设置与详细子页、PWA 安全区、下拉关闭、朗读两行和正文首次点击收起控制栏、书架分组/排序动画与离线镜像、主力/备用书源及草稿保护。额外的配色、预缓存数量和排序下拉框改用上游 Select；上游旧设置屏的折叠区由定制子页承担，不恢复旧面板。无调用的 SourceBookDetailSheet 继续删除。
+- 浏览器验收发现并修复：登录验证后清理查询缓存会取消刚挂载页面的首批请求，改为显示新账号前清理，新增回归先复现失败再通过；定制 EPUB 列分页误用于固定布局 PDF，增加格式保护及 PDF paged 回归；旧原生排序样式叠加到 Select 外壳使手机书架过高，转用上游控件样式并保留首屏封面高度断言。
+- server 类型检查、构建通过；538 项中 531 通过，7 项缺少真实媒体输入跳过，随后真实 FFmpeg 补跑 8 项全部通过，覆盖这些跳过项。web 类型检查、生产构建通过；完整 155 文件、1,450 项 Vitest 和 22 项 Node 检查全部通过。Android shell 契约通过。
+- 最终 19 套浏览器验收均有正常退出回执：reader-touch、book-cover-cache、novel-cache-open、manual-background-download、reader-settings、reader-sheet-scroll、reader-speech-tap、reader-unified-themes、reader-status-tint、pwa-smoke、pwa-startup、react-app、pdf-layout、media-features、offline-sync、reader-text-fidelity、host-source-flow、host-extension-page、source-discovery。覆盖 Chromium/WebKit 手机/桌面、12 组设置与模拟 PWA、120 次统一配色选择、96 项系统取色、真实 HTTP/SQLite/stdio 插件流程；整站 60 张截图，无页面错误或横向溢出，并人工查看手机/桌面书架及手机 PWA 设置截图。
+- PDF 首屏读取 66,729 / 8,389,801 字节；12 种布局、文本、跳页、离线字节、取消和生产 Worker 释放通过。310 个完整网页构建文件及 276 个服务端文件均记录 SHA-256，尚未发布到源站。
+- 并行负载下曾触发 WebKit 缓存时间断言及一次离线导航等待失败；固定构建串行复验封面 189/455ms、缓存小说 124–486ms，原有 1 秒阈值未放宽，PWA 挂起请求/离线进程重启/刷新令牌异常/进度恢复通过。夹具适配上游 Select；主题导航等待请求稳定，设置夹具复用既有的“主动重载时、指定统计接口、WebKit”中止诊断规则，其他错误仍判失败。完整最终回执为 `final-verification.json`，初轮失败证据保留。
+- 使用 Node 22.23.1 与锁定依赖；仅引入上游 pdfjs-dist 及传递依赖，保留 opencc-js。独立网络小说插件仍为 1.6.8（`69183cb`），未改容器、正式账号、书架、进度或插件数据。
+- 限制：未验证真实 iPhone/锁屏、完整 Android APK、Node 24 或远端 CI；保留 Vite 大 chunk 警告。`npm audit --omit=dev` 仍报告 Web 6 项（5 high、1 critical）、server 6 项（1 high、4 moderate、1 low），涉及版本全部与合并前相同，本次未额外升级或判断实际可利用性。依赖审计与基线比对在验收目录保存。
+- 个人 origin 备份范围为 custom/main 和本次非 `v*` 回退标签，不触发镜像发布。后续部署需另按本文核对生产配置、备份与数据库/插件兼容性，并发布包含 PDF.js 资源的完整构建。
