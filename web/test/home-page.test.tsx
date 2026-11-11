@@ -48,10 +48,21 @@ function mount({ reading = [book], video = [activity({ title: '第 3 集', updat
   return runtime;
 }
 const settle = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
+// For a result that takes a chain of requests (activity → episode → series): a fixed 20ms
+// is enough on an idle machine and not under a full parallel run, so wait for the thing itself.
+const until = async (done: () => boolean) => { for (let i = 0; i < 50 && !done(); i++) await settle(); };
 
 afterEach(() => { act(() => render(null, root)); useAuthStore.setState({ session: null, verifiedUser: null }); localStorage.clear(); });
 
 describe('首页', () => {
+  it('pure reading never requests media history or discovery',async()=>{
+    useAuthStore.setState({verifiedUser:{...user,role:'member',features:{media:false}}});
+    const runtime=mount();await settle();
+    expect(runtime.mediaApi.request).not.toHaveBeenCalled();
+    expect(runtime.mediaApi.detail).not.toHaveBeenCalled();
+    expect(root.querySelectorAll('a[href^="/media/"]')).toHaveLength(0);
+    expect(root.textContent).toContain('我的书架');
+  });
   it('greets by time of day', () => {
     expect([2, 8, 14, 21].map(greeting)).toEqual(['夜深了', '早上好', '下午好', '晚上好']);
   });
@@ -66,6 +77,7 @@ describe('首页', () => {
     useAuthStore.setState({ verifiedUser: user as any });
     mount();
     await settle();
+    await until(() => root.querySelector('.home-continue a.home-resume strong')?.textContent === '示例剧集');
     expect(root.querySelector('h1')?.textContent).toContain('林间');
     const cards = [...root.querySelectorAll<HTMLAnchorElement>('.home-continue a.home-resume')];
     expect(cards.map(card => card.dataset.channel)).toEqual(['video', 'read']);

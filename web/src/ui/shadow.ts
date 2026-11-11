@@ -304,6 +304,16 @@ const FLOW_STYLESHEET = `
 :host([data-paginated='true'][data-page-layout='columns']) .book-flow > * {
   break-inside: auto;
 }
+:host([data-layout='fixed']) .book-flow {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  max-inline-size: none;
+  margin: 0;
+  padding: 0;
+  columns: auto;
+}
 /*
  * The page-turn animations.
  *
@@ -451,6 +461,28 @@ const FLOW_STYLESHEET = `
   border: 0;
   width: 100%;
   height: 100%;
+}
+.fixed-page.pdf-page {
+  overflow: auto;
+  min-width: 0;
+  min-height: 0;
+  touch-action: pan-y pinch-zoom;
+  color-scheme: light;
+}
+:host([data-pdf='true']),
+:host([data-pdf='true']) .book-flow {
+  touch-action: pan-y pinch-zoom;
+}
+.fixed-page.pdf-page[data-fit='width'] {
+  align-items: start;
+}
+.pdf-surface {
+  position: relative;
+  background: white;
+  flex: none;
+}
+.pdf-surface canvas {
+  display: block;
 }
 @media (prefers-reduced-motion: reduce) {
   :host([data-animating]) .book-flow { animation: none; }

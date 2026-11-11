@@ -21,6 +21,9 @@ it('publishes a logged-in account only after its private offline scope is loaded
   try {
     await runtime.api.login('b', 'password12');
     expect(useAuthStore.getState().session).toBeNull();
+    await runtime.refreshCapabilities();
+    expect(useAuthStore.getState().session).toBeNull();
+    expect(runtime.offline.books().map(book => book.id)).toEqual(['private-a']);
     await runtime.authenticated();
     expect(useAuthStore.getState().session?.user.id).toBe('b');
     expect(useAuthStore.getState().verifiedUser?.role).toBe('admin');
@@ -175,4 +178,41 @@ it.each(['same-account', 'different-account', 'logout'] as const)('keeps downloa
     else await runtime.api.login('reader', 'password12');
     expect(clear).toHaveBeenCalledTimes(change === 'same-account' ? 0 : 1);
   } finally { disconnect(); useAuthStore.getState().setSession(null); }
+});
+
+it('does not start capability verification after an immediate runtime disconnect', async () => {
+  const transport = new FakeTransport(), platform = makePlatform(transport);
+  const session: Session = { user: { id: 'cached', username: 'reader', displayName: 'Reader', role: 'member', createdAt: 0 }, accessToken: 'access', refreshToken: 'refresh', accessTokenExpiresAt: 9e15, refreshTokenExpiresAt: 9e15 };
+  await platform.kv.set('reader.session.v1', JSON.stringify(session));
+  vi.mocked(createWebPlatform).mockResolvedValue(platform);
+  transport.json({ user: session.user });
+  const runtime = await createAppRuntime('https://reader.test');
+  runtime.connect()();
+  try {
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(transport.requests.filter(request => request.url === '/api/v1/auth/me')).toEqual([]);
+    expect(useAuthStore.getState().verifiedUser).toBeNull();
+  } finally { useAuthStore.getState().setSession(null); }
+});
+
+it('keeps the first page query alive when login verification publishes the account', async () => {
+  useAuthStore.getState().setSession(null);
+  const transport = new FakeTransport(), platform = makePlatform(transport);
+  vi.mocked(createWebPlatform).mockResolvedValue(platform);
+  const session: Session = { user: { id: 'new-account', username: 'reader', displayName: 'Reader', role: 'member', createdAt: 0 }, accessToken: 'access', refreshToken: 'refresh', accessTokenExpiresAt: 9e15, refreshTokenExpiresAt: 9e15 };
+  transport.respondWith(request => ({ status: 200, headers: {}, json: request.url.endsWith('/login') ? session : { user: session.user } }));
+  const runtime = await createAppRuntime('https://reader.test');
+  await runtime.api.login('reader', 'password12');
+  let finish!: (value: string) => void;
+  const stop = useAuthStore.subscribe(state => {
+    if (state.verifiedUser && !finish) void runtime.queryClient.fetchQuery({
+      queryKey: ['first-page'], queryFn: () => new Promise<string>(resolve => { finish = resolve; }),
+    }).catch(() => undefined);
+  });
+  try {
+    await runtime.authenticated();
+    expect(runtime.queryClient.getQueryState(['first-page'])?.fetchStatus).toBe('fetching');
+    finish('loaded');
+    await vi.waitFor(() => expect(runtime.queryClient.getQueryData(['first-page'])).toBe('loaded'));
+  } finally { stop(); runtime.sync.stop(); runtime.queryClient.clear(); useAuthStore.getState().setSession(null); }
 });

@@ -26,7 +26,12 @@ try {
           });
         });
         const shot = `${engine}-${width}${standalone ? '-pwa' : ''}`;
-        const errors = []; page.on('pageerror', error => errors.push(error.message));
+        const errors = [], navigationAbortWarnings = [];
+        let reloading = false;
+        page.on('pageerror', error => {
+          if (engine === 'webkit' && reloading && error.message === `/${new URL(origin).host}/api/v1/stats/reading-time due to access control checks.`) navigationAbortWarnings.push(error.message);
+          else errors.push(error.message);
+        });
         await page.route('https://wuxf.top/**', route => route.abort());
         await page.goto(origin + '/#/shelf'); await page.getByText('更换服务地址', { exact: true }).click();
         await page.locator('input[type=url]').fill(origin); await page.locator('input[autocomplete=username]').fill('review');
@@ -112,7 +117,7 @@ try {
         await checkSettings('quick-layout');
         await dialog.getByRole('button', { name: '字体与间距', exact: true }).click();
         await checkSettings('text-layout');
-        await page.getByRole('combobox', { name: '字体', exact: true }).selectOption('system-ui, -apple-system, "Noto Sans SC", sans-serif');
+        await page.getByLabel('字体', { exact: true }).and(page.locator('select')).selectOption('system-ui, -apple-system, "Noto Sans SC", sans-serif');
         await page.getByRole('button', { name: '返回阅读设置', exact: true }).click();
         await page.getByRole('button', { name: /^翻页与点击/ }).click();
         assert.equal(await page.locator('.tap-zones-grid .tap-zone-cell').count(), 9);
@@ -120,7 +125,7 @@ try {
         await page.screenshot({ path: output + `${shot}-paging.png` });
         await page.getByRole('button', { name: '返回阅读设置', exact: true }).click();
         await page.getByRole('button', { name: /^显示设置/ }).click();
-        await page.getByRole('combobox', { name: '底部右侧', exact: true }).selectOption('progress');
+        await page.getByLabel('底部右侧', { exact: true }).and(page.locator('select')).selectOption('progress');
         await checkSettings('display-layout');
         await page.getByRole('button', { name: '返回阅读设置', exact: true }).click();
         await page.getByRole('button', { name: /^朗读设置/ }).click();
@@ -165,15 +170,18 @@ try {
           await pull(160); await sheet.waitFor({state:'detached'});
           if (cdp) await cdp.detach();
         }
+        reloading = true;
         await page.reload();
         await page.locator('book-content .book-flow p').first().waitFor();
+        await page.waitForLoadState('networkidle');
+        reloading = false;
         const saved = await page.evaluate(() => window.readerApp.settings.current);
         assert.equal(saved.fontScale, 1); assert.equal(saved.brightness, .75); assert.equal(saved.readoutBottomRight, 'progress');
         assert.equal(saved.fontFamily, 'system-ui, -apple-system, "Noto Sans SC", sans-serif');
         assert.equal(await page.locator('.reader-screen').getAttribute('data-reading-theme'), 'local-kraft-day');
         assert.equal(await page.locator('html').evaluate(el => el.scrollWidth > innerWidth), false);
         assert.deepEqual(errors, []);
-        cases.push({ engine, width, height, standalone, geometry, oneReadingCard: true, equalFooterSlots: true, allSettingsFit: true, quickControlsVisible: true, settingsAppliedAndPersisted: true, themes: 30 });
+        cases.push({ engine, width, height, standalone, geometry, oneReadingCard: true, equalFooterSlots: true, allSettingsFit: true, quickControlsVisible: true, settingsAppliedAndPersisted: true, themes: 30, navigationAbortWarnings });
         await page.close();
       }
     } finally { await browser.close(); }

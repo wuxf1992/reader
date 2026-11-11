@@ -1,3 +1,4 @@
+import { Select } from '../../ui/select.tsx';
 import type { CSSProperties } from 'react';
 import { resolveAppTheme, resolveTheme, selectTheme, selectedTheme, selectThemeMode, themeOptions, themeTokens, type ThemePreference } from './theme.ts';
 
@@ -20,9 +21,9 @@ export function ThemePicker({ preference, systemDark, onChange }: { preference: 
     </div>
     {preference.mode === 'system' && <div className="theme-system-pair">
       {(['light', 'dark'] as const).map(mode => <label key={mode}>{mode === 'light' ? '日间配色' : '夜间配色'}
-        <select aria-label={mode === 'light' ? '日间配色' : '夜间配色'} value={preference.system[mode]} onChange={event => onChange({ ...preference, system: { ...preference.system, [mode]: event.target.value } })}>
+        <Select aria-label={mode === 'light' ? '日间配色' : '夜间配色'} value={preference.system[mode]} onChange={event => onChange({ ...preference, system: { ...preference.system, [mode]: event.target.value } })}>
           {themeOptions.filter(option => resolveTheme(option.value, mode).mode === mode).map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-        </select>
+        </Select>
       </label>)}
     </div>}
   </>;

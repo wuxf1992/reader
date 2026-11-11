@@ -8,7 +8,7 @@ await mkdir(output, { recursive: true });
 const server = createReviewServer({ port: 0 }), origin = await server.listen();
 const report = { cases: [], errors: [], navigationAbortWarnings: [], failedRequests: [] };
 const rgb = hex => 'rgb(' + hex.slice(1).match(/../g).map(c => parseInt(c, 16)).join(', ') + ')';
-async function route(page, path) { await page.evaluate(path => { location.hash = '#' + path; }, path); }
+async function route(page, path) { await page.evaluate(path => { location.hash = '#' + path; }, path); await page.waitForLoadState('networkidle'); }
 async function openBook(page) {
   await route(page, '/book/' + BOOK_ID);
   await page.locator('book-content .book-flow p').first().waitFor();

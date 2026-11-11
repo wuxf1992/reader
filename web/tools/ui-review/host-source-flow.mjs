@@ -41,7 +41,7 @@ async function shot(name) {
 }
 // 添加来源 opens the editor page (/sources/manage/new); saving returns to the hub.
 async function addSource(name) {
-  await page.getByRole('link', { name: '添加来源', exact: true }).click(); await page.getByLabel('来源类型').selectOption('reader.source.demo/demo-chapters');
+  await page.getByRole('link', { name: '添加来源', exact: true }).click(); await page.getByLabel('来源类型').and(page.locator('select')).selectOption('reader.source.demo/demo-chapters');
   await page.getByLabel('名称', { exact: true }).fill(name); await button('保存').click();
   await tab('书源管理').click();
   await page.locator('.sources-row').getByText(name, { exact: true }).waitFor(); await idle();
@@ -247,7 +247,7 @@ try {
   }
   await page.goto(base + '/#/sources'); await tab('书源管理').click();
   await page.getByRole('link', { name: '添加来源', exact: true }).click();
-  await page.getByLabel('来源类型').selectOption('reader.source.demo/demo-chapters');
+  await page.getByLabel('来源类型').and(page.locator('select')).selectOption('reader.source.demo/demo-chapters');
   await page.getByLabel('名称', { exact: true }).fill('保留的草稿');
   await page.route('**/api/v1/sources', route => route.request().method() === 'POST'
     ? route.fulfill({ status: 502, json: { error: { code: 'SAVE_FAILED', message: '保存失败，请稍后重试。' } } })

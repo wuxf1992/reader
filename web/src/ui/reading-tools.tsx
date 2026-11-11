@@ -1,3 +1,4 @@
+import { Select } from './select.tsx';
 import { Icon } from './icon.tsx';
 import type { ReadingOverrides } from './reading-overrides.ts';
 import { useEffect, useRef, useState } from 'react';
@@ -196,9 +197,9 @@ export function ReadingTools(props: ReadingToolsProps) {
         <p>章节缓存保存在当前设备、当前账号。</p>
         {rangedDownload && <fieldset className="reading-cache-auto"><legend>自动预缓存</legend>
           <label><span>提前缓存后续章节</span><input type="checkbox" checked={props.autoCache} onChange={event => props.onCacheSetting({ autoCache: event.currentTarget.checked })} /></label>
-          <label><span>预缓存章节数</span><select value={props.autoCacheChapters} disabled={!props.autoCache} onChange={event => props.onCacheSetting({ autoCacheChapters: Number(event.currentTarget.value) })}>
+          <label><span>预缓存章节数</span><Select value={props.autoCacheChapters} disabled={!props.autoCache} onChange={event => props.onCacheSetting({ autoCacheChapters: Number(event.currentTarget.value) })}>
             {[...new Set([1, 3, 5, 10, 20, 50, props.autoCacheChapters])].sort((a, b) => a - b).map(count => <option key={count} value={count}>{count} 章</option>)}
-          </select></label>
+          </Select></label>
           <p>收起面板后继续预缓存。省流量模式或慢速网络下暂停。</p>
           <p role="status">{props.prefetchMessage}</p>
         </fieldset>}
@@ -221,7 +222,7 @@ export function ReadingTools(props: ReadingToolsProps) {
         <button className="button" disabled={saving || props.overrides.version === 0} onClick={() => void edit(async () => { await props.undoOverrides(); setMessage('已撤销上一次整理修改'); })}>撤销上一次整理修改</button>
         {props.manifest.book.format === 'txt' && <>
           <h3>TXT 目录规则</h3><p>匹配以指定文字开头、长度不超过 80 字的行；留空恢复自动识别。应用会重新划分章节并从首章打开，旧笔记仍保留。</p>
-          <label>常用模板<select value="" onChange={e => { setPrefix(e.currentTarget.value); setHeadingPreview(null); }}><option value="">自动识别</option><option value="第">中文章回</option><option value="Chapter ">英文 Chapter</option><option value="【">方括号标题</option></select></label>
+          <label>常用模板<Select value="" onChange={e => { setPrefix(e.currentTarget.value); setHeadingPreview(null); }}><option value="">自动识别</option><option value="第">中文章回</option><option value="Chapter ">英文 Chapter</option><option value="【">方括号标题</option></Select></label>
           <label>标题开头<input maxLength={60} value={prefix} onInput={e => { setPrefix(e.currentTarget.value); setHeadingPreview(null); }} /></label>
           <button className="button" disabled={saving} onClick={() => void edit(async () => setHeadingPreview(await props.previewHeadings(prefix)))}>预览目录</button>
           {headingPreview && <><p>识别 {headingPreview.length} 个章节，展示前 100 项</p><ol>{headingPreview.slice(0,100).map((title,i) => <li key={i}>{title}</li>)}</ol><button className="button" disabled={saving} onClick={() => void edit(async () => { await props.saveOverrides({ ...props.overrides, headingPrefix:prefix }); setMessage('目录规则已保存'); })}>应用预览规则</button></>}

@@ -1,3 +1,4 @@
+import { Select } from './select.tsx';
 import { BusyIndicator } from './busy.tsx';
 import { MIN_BRIGHTNESS } from '../render/theme.ts';
 import { CHINESE_VARIANTS } from '../shared/chinese-variant.ts';
@@ -383,9 +384,9 @@ export function ReaderChrome({ state, stage, handlers, tools }: ReaderChromeProp
                 : state.alternativeChecks[entry.ref]!.error}</span>}
             </button>)}</div>
             {!!state.alternatives.errors?.length && <CatalogFeedback page={state.alternatives} merged compact searching={!!state.alternativesSearching} />}
-            {state.alternativeChapters && <Sheet title="选择阅读章节" size="compact" busy={!!state.switching} onClose={() => handlers.onCancelAlternative?.()}><div className="alternative-preview"><h4>{state.alternativeTitle}</h4><label>切换后阅读的章节<select value={state.alternativeChapter ?? ''} disabled={state.switching === true} onChange={event => handlers.onAlternativeChapter?.(event.currentTarget.value)}>
+            {state.alternativeChapters && <Sheet title="选择阅读章节" size="compact" busy={!!state.switching} onClose={() => handlers.onCancelAlternative?.()}><div className="alternative-preview"><h4>{state.alternativeTitle}</h4><label>切换后阅读的章节<Select value={state.alternativeChapter ?? ''} disabled={state.switching === true} onChange={event => handlers.onAlternativeChapter?.(event.currentTarget.value)}>
               <option key="empty" value="">请选择章节</option>{state.alternativeChapters.map(chapter => <option key={chapter.id} value={chapter.id}>{chapter.title}</option>)}
-            </select></label>
+            </Select></label>
               {state.alternativeLatest && <p>最新章节：{state.alternativeLatest}</p>}
               <Button disabled={state.switching || state.alternativeQualityBusy || !state.alternativeChapter} onClick={() => handlers.onCheckAlternative?.()}>{state.alternativeQualityBusy ? '正在检测正文…' : '检测所选章节 / 重试'}</Button>
               {state.alternativeQuality && <div role="status" className="chapter-quality"><strong>已获取正文</strong><p>{state.alternativeQuality.characters} 字符 · {state.alternativeQuality.images} 张图片 · {(state.alternativeQuality.bytes / 1024).toFixed(1)} KiB · {state.alternativeQuality.elapsedMs} ms</p><p>完整性未核验，发现缺段或串文请使用其他书源。</p></div>}
@@ -540,6 +541,7 @@ function SettingsBody({ section, state, handlers }: { section: 'text' | 'behavio
     <p className="muted">白纸主题、分页、无翻页动画。屏幕刷新由设备控制。</p>
   </>;
 }
+
 
 /**
  * The read-aloud section.
@@ -769,7 +771,7 @@ function TapZoneEditor({ grid, onChange }: { grid: TapZoneGrid; onChange(grid: T
   return (
     <section className="tap-zones" aria-label="点击区域设置">
       <div className="tap-zones-head">
-        <span className="tap-zones-title">点击区域</span>
+        <span className="tap-zones-title">每格的动作</span>
         <Button className="tap-zones-action" onClick={() => onChange(mirrored)}>左右互换</Button>
         <Button className="tap-zones-action" disabled={isDefault} onClick={() => onChange(tapZonePreset('standard'))}>恢复默认</Button>
       </div>
@@ -872,13 +874,13 @@ function SelectRow({
   return (
     <div className="field">
       <label>{label}</label>
-      <select aria-label={label} value={value} onChange={(event) => onChange((event.currentTarget as HTMLSelectElement).value)}>
+      <Select aria-label={label} value={value} onChange={(event) => onChange((event.currentTarget as HTMLSelectElement).value)}>
         {options.map((option) => (
           <option key={option.value} value={option.value}>
             {option.label}
           </option>
         ))}
-      </select>
+      </Select>
     </div>
   );
 }

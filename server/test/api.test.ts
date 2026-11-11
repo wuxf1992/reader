@@ -6,6 +6,7 @@
  */
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+
 import { mkdtemp, mkdir, writeFile, rm, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -370,6 +371,52 @@ test('malformed and oversized sync payloads are rejected cleanly', async () => {
   const res = await app.inject({ method: 'POST', url: '/api/v1/sync', headers: auth(owner.token), payload: huge });
   assert.equal(res.statusCode, 400);
   assert.equal((res.json() as { error: { code: string } }).error.code, 'BATCH_TOO_LARGE');
+});
+
+test('malformed authentication and sync fields return client errors', async () => {
+  const owner = await login('owner');
+  const book = ctx.db.get<{ id: string }>('SELECT id FROM books')!;
+  for (const payload of [
+    { username: {}, password: 'password123' },
+    { username: 'owner', password: [] },
+    { username: 'owner', password: 'x'.repeat(1025) },
+  ]) {
+    const response = await app.inject({ method: 'POST', url: '/api/v1/auth/login', payload });
+    assert.equal(response.statusCode, 400);
+  }
+  for (const action of ['refresh', 'logout']) {
+    const response = await app.inject({ method: 'POST', url: `/api/v1/auth/${action}`, payload: { refreshToken: {} } });
+    assert.equal(response.statusCode, 400);
+  }
+  for (const payload of [
+    { progress: [null] },
+    { progress: [{ bookId: book.id, updatedAt: 1, locator: {} }] },
+    { notes: [{ bookId: book.id, id: 'invalid-note', deleted: 'false' }] },
+    { since: -1, progress: [] },
+  ]) {
+    const response = await app.inject({ method: 'POST', url: '/api/v1/sync', headers: auth(owner.token), payload });
+    assert.equal(response.statusCode, 400);
+  }
+  for (const since of ['123oops', '-1', '1.5', '9007199254740992']) {
+    const response = await app.inject({ method: 'GET', url: `/api/v1/sync?since=${since}`, headers: auth(owner.token) });
+    assert.equal(response.statusCode, 400);
+  }
+});
+
+test('sync pushes return only changes after the supplied server cursor', async () => {
+  const owner = await login('owner');
+  const before = await app.inject({ method: 'GET', url: '/api/v1/sync?since=0', headers: auth(owner.token) });
+  const since = (before.json() as { serverTime: number }).serverTime;
+  const book = ctx.db.get<{ id: string }>('SELECT id FROM books')!;
+  const response = await app.inject({
+    method: 'POST', url: '/api/v1/sync', headers: auth(owner.token),
+    payload: { since, notes: [{ id: 'delta-note', bookId: book.id, text: 'delta', updatedAt: 1 }] },
+  });
+  assert.equal(response.statusCode, 200);
+  const result = response.json() as { notes: Array<{ id: string }>; progress: unknown[]; hasMore: boolean };
+  assert.deepEqual(result.notes.map(note => note.id), ['delta-note']);
+  assert.equal(result.progress.length, 0);
+  assert.equal(result.hasMore, false);
 });
 
 test('a tampered token is refused', async () => {
@@ -1016,6 +1063,23 @@ test('a volume archive beside volume folders stays on the shelf and serves its p
   }
 });
 
+test('rate-limited authentication retains CORS and retry metadata', async () => {
+  for (let index = 0; index <= 60; index++) {
+    const response = await app.inject({
+      method: 'POST', url: '/api/v1/auth/login', remoteAddress: '192.0.2.99',
+      headers: { origin: 'https://reader-client.test' },
+      payload: { username: `missing-rate-user-${index}`, password: 'wrong-password' },
+    });
+    assert.equal(response.statusCode, index < 60 ? 401 : 429);
+    if (index === 60) {
+      assert.equal(response.headers['access-control-allow-origin'], 'https://reader-client.test');
+      assert.match(String(response.headers['access-control-expose-headers']), /retry-after/);
+      assert.equal(response.headers['referrer-policy'], 'no-referrer');
+      assert.ok(Number(response.headers['retry-after']) > 0);
+    }
+  }
+});
+
 test('the shelf can be filtered to one folder', async () => {
   /*
    * The library screen's browsing half, at the layer that has to make it possible.
@@ -1129,7 +1193,7 @@ test('book covers use content hashes to avoid retransmitting unchanged images', 
     assert.match(String(initial.headers.etag), /^"[a-f0-9]{32}"$/);
     assert.equal(initial.headers['cache-control'], 'private, no-cache');
     assert.match(String(initial.headers.vary), /authorization/);
-    assert.equal(initial.headers['access-control-expose-headers'], 'etag');
+    assert.match(String(initial.headers['access-control-expose-headers']), /(?:^|,\s*)etag(?:,|$)/);
     const etag = String(initial.headers.etag);
     for (const validator of [etag, `W/${etag}`, `"other", ${etag}`, '*']) {
       const unchanged = await app.inject({ url, headers: { ...auth(user.token), 'if-none-match': validator } });
@@ -1152,4 +1216,16 @@ test('book covers use content hashes to avoid retransmitting unchanged images', 
     ctx.db.run('UPDATE books SET cover_path = ? WHERE id = ?', book.cover_path, book.id);
     await rm(coverFile, { force: true });
   }
+});
+
+test('PDF range preflight permits HEAD and Range and exposes byte metadata to Android', async () => {
+  const response = await app.inject({
+    method: 'OPTIONS', url: '/api/v1/books/pdf/content',
+    headers: { origin: 'https://appassets.androidplatform.net', 'access-control-request-method': 'HEAD', 'access-control-request-headers': 'authorization,range' },
+  });
+  assert.equal(response.statusCode, 204);
+  assert.equal(response.headers['access-control-allow-origin'], 'https://appassets.androidplatform.net');
+  assert.match(String(response.headers['access-control-allow-methods']), /HEAD/);
+  assert.match(String(response.headers['access-control-allow-headers']), /range/);
+  assert.match(String(response.headers['access-control-expose-headers']), /content-range/);
 });

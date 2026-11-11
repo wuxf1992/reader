@@ -11,6 +11,8 @@ export interface Session {
   user: User;
   accessToken: string;
   accessTokenExpiresAt: number;
+  resourceToken?: string;
+  resourceTokenExpiresAt?: number;
   refreshToken: string;
   refreshTokenExpiresAt: number;
 }
@@ -21,9 +23,13 @@ export interface User {
   displayName: string;
   role: 'admin' | 'member';
   createdAt: number;
+  mediaEnabled?: boolean;
+  features?: {media:boolean};
+  mediaState?: 'disabled'|'stopping'|'starting'|'ready'|'failed'|'closed';
 }
 
 export interface InstanceInfo {
+  features?: {media:boolean};
   registrationMode?: 'closed' | 'open' | 'invite';
   invitationRequired?: boolean;
   name: string;
@@ -205,6 +211,7 @@ export interface Note {
 
 export interface SyncPull {
   serverTime: number;
+  hasMore?: boolean;
   progress: Progress[];
   notes: Note[];
 }

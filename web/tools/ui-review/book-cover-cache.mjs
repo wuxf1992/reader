@@ -71,6 +71,7 @@ try {
       coverState.delay = 1500;
       await page.close(); page = await context.newPage();
       const validation = page.waitForResponse(response => response.url().includes(`/books/${BOOK_ID}/cover`) && response.status() === 304);
+      void validation.catch(() => undefined);
       await page.goto(origin + '/#/shelf');
       await page.locator('.book-card').first().waitFor();
       const start = Date.now();

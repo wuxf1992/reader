@@ -1,4 +1,4 @@
-import { ApiError } from '../api/errors.ts';
+import { ApiError, describeError } from '../api/errors.ts';
 import type { ReaderApi, NoteInput } from '../api/client.ts';
 import type { SyncPull } from '../api/types.ts';
 import { isOutboxEmpty, type OfflineStore } from '../store/offline.ts';
@@ -279,10 +279,16 @@ export class SyncEngine {
       // pull is the real work — that is the poll's whole purpose.
       const pushed = await this.pushOutbox(run);
       this.assertCurrent(run);
-      const pull = pushed ?? (await this.api.pull(this.offline.current.serverTime, undefined, { signal: run.signal }));
-      this.assertCurrent(run);
-      await this.offline.applyPulled(pull);
-      this.assertCurrent(run);
+      let pull = pushed ?? (await this.api.pull(this.offline.current.serverTime, undefined, { signal: run.signal }));
+      for (;;) {
+        this.assertCurrent(run);
+        await this.offline.applyPulled(pull);
+        this.assertCurrent(run);
+        if (!pull.hasMore) break;
+        const cursor = pull.serverTime;
+        pull = await this.api.pull(cursor, undefined, { signal: run.signal });
+        if (pull.serverTime <= cursor && pull.hasMore) throw new ApiError('server', '同步分页游标没有前进', 'INVALID_SYNC_CURSOR');
+      }
       if (!isOutboxEmpty(this.offline.current)) this.schedule();
       this.rememberNoteBooks();
 
@@ -360,6 +366,7 @@ export class SyncEngine {
       const progressChunk = batch.progress.slice(offset, offset + CHUNK);
       const noteChunk = notes.slice(offset, offset + CHUNK);
       const result = await this.api.push({
+        since: this.offline.current.serverTime,
         ...(progressChunk.length > 0 ? { progress: progressChunk } : {}),
         ...(noteChunk.length > 0 ? { notes: noteChunk } : {}),
       }, { signal: run.signal });
@@ -407,7 +414,7 @@ export class SyncEngine {
       this.setState('signed-out', '登录已失效，请重新登录');
       return;
     }
-    this.setState('error', err instanceof Error ? err.message : '同步失败');
+    this.setState('error', describeError(err, '同步失败，稍后会自动重试'));
     this.backoff = Math.min(this.backoff * 2, RETRY_MAX_MS);
     // `force`: an error's exponential backoff must be able to shorten a wait the
     // poll has already armed, or the first retry after a blip would be 30 seconds

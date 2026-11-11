@@ -1,3 +1,5 @@
+import { Select } from '../../../ui/select.tsx';
+import { describeError } from '../../../api/errors.ts';
 import { Icon } from '../../../ui/icon.tsx';
 import { Sheet } from '../../../ui/sheet.tsx';
 import { ActionMenu } from '../../../ui/action-menu.tsx';
@@ -190,7 +192,7 @@ export function SourcesPage() {
       </>}
       {tab === 'sources' && <section className="sources-card sources-list">
         <div className="sources-list-heading"><h2>我的来源 <span className="source-count">{sources.data?.length ?? 0}</span></h2>{admin && <Link className="button source-add" to="/sources/manage/new"><Icon name="plus" size={16} />添加来源</Link>}</div>
-        {sources.isPending && <FloatingNotice message="正在加载书源…" busy />}{sources.error && <p className="notice error">{sources.error.message}</p>}{!sources.isPending && !sources.data?.length && <p className="muted">还没有配置书源。请添加来源或启用插件。</p>}
+        {sources.isPending && <FloatingNotice message="正在加载书源…" busy />}{sources.error && <p className="notice error">{describeError(sources.error)}</p>}{!sources.isPending && !sources.data?.length && <p className="muted">还没有配置书源。请添加来源或启用插件。</p>}
         {(sources.data ?? []).map(source => <article className="sources-row source-entry" key={source.id}><div className="source-entry-top"><div className="source-entry-info"><strong>{source.name}{source.isDefault && <span className="source-default-badge">默认</span>}</strong><small>{source.descriptor?.label ?? sourceTypeLabel(source.sourceType)}</small><span className={'source-state' + (source.enabled ? ' is-enabled' : '')}>{source.enabled ? '已启用' : '已暂停'}</span></div><div className="source-entry-actions">{source.descriptor?.credentialKeys?.length ? <Link className="button" to={'/sources/' + encodeURIComponent(source.id) + '/credentials'}>书源登录</Link> : null}{admin && <ActionMenu label="管理" title={`${source.name}管理`} items={[
             ...(source.descriptor?.extensions?.pages ?? []).map(page => ({ label: page.title, onSelect: () => navigate('/sources/' + encodeURIComponent(source.id) + '/' + encodeURIComponent(page.id)) })),
             { label: '基本设置', onSelect: () => navigate('/sources/manage/' + encodeURIComponent(source.id)) },
@@ -200,10 +202,10 @@ export function SourcesPage() {
       </section>}
       {tab === 'updates' && <section className="sources-card"><h2>自动追更</h2><p className="notice">服务端定时检查目录，浏览器关闭后继续运行。正文和图片在阅读时缓存。</p>
         {subscriptions.isPending && <FloatingNotice message="正在加载追更列表…" busy />}
-        {subscriptions.error && <Callout tone="error">{subscriptions.error.message}<button className="button" type="button" onClick={() => void subscriptions.refetch()}>重新加载</button></Callout>}
+        {subscriptions.error && <Callout tone="error">{describeError(subscriptions.error)}<button className="button" type="button" onClick={() => void subscriptions.refetch()}>重新加载</button></Callout>}
         {subscriptions.isSuccess && !subscriptions.data.length && <p>先从章节书源加入书籍，再开启追更。</p>}
         {(subscriptions.data ?? []).map(item => <article className="sources-row" key={item.bookId}><div><strong>{item.title}</strong><small>{item.newChapters ? '新增 ' + item.newChapters + ' 章 · ' : ''}上次成功：{item.lastSuccessAt ? new Date(item.lastSuccessAt).toLocaleString() : '尚未检查'}</small><small>{item.enabled ? '下次检查：' + new Date(item.nextCheckAt).toLocaleString() : '自动追更已关闭'}{item.lastError ? ' · 检查失败：' + item.lastError : ''}</small></div><div className="sources-actions">
-          <label className="source-interval">检查间隔<select aria-label={`${item.title}检查间隔`} value={item.intervalMinutes} disabled={!!busy} onChange={event => void mutateSubscription(item.bookId, { intervalMinutes: Number(event.currentTarget.value) })}><option value="15">15 分钟</option><option value="60">1 小时</option><option value="360">6 小时</option><option value="1440">1 天</option></select></label>
+          <label className="source-interval">检查间隔<Select aria-label={`${item.title}检查间隔`} value={item.intervalMinutes} disabled={!!busy} onChange={event => void mutateSubscription(item.bookId, { intervalMinutes: Number(event.currentTarget.value) })}><option value="15">15 分钟</option><option value="60">1 小时</option><option value="360">6 小时</option><option value="1440">1 天</option></Select></label>
           <button className="button" type="button" disabled={!!busy} onClick={() => void mutateSubscription(item.bookId, { enabled: !item.enabled })}>{item.enabled ? '关闭追更' : '开启追更'}</button>
           <button className="button" type="button" disabled={!!busy} onClick={() => void mutateSubscription(item.bookId)}>立即检查</button>
           <Link className="button" to={'/book/' + encodeURIComponent(item.bookId)}>阅读</Link>

@@ -49,7 +49,7 @@ try {
   await page.locator('button[type=submit]').click(); await page.locator('.app-shell').waitFor();
   await page.goto(base + '/#/sources');
   await page.getByRole('combobox', { name: '选择来源' }).selectOption('demo');
-  await page.getByRole('combobox', { name: '分组', exact: true }).selectOption('fiction');
+  await page.getByLabel('分组', { exact: true }).and(page.locator('select')).selectOption('fiction');
   await page.getByRole('searchbox', { name: '搜索书籍', exact: true }).fill('斗破苍穹');
   await mkdir(shots, { recursive: true });
   for (const width of [390, 1024, 1440, 1920]) {
