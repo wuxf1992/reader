@@ -47,7 +47,10 @@ try{
   const errors=[];
   admin.on('pageerror',error=>errors.push(error.message));
   const login=async(page,name)=>{
+    await page.route('https://wuxf.top/**',route=>route.abort());
     await page.goto(origin);
+    await page.getByText('更换服务地址',{exact:true}).click();
+    await page.locator('input[type=url]').fill(origin);
     await page.locator('#login-username').fill(name);
     await page.locator('#login-password').fill('password123');
     await page.getByRole('button',{name:'登录',exact:true}).click();

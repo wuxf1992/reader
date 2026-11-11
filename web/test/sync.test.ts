@@ -870,3 +870,36 @@ describe('SyncEngine', () => {
     expect(peak).toBe(1);
   });
 });
+
+it('background flush saves remote records before adopting the response cursor', async () => {
+  const { api, transport, offline, engine, platform } = build();
+  transport.json(SESSION); await api.login('me', 'password12'); await offline.load();
+  await offline.applyPulled({ serverTime: 5, progress: [], notes: [] });
+  await offline.setProgress({ bookId: 'local', locator: 'page:2', percentage: .2, chapterTitle: '', device: 'web', updatedAt: 1 });
+  const remote = { id: 'remote-note', bookId: 'other', type: 'note' as const, locator: '', text: 'from another device', comment: '', color: '', updatedAt: 1 };
+  transport.json({ accepted: 1, rejected: 0, serverTime: 10, hasMore: true, progress: [], notes: [remote] });
+  await engine.flush();
+  const restored = new OfflineStore(platform.kv); await restored.load();
+  expect(restored.current.notes[remote.id]).toEqual(remote);
+  expect(restored.current.serverTime).toBe(10);
+  expect(isOutboxEmpty(restored.current)).toBe(true);
+  expect(transport.requests.at(-1)!.method).toBe('POST');
+});
+
+it('retries remote changes from the old cursor if storing a push response fails', async () => {
+  const { api, transport, offline, engine, platform } = build();
+  transport.json(SESSION); await api.login('me', 'password12'); await offline.load();
+  await offline.applyPulled({ serverTime: 5, progress: [], notes: [] });
+  await offline.setProgress({ bookId: 'local', locator: 'page:2', percentage: .2, chapterTitle: '', device: 'web', updatedAt: 1 });
+  const remote = { id: 'remote-note', bookId: 'other', type: 'note' as const, locator: '', text: 'from another device', comment: '', color: '', updatedAt: 1 };
+  transport.respondWith(request => ({ status: 200, headers: {}, json: { accepted: 1, rejected: 0, serverTime: 10, progress: [], notes: request.method === 'POST' || request.url.includes('since=5') ? [remote] : [] } }));
+  vi.spyOn(offline, 'applyPulled').mockRejectedValueOnce(new Error('storage unavailable'));
+  await engine.flush();
+  const restored = new OfflineStore(platform.kv); await restored.load();
+  expect(restored.current.serverTime).toBe(5);
+  const resumed = new SyncEngine(api, restored, platform);
+  await resumed.syncNow();
+  expect(restored.current.notes[remote.id]).toEqual(remote);
+  expect(transport.requests.at(-1)!.url).toContain('since=5');
+  engine.stop(); resumed.stop();
+});

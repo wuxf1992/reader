@@ -354,7 +354,6 @@ export class SyncEngine {
     // offline session cannot fail wholesale on one oversized request.
     const CHUNK = 1000;
     const batches = Math.max(1, Math.ceil(Math.max(batch.progress.length, notes.length) / CHUNK));
-    let serverTime = 0;
     let rejected = 0;
     // The last chunk's answer is the merged state as of the final write, which is
     // the only one worth reconciling against: an earlier chunk's `progress` list
@@ -371,11 +370,11 @@ export class SyncEngine {
         ...(noteChunk.length > 0 ? { notes: noteChunk } : {}),
       }, { signal: run.signal });
       this.assertCurrent(run);
-      serverTime = Math.max(serverTime, result.serverTime);
       rejected += result.rejected;
       merged = result;
     }
-    await this.offline.markDelivered(batch, serverTime);
+    // Advance the cursor only when the returned records are persisted by applyPulled.
+    await this.offline.markDelivered(batch, this.offline.current.serverTime);
     this.assertCurrent(run);
     // Rejections are informational. The server refuses records it can never
     // accept (unknown book, malformed locator), and retrying them forever would
@@ -454,7 +453,10 @@ export class SyncEngine {
   async flush(): Promise<void> {
     if (this.stopped || !this.api.currentSession()) return;
     try {
-      await this.pushOutbox(this.captureRun());
+      const run = this.captureRun();
+      const merged = await this.pushOutbox(run);
+      this.assertCurrent(run);
+      if (merged) await this.offline.applyPulled(merged);
     } catch {
       // Nothing to do: the outbox is durable and the next attempt will retry.
     }

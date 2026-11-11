@@ -255,7 +255,8 @@ export class ReaderApi {
       this.session=session;
       const write=this.sessionWrites.catch(()=>undefined).then(()=>generation===this.sessionGeneration?this.sessions.save(session):undefined);
       this.sessionWrites=write;
-      await write;
+      // Profile caching must not revoke valid credentials when local storage is full.
+      await write.catch(() => undefined);
     }
     return result.user;
   }

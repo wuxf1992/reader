@@ -216,3 +216,20 @@ it('keeps the first page query alive when login verification publishes the accou
     await vi.waitFor(() => expect(runtime.queryClient.getQueryData(['first-page'])).toBe('loaded'));
   } finally { stop(); runtime.sync.stop(); runtime.queryClient.clear(); useAuthStore.getState().setSession(null); }
 });
+
+it('keeps a valid login and applies permissions when caching the refreshed profile fails', async () => {
+  const transport = new FakeTransport(), platform = makePlatform(transport);
+  const session: Session = { user: { id: 'cached', username: 'reader', displayName: 'Reader', role: 'admin', createdAt: 0 }, accessToken: 'access', refreshToken: 'refresh', accessTokenExpiresAt: 9e15, refreshTokenExpiresAt: 9e15 };
+  await platform.kv.set('reader.session.v1', JSON.stringify(session));
+  vi.mocked(createWebPlatform).mockResolvedValue(platform);
+  const runtime = await createAppRuntime('https://reader.test');
+  const user = { ...session.user, mediaEnabled: false, features: { media: false } };
+  transport.json({ user });
+  vi.spyOn(platform.kv, 'set').mockRejectedValue(new DOMException('storage full', 'QuotaExceededError'));
+  try {
+    await expect(runtime.refreshCapabilities()).resolves.toBeUndefined();
+    expect(runtime.api.currentSession()?.user.id).toBe(session.user.id);
+    expect(useAuthStore.getState().verifiedUser).toEqual(user);
+    expect(await platform.kv.get('reader.session.v1')).toBe(JSON.stringify(session));
+  } finally { vi.restoreAllMocks(); runtime.queryClient.clear(); useAuthStore.getState().setSession(null); }
+});
