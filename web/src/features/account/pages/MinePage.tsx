@@ -1,6 +1,6 @@
 import { Icon, type IconName } from '../../../ui/icon.tsx';
 import { Link } from 'react-router-dom';
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { useRuntime } from '../../../app/providers/runtime-context.tsx';
 import { useAuthStore } from '../../../shared/stores/auth.store.ts';
 import { themeSummary } from '../../../shared/theme/theme.ts';
@@ -11,18 +11,19 @@ import { connectionLabel } from '../../../app/AppNav.tsx';
 import '../../home/styles/home.css';
 import '../styles/mine.css';
 import { useMediaEnabled } from '../../../shared/stores/features.ts';
+import { updatePwa } from '../../../core/pwa.ts';
 
-function Row({ icon, label, value, to, state, onClick, danger = false }: { icon: IconName; label: string; value?: string; to?: string; state?: unknown; onClick?: () => void; danger?: boolean }) {
+function Row({ icon, label, value, to, state, onClick, danger = false, disabled = false }: { icon: IconName; label: string; value?: string; to?: string; state?: unknown; onClick?: () => void; danger?: boolean; disabled?: boolean }) {
   const body = <>
     <span className="mine-row-icon" aria-hidden="true"><Icon name={icon} size={18} /></span>
     <span className="mine-row-label">{label}</span>
-    {value && <span className="mine-row-value">{value}</span>}
+    {value && <span className="mine-row-value" role={onClick ? 'status' : undefined}>{value}</span>}
     {!danger && <Icon name="chevron-right" size={16} className="mine-row-chevron" />}
   </>;
   const className = danger ? 'mine-row is-danger' : 'mine-row';
   return to
     ? <Link className={className} to={to} state={state}>{body}</Link>
-    : <button type="button" className={className} onClick={onClick}>{body}</button>;
+    : <button type="button" className={className} onClick={onClick} disabled={disabled} aria-busy={disabled || undefined}>{body}</button>;
 }
 
 function Group({ title, order, children }: { title: string; order: number; children: ReactNode }) {
@@ -41,7 +42,7 @@ function serverHost(baseUrl: string): string {
  *   sections of a single page, so there is one place to look for any of them;
  * - 管理: what an administrator changes for everyone, one page per job;
  * - 账号: who you are on this server and which outside readers may see your shelf.
- * Signing out is the one exception: a confirmation, not a place.
+ * Signing out asks for confirmation; updating checks and saves in place.
  */
 export function MinePage() {
   const media=useMediaEnabled();
@@ -52,6 +53,18 @@ export function MinePage() {
   const themeName = themeSummary(useThemeState(scope).preference);
   const [signOutOpen, setSignOutOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [updating, setUpdating] = useState(false);
+  const updateInFlight = useRef(false);
+  const [updateStatus, setUpdateStatus] = useState('检查应用版本');
+  const update = async () => {
+    if (updateInFlight.current) return;
+    updateInFlight.current = true;
+    setUpdating(true);
+    setUpdateStatus('检查更新中…');
+    try { setUpdateStatus(await updatePwa()); }
+    catch { setUpdateStatus('更新未完成，请重试'); }
+    finally { updateInFlight.current = false; setUpdating(false); }
+  };
   const name = user?.displayName || user?.username || '';
   // The same sync-engine verdict the sidebar shows; on a phone this page is the only place it appears.
   const connection = connectionLabel(useSyncStore(state => state.status.state));
@@ -85,6 +98,7 @@ export function MinePage() {
         <div className="mine-column">
           <Group title="偏好" order={2}>
             <Row icon="sliders" label="偏好设置" value={themeName} to="/me/settings" />
+            <Row icon="refresh" label="立即更新" value={updateStatus} disabled={updating} onClick={() => { void update(); }} />
           </Group>
           <Group title="账号" order={4}>
             <Row icon="account" label="账号与连接" to="/me/account" />

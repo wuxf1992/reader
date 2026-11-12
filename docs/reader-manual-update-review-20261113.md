@@ -1,0 +1,15 @@
+What this change does: Adds a permanent “立即更新” row to 我的 → 偏好 for members and administrators. It checks for a new web version, waits for its download, saves local reading and playback state, and then activates the worker and refreshes this page. An unchanged version, offline connection, unsupported environment or failure gets an in-place message.
+
+Looks good. Ship.
+
+Checked: All callers of the PWA registration, activation and save hooks; the Mine row and its existing theme, focus and touch styles; account and local-storage persistence; worker state and timeout cleanup; and the production frontend backup/rollback path. The two controls share one activation helper. Another tab may activate the worker, but each page waits for its own user's update action. A weak set remembers registrations activated after initial control so an old tab does not wrongly report that its loaded page is current. No backend or dependency changes.
+
+Expected use: one self-hosted Reader deployment, with independent browser tabs and accounts. The row blocks repeated clicks while pending. Checking and downloading each have a 60-second limit; activation has the existing 15-second limit. A stalled check, failed install, failed local save or failed activation retains the existing page and allows retry. An already downloaded worker can be applied offline. No book cache, login token or database is cleared.
+
+Validation: 61 tests passed across PWA, PWA build, save hooks, Mine, account scope and settings. TypeScript checking and production build passed. Chromium and WebKit, each at phone and desktop widths, passed current-version feedback, offline feedback, save-failure retry, save-before-activation, explicit update in another tab, session preservation and a 54px touch row. Screenshots were inspected in light and dark themes. Existing PWA smoke passed at root and nested paths, including offline restart, API cache isolation, multi-tab activation and shell cache cleanup. The manual detector found no UI issues.
+
+Review correction: A network request to check the worker could otherwise remain pending before the download timer started. The check now has its own deadline, with a regression that leaves the request unresolved and asserts no save or reload. The browser checks were repeated against the completed final bundle.
+
+The deployed nginx route now gives only `/reader/sw.js` `private, no-store, no-cache, must-revalidate`; public HTTPS confirms the unchanged script hash and Cloudflare BYPASS. Configuration was validated and gracefully reloaded, with a private rollback copy. Reader was not restarted. The public cache setting had allowed a four-hour static-file lifetime, but this does not prove it caused the user's missing button on their device.
+
+Not checked: physical iPhone, Android package update, remote CI or unrelated backend tests. The existing Vite large-chunk warning remains. First use of this new row requires loading the new page once; an old open page can use the existing update banner or close all Reader tabs/app windows and reopen without clearing site data.

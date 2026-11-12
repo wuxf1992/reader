@@ -6,6 +6,10 @@ import { render } from '../src/shared/ui/render-root.ts';
 import { MinePage } from '../src/features/account/pages/MinePage.tsx';
 import { RuntimeContext } from '../src/app/providers/runtime-context.tsx';
 import { useAuthStore } from '../src/shared/stores/auth.store.ts';
+import { updatePwa } from '../src/core/pwa.ts';
+
+vi.mock('../src/core/pwa.ts', () => ({ updatePwa: vi.fn() }));
+
 import { saveThemePreference } from '../src/shared/theme/theme.ts';
 
 const root = document.createElement('div');
@@ -30,6 +34,7 @@ afterEach(() => {
   useAuthStore.setState({ session: null, verifiedUser: null });
   localStorage.clear();
   signOut.mockClear();
+  vi.mocked(updatePwa).mockReset();
 });
 
 describe('我的', () => {
@@ -54,8 +59,8 @@ describe('我的', () => {
       ['偏好设置跟随系统', '/me/settings'],
       ['账号与连接', '/me/account'], ['外部阅读器OPDS', '/me/opds'],
     ]);
-    // Only signing out is a button (it asks first); nothing else opens a sheet in place.
-    expect([...root.querySelectorAll('button.mine-row')].map(b => b.textContent)).toEqual(['退出登录']);
+    // Updating runs in place; signing out still asks first.
+    expect([...root.querySelectorAll('button.mine-row')].map(b => b.textContent)).toEqual(['立即更新检查应用版本', '退出登录']);
     // Members see no administration group.
     expect(root.querySelector('[aria-label="管理"]')).toBeNull();
   });
@@ -75,13 +80,44 @@ describe('我的', () => {
     expect(root.querySelector('.mine-profile')?.textContent).toContain('管理员');
   });
 
-  it('signs out through the API, after a confirmation', () => {
+  it('signs out through the API, after a confirmation', async () => {
     useAuthStore.setState({ verifiedUser: user('member') });
     paint();
     act(() => { root.querySelector<HTMLButtonElement>('.mine-row.is-danger')!.click(); });
     expect(signOut).not.toHaveBeenCalled();
     const confirm = [...document.querySelectorAll<HTMLButtonElement>('dialog button')].find(button => button.textContent === '退出登录')!;
-    act(() => { confirm.click(); });
+    await act(async () => { confirm.click(); });
     expect(signOut).toHaveBeenCalledTimes(1);
   });
+});
+
+
+it('offers manual updates to members, disables repeated clicks and announces the result', async () => {
+  useAuthStore.setState({ verifiedUser: user('member') });
+  let finish!: (value: string) => void;
+  vi.mocked(updatePwa).mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  paint();
+  const button = root.querySelector<HTMLButtonElement>('[aria-label="偏好"] button')!;
+  expect(button.textContent).toContain('立即更新');
+  act(() => { button.click(); button.click(); });
+  expect(updatePwa).toHaveBeenCalledTimes(1);
+  expect(button.disabled).toBe(true);
+  expect(button.getAttribute('aria-busy')).toBe('true');
+  expect(button.querySelector('[role=status]')?.textContent).toBe('检查更新中…');
+  await act(async () => { finish('已是最新版本'); });
+  expect(button.disabled).toBe(false);
+  expect(button.querySelector('[role=status]')?.textContent).toBe('已是最新版本');
+});
+
+it('shows update failure in place and permits retry without signing out', async () => {
+  useAuthStore.setState({ verifiedUser: user('member') });
+  vi.mocked(updatePwa).mockRejectedValueOnce(new Error('network')).mockResolvedValue('已是最新版本');
+  paint();
+  const button = root.querySelector<HTMLButtonElement>('[aria-label="偏好"] button')!;
+  await act(async () => { button.click(); });
+  expect(button.querySelector('[role=status]')?.textContent).toBe('更新未完成，请重试');
+  expect(button.disabled).toBe(false);
+  await act(async () => { button.click(); });
+  expect(button.textContent).toContain('已是最新版本');
+  expect(signOut).not.toHaveBeenCalled();
 });
