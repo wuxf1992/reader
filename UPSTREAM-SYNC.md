@@ -438,3 +438,11 @@ React 全流程浏览器回归已通过，40 张手机 / 桌面截图，无页�
 - 停服备份 `/opt/reader/backups/chapter-badges-20261112-20261112-144249`，包含旧 Compose/网页、原书及 DATA_DIR；官方 backup/verify 校验 6,752 文件、260,190,402 字节通过。停服到新健康约 23 秒；旧应用镜像保留。失败回退只还原应用与网页，保留最新数据库和进度。发布后两库完整性/外键、全部原主键、进度不回退、设置/插件/签名密钥保留检查通过，其他容器未重启。现有管理员只读 API、书籍、真实新章字段、插件 1.6.8 和 mediaState ready 检查通过，未创建正式测试账号或刷新令牌。
 - GitHub：代码与源码回退标签 `custom-before-chapter-badges-20261112`（`48f127d`）已上传；正式发布标签 `custom-release-chapter-badges-20261112` 固定实际发布源码 `32def9d`。本记录、API 文档和审查报告单独提交上传 custom；不使用 v* 标签，不推 upstream。
 - 证据目录 `../reader-update-badge-release-20261112/`：完整/定向测试日志、120 主题检查与截图、build-manifest.json、migration-verification.json、runtime-verification.json、publication.json、live-verification.json。未做 iPhone 真机/完整 Android APK/远端 CI/全部书站复验；继承的 npm 告警和 Vite 大包提示保留，未做无关强制升级。
+
+
+## 发布后清理：2026-11-12
+
+- 按用户要求清理垃圾，沿用完整部署、网页、插件各保留最近一份备份的规则。已验证并保留 `/opt/reader/backups/chapter-badges-20261112-20261112-144249`、`web-reader-toc-sync-20261112-105233`、`plugin-shuqi-20261106-060905`；此前记录中的其他七份历史备份已删除，历史发布记录仍保留用于追溯。
+- 当前镜像 `reader-github:chapter-badges-20261112-32def9d` 与最近回退镜像 `reader-github:upstream-20261111-59f8d4d` 保留；删除四个闲置 Reader 镜像及闲置构建缓存。删除五个已合入 custom 的临时工作树/本地分支及八处生成副本，实际回收 3.27 GiB。保留主源码、插件源码、效果图和测试/发布回执。
+- 工作树的非构建类 ignored 文件先逐文件校验归档，私有清理凭据与恢复索引见 `../reader-cleanup-20261112/`，不上传环境文件或数据。旧发布脚本引用的临时工作树已移除，复用时改用当前源码与私有配置；Git 历史和发布标签不变。
+- 清理期间五个生产容器的 ID、镜像、启动时间、重启次数、挂载未变；数据库、书籍、Docker 卷未清理，Compose/签名密钥/当前网页入口哈希不变。完整备份官方 verify、网页清单及插件包/数据库校验通过；清理后现有账号只读 API、书籍新章字段、插件 1.6.8、mediaState ready 和健康复验通过。本提交仅更新文档，不重新部署。
