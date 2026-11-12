@@ -423,3 +423,18 @@ React 全流程浏览器回归已通过，40 张手机 / 桌面截图，无页�
 - 已先推送修复和 `custom-before-toc-sync-20261112`（`23ede21`）；实际网页发布标签 `custom-release-toc-sync-20261112` 指向 `c2ca052`。本文及调研方案单独提交，继续只推个人 origin，不推 upstream 或 `v*` 标签。
 - 新章节角标尚未实施。用户同时要求联网调研实现方式，建议、现状和参考来源见 [新章节标识方案](docs/reader-update-indicator-proposal-20261112.md)。现有 `new_chapters` 是累计检测数，不能直接写成未读章数；消除时机需区分看过目录与读到新增部分，不用无条件 acknowledge 清掉并发新增。
 - 证据目录 `../reader-toc-fix-20261112/`：before.log、after.log、connected.log、build-final.log、browser-final.json、build-manifest.json、live-before.json、publication.json。构建包和线上数据/私有环境不入库；依赖告警及 Vite 大包提示沿用既有版本，未做无关升级。
+
+
+## 主题数字新章节角标：2026-11-12
+
+- 用户确认封面只显示阿拉伯数字、跟随主题颜色，授权完成后上线和上传 GitHub。实际发布源码 `32def9d71e6a64091fd8bdb729e304f37ce1eafc`（含 `3dca085` 主实现、`a77012e` 单条进度兼容修复、`32def9d` 首页独立续读入口补齐）；[完整 Ponytail 审查](docs/reader-chapter-badges-review-20261112.md) 结论 Ship。[功能规则](docs/reader-update-indicator-proposal-20261112.md) 已更新为实现状态。
+- 书架、首页书架区及独立续读封面仅显示数字，零时隐藏；复用 `--color-brand` / `--color-on-brand`，无写死色值。屏幕阅读器从链接名称获知新章数量。字体/圆角用现有设计令牌。前台回到页面、联网恢复及可见页面每分钟查询 Reader；不增加对外部书站的前台抓取。
+- 章节刷新事务按稳定 ID 维护新列 `chapter_subscriptions.pending_chapter_ids`，当前目录是启用基线；旧 `new_chapters` 累计字段保留用于旧版本兼容，不把已读过的历史几十章误标成新提醒。单本、书架和续读 DTO 返回 `newChapters`，按账号投影。定时订阅的启用状态与间隔保留，正式九条订阅仍为每小时检查。
+- 阅读按当前位置消除之前的新增章节；当前章末页可见时，持久化进度携带可选布尔 `chapterComplete`，涵盖一页短章而不改写 locator。批量 POST 和单条 PUT 均验证并传递该信号；旧客户端依然可用结尾 locator 确认。跳到后面会把前面的新增部分视为读过，回看不重新加回。只是开书、读取目录和缓存正文不清除；离线保留已知数，完成信号随原有 outbox 同步。追加新章、旧进度和账号隔离回归通过。
+- 验证覆盖：后端合计 540 项（全量及环境修正/最终定向复验，533 通过、7 项媒体样本跳过）；最终 Node 24 章节/HTTP/同步 26 项通过。网页合计 1,468 项 Vitest 加 22 项 Node 检查；全量两项 CSS 契约失败改用既有令牌后定向复验通过，最终阅读/同步/卡片 145 项、首页/卡片/设计 29 项均通过。两端类型检查和构建通过。首次 Node 24 全量使用镜像默认 WEB_DIR 与只读编译目录造成两项环境失败；修正为不存在的测试 WEB_DIR、独立可写 dist、非 root 后 51 项相关测试全部通过，含权限检查。
+- 浏览器：Chromium/WebKit × 手机/桌面共 120 次主题选择通过，最小数字对比度 5.44:1；数字正数/零转换、离线保留、恢复联网、首页续读封面及溢出检查通过。人工检查日夜与桌面截图；缓存开书、offline-sync、PWA 回归通过，正式最终 bundle 另跑 PWA smoke 通过。实际候选容器 HTTP 计数与两类进度消除、媒体权限及进程低权限检查通过。
+- 生产数据私有副本两次迁移幂等，reader/media 各 32 表所有既有列记录哈希保留；旧镜像读写探针在事务内回滚，避免无意义更新触发同步游标。副本已清理。无新运行依赖；没有变更 upstream、锁文件、入口脚本、Chromium 校准、私有环境或 Compose 的端口/挂载。
+- 北京时间 **2026-11-12 22:43:16** 正式发布完成。镜像 `reader-github:chapter-badges-20261112-32def9d`，ID `sha256:0ad5ce95ee24409cb68a801e506b2c08485701e30da0b029f9d72394dc5b4cf6`；入口 `assets/client-BQ1Ha9eZ.js`，样式 `assets/index-BqS_HE-H.css`。完整 310 文件本地 HTTP SHA-256 校验及公网 HTTPS 七项（index/SW/入口/CSS/manifest/PDF worker/WASM）匹配；额外保留 210 个旧哈希资源。
+- 停服备份 `/opt/reader/backups/chapter-badges-20261112-20261112-144249`，包含旧 Compose/网页、原书及 DATA_DIR；官方 backup/verify 校验 6,752 文件、260,190,402 字节通过。停服到新健康约 23 秒；旧应用镜像保留。失败回退只还原应用与网页，保留最新数据库和进度。发布后两库完整性/外键、全部原主键、进度不回退、设置/插件/签名密钥保留检查通过，其他容器未重启。现有管理员只读 API、书籍、真实新章字段、插件 1.6.8 和 mediaState ready 检查通过，未创建正式测试账号或刷新令牌。
+- GitHub：代码与源码回退标签 `custom-before-chapter-badges-20261112`（`48f127d`）已上传；正式发布标签 `custom-release-chapter-badges-20261112` 固定实际发布源码 `32def9d`。本记录、API 文档和审查报告单独提交上传 custom；不使用 v* 标签，不推 upstream。
+- 证据目录 `../reader-update-badge-release-20261112/`：完整/定向测试日志、120 主题检查与截图、build-manifest.json、migration-verification.json、runtime-verification.json、publication.json、live-verification.json。未做 iPhone 真机/完整 Android APK/远端 CI/全部书站复验；继承的 npm 告警和 Vite 大包提示保留，未做无关强制升级。

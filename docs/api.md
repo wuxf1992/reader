@@ -928,6 +928,11 @@ pluginId 是接口兼容字段。创建返回 201 与 source 对象。本地来�
 | GET /subscriptions | 当前账号的章节更新订阅（`{subscriptions}`） |
 | PATCH /books/:id/subscription | body `{enabled?, intervalMinutes?（15–10080）, acknowledge?}` → `{subscription}` |
 
+章节书在书架列表、单本查询和续读返回的 `Book` 中包含 `newChapters`：当前账号尚未读过的**新增部分**，不是整本书的未读总数。首次启用以现有目录为基线，不把旧的累计检测数回填为新提醒。按稳定章节 ID 追踪，重排、改标题和正文修订不算新增；换源建立新基线。`/subscriptions` 的 `newChapters` 同样返回剩余新增数。
+
+`POST /sync` 的进度项及 `PUT /sync/progress/:bookId` 可附带可选布尔值 `chapterComplete`。客户端在当前章末页可见时发送 `true`，包含只有一页的短章；不改写 `locator`，该信号不作为进度返回字段持久化。进度合并成功后，当前位置之前的新增章节视为读过，当前章到结尾或带该信号时扣减；跳到后面的章节也会确认前面的新增部分。输掉 LWW 的旧进度不能消除新提醒。只打开旧章节、加载目录或缓存正文均不消除提醒。
+
+
 ### 插件（管理员）
 
 | 接口 | 用途 |
