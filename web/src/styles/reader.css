@@ -1637,7 +1637,8 @@ book-content {
     );
 }
 
-.book-card .chapter-update-badge {
+.book-card .chapter-update-badge,
+.home-resume-cover .chapter-update-badge {
   position: absolute;
   inset-block-start: 6px;
   inset-inline-end: 6px;
@@ -1655,6 +1656,15 @@ book-content {
   line-height: 1.4;
   font-variant-numeric: tabular-nums;
   pointer-events: none;
+}
+
+.home-resume-cover .chapter-update-badge {
+  inset-block-start: 3px;
+  inset-inline-end: 3px;
+  min-width: 20px;
+  min-height: 20px;
+  padding: 2px 4px;
+  font-size: var(--text-micro);
 }
 
 .book-card .format-badge {

@@ -147,3 +147,12 @@ describe('首页', () => {
     expect([...root.querySelectorAll<HTMLAnchorElement>('a.home-resume')].map(card => card.dataset.channel)).toEqual(['video', 'read']);
   });
 });
+
+
+it('shows unread new chapter digits on the independent continue-reading cover', async () => {
+  mount({ reading: [{ ...book, format: 'chapters', newChapters: 3 }] });
+  await until(() => root.querySelector('.home-resume[data-channel="read"] .chapter-update-badge')?.textContent === '3');
+  expect(root.querySelector('.home-resume[data-channel="read"] .chapter-update-badge')?.textContent).toBe('3');
+  expect(root.querySelector('.home-resume[data-channel="read"]')?.getAttribute('aria-label')).toContain('3 章新章节未读');
+  expect(root.querySelector('.home-resume[data-channel="video"] .chapter-update-badge')).toBeNull();
+});

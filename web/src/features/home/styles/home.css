@@ -41,7 +41,7 @@
 
 /* A fixed cover box: posters and book covers fill it, square art sits centred in it,
  * so the text column starts at the same x on every card. */
-.home-resume-cover { display: grid; place-items: center; flex: none; width: 60px; height: 90px; }
+.home-resume-cover { position: relative; display: grid; place-items: center; flex: none; width: 60px; height: 90px; }
 .home-resume-cover > img, .home-resume-cover > .home-resume-placeholder, .home-resume-cover > .media-cover {
   width: 100%;
   border-radius: var(--radius-sm);

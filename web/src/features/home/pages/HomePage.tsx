@@ -38,11 +38,11 @@ type Channel = 'read' | 'video' | 'audiobook';
 const CHANNEL_LABEL: Record<Channel, string> = { read: '阅读', video: '影视', audiobook: '有声书' };
 
 /** One shape for every kind of "continue": cover, work title, where you are, how far. */
-function ResumeCard({ channel, to, cover, title, detail, progress, meter }: {
-  channel: Channel; to: string; cover: ReactNode; title: string; detail: string; progress: number; meter: string;
+function ResumeCard({ channel, to, cover, title, detail, progress, meter, newChapters = 0 }: {
+  channel: Channel; to: string; cover: ReactNode; title: string; detail: string; progress: number; meter: string; newChapters?: number;
 }) {
-  return <Link className="home-resume" data-channel={channel} to={to}>
-    <span className="home-resume-cover" aria-hidden="true">{cover}</span>
+  return <Link className="home-resume" data-channel={channel} to={to} aria-label={newChapters ? `${CHANNEL_LABEL[channel]}，${title}，${detail}，${meter}，${newChapters} 章新章节未读` : undefined}>
+    <span className="home-resume-cover" aria-hidden="true">{cover}{newChapters > 0 && <span className="chapter-update-badge">{newChapters}</span>}</span>
     <span className="home-resume-text">
       <span className="home-resume-label">{CHANNEL_LABEL[channel]}</span>
       <strong title={title}>{title}</strong>
@@ -62,7 +62,7 @@ function ResumeBook({ book }: { book: ContinueReadingItem }) {
   const progress = Math.max(0, Math.min(1, book.percentage));
   const title = book.title || '未命名';
   return <ResumeCard channel="read" to={`/book/${encodeURIComponent(book.id)}`} title={title} detail={book.chapterTitle ?? ''}
-    progress={progress} meter={`已读 ${Math.round(progress * 100)}%`}
+    progress={progress} meter={`已读 ${Math.round(progress * 100)}%`} newChapters={book.format === 'chapters' && Number.isSafeInteger(book.newChapters) ? Math.max(0, book.newChapters ?? 0) : 0}
     cover={src ? <img src={src} alt="" /> : <span className="home-resume-placeholder" style={coverTint(title)}>{title}</span>} />;
 }
 
