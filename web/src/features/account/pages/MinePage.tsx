@@ -98,13 +98,15 @@ export function MinePage() {
         <div className="mine-column">
           <Group title="偏好" order={2}>
             <Row icon="sliders" label="偏好设置" value={themeName} to="/me/settings" />
-            <Row icon="refresh" label="立即更新" value={updateStatus} disabled={updating} onClick={() => { void update(); }} />
           </Group>
           <Group title="账号" order={4}>
             <Row icon="account" label="账号与连接" to="/me/account" />
             <Row icon="connect" label="外部阅读器" value="OPDS" to="/me/opds" />
             <Row icon="logout" label="退出登录" danger onClick={() => setSignOutOpen(true)} />
           </Group>
+          <section className="mine-group" aria-label="应用更新" style={{ order: 5 }}><div className="mine-card">
+            <Row icon="refresh" label="立即更新" value={updateStatus} disabled={updating} onClick={() => { void update(); }} />
+          </div></section>
         </div>
       </div>
     </div>

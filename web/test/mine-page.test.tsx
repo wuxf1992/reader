@@ -60,7 +60,7 @@ describe('我的', () => {
       ['账号与连接', '/me/account'], ['外部阅读器OPDS', '/me/opds'],
     ]);
     // Updating runs in place; signing out still asks first.
-    expect([...root.querySelectorAll('button.mine-row')].map(b => b.textContent)).toEqual(['立即更新检查应用版本', '退出登录']);
+    expect([...root.querySelectorAll('button.mine-row')].map(b => b.textContent)).toEqual(['退出登录', '立即更新检查应用版本']);
     // Members see no administration group.
     expect(root.querySelector('[aria-label="管理"]')).toBeNull();
   });
@@ -97,8 +97,12 @@ it('offers manual updates to members, disables repeated clicks and announces the
   let finish!: (value: string) => void;
   vi.mocked(updatePwa).mockImplementation(() => new Promise(resolve => { finish = resolve; }));
   paint();
-  const button = root.querySelector<HTMLButtonElement>('[aria-label="偏好"] button')!;
+  const button = root.querySelector<HTMLButtonElement>('[aria-label="应用更新"] button')!;
   expect(button.textContent).toContain('立即更新');
+  const card = button.closest('section')!;
+  expect(card.previousElementSibling?.getAttribute('aria-label')).toBe('账号');
+  expect(card.closest('.mine-column')).not.toBeNull();
+  expect(card.style.order).toBe('5');
   act(() => { button.click(); button.click(); });
   expect(updatePwa).toHaveBeenCalledTimes(1);
   expect(button.disabled).toBe(true);
@@ -113,7 +117,7 @@ it('shows update failure in place and permits retry without signing out', async 
   useAuthStore.setState({ verifiedUser: user('member') });
   vi.mocked(updatePwa).mockRejectedValueOnce(new Error('network')).mockResolvedValue('已是最新版本');
   paint();
-  const button = root.querySelector<HTMLButtonElement>('[aria-label="偏好"] button')!;
+  const button = root.querySelector<HTMLButtonElement>('[aria-label="应用更新"] button')!;
   await act(async () => { button.click(); });
   expect(button.querySelector('[role=status]')?.textContent).toBe('更新未完成，请重试');
   expect(button.disabled).toBe(false);
