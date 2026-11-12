@@ -111,3 +111,14 @@ it.each(['server', 'account'])('does not expose another scope when a hanging req
     expect(value.offline.replaceBooks).not.toHaveBeenCalled();
   } finally { vi.useRealTimers(); }
 });
+
+it('refreshes badge data on mount, foreground, reconnect and a visible-page interval', () => {
+  const options = shelfQuery(runtime());
+  expect(options).toMatchObject({ refetchOnMount: 'always', refetchOnWindowFocus: true, refetchOnReconnect: 'always', refetchInterval: 60_000 });
+  expect(options.refetchIntervalInBackground).not.toBe(true);
+});
+it('keeps the last known chapter badge with the scoped offline book', async () => {
+  const value = runtime(new ApiError('offline', 'offline'));
+  value.offline.books = () => [{ ...books[0]!, format: 'chapters', newChapters: 3 }];
+  expect((await load(value)).items[0].newChapters).toBe(3);
+});

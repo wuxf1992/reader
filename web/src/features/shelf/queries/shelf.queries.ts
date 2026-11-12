@@ -18,6 +18,10 @@ export function shelfQuery(runtime: AppRuntime, page = 1, sort: 'recent' | 'adde
   return queryOptions({
     queryKey: ['shelf', baseUrl, userId, page, sort, search, filters.status ?? '', filters.series ?? '', filters.tag ?? ''],
     staleTime: sort === 'recent' ? 0 : 60_000,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: 'always',
+    refetchInterval: 60_000,
     queryFn: async ({ signal }) => {
       try {
         const response = await withOfflineTimeout(runtime.api.listBooks({

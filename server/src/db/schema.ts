@@ -25,6 +25,7 @@ ALTER TABLE chapter_resources ADD COLUMN media_type TEXT NOT NULL DEFAULT 'text/
 ALTER TABLE user_books ADD COLUMN reading_status TEXT;
 ALTER TABLE reading_progress ADD COLUMN sync_revision INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE notes ADD COLUMN sync_revision INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE chapter_subscriptions ADD COLUMN pending_chapter_ids TEXT NOT NULL DEFAULT '[]';
 `;
 
 export const SYNC_TRACKING_SQL = `

@@ -56,6 +56,8 @@ export interface BookDto {
    * elsewhere, so a single-book lookup never reports a state it did not compute.
    */
   readingState?: ReadingState | null;
+  /** Newly detected chapters this account has not read yet. */
+  newChapters?: number;
 }
 
 interface BookRow {
@@ -66,6 +68,7 @@ interface BookRow {
   shelf_hidden?: number | null;
   /** READING_STATE, selected only by the shelf's own list. */
   reading_state?: ReadingState | null;
+  new_chapters?: number;
   identifier: string | null;
   content_hash: string;
   format: string;
@@ -275,14 +278,14 @@ export class ShelfService {
     const orderColumn = sortColumn;
     const join = library
       ? 'LEFT JOIN user_books ub ON ub.book_id = b.id AND ub.user_id = ?'
-      : 'JOIN user_books ub ON ub.book_id = b.id LEFT JOIN reading_progress rp ON rp.user_id = ub.user_id AND rp.book_id = b.id';
+      : 'JOIN user_books ub ON ub.book_id = b.id LEFT JOIN reading_progress rp ON rp.user_id = ub.user_id AND rp.book_id = b.id LEFT JOIN chapter_publications cp ON cp.book_id=b.id AND cp.user_id=ub.user_id LEFT JOIN chapter_subscriptions cs ON cs.book_id=cp.book_id';
     const joinParams: Array<string | number> = library ? [userId] : [];
     /*
      * `hidden` is selected only in library scope: on the shelf every row is
      * `hidden = 0` by construction, and a selected constant would become a field the
      * client reads as if it could say something.
      */
-    const shelfColumn = library ? ', ub.hidden AS shelf_hidden' : `, (${READING_STATE}) AS reading_state`;
+    const shelfColumn = library ? ', ub.hidden AS shelf_hidden' : `, (${READING_STATE}) AS reading_state, COALESCE(json_array_length(cs.pending_chapter_ids),0) AS new_chapters`;
 
     const totalRow = this.db.get<{ n: number }>(
       `SELECT COUNT(*) AS n FROM books b ${join} WHERE ${whereSql}`,
@@ -303,8 +306,10 @@ export class ShelfService {
 
   get(userId: string, bookId: string): BookDto {
     const row = this.db.get<BookRow>(
-      `SELECT ${BOOK_COLUMNS} FROM books WHERE id = ?`,
-      bookId,
+      `SELECT ${BOOK_COLUMNS.split(',').map(c => `b.${c.trim()}`).join(', ')}, COALESCE(json_array_length(cs.pending_chapter_ids),0) AS new_chapters
+       FROM books b LEFT JOIN chapter_publications cp ON cp.book_id=b.id AND cp.user_id=?
+       LEFT JOIN chapter_subscriptions cs ON cs.book_id=cp.book_id WHERE b.id=?`,
+      userId, bookId,
     );
     if (!row) throw notFound('book not found');
     const visible = this.db.get<{ n: number }>(
@@ -337,8 +342,10 @@ export class ShelfService {
     const unique = [...new Set(bookIds)].filter((id) => id !== '');
     if (unique.length === 0) return new Map();
     const rows = this.db.all<BookRow>(
-      `SELECT ${BOOK_COLUMNS.split(',').map((c) => `b.${c.trim()}`).join(', ')}, ub.added_at
+      `SELECT ${BOOK_COLUMNS.split(',').map((c) => `b.${c.trim()}`).join(', ')}, ub.added_at, COALESCE(json_array_length(cs.pending_chapter_ids),0) AS new_chapters
        FROM books b JOIN user_books ub ON ub.book_id = b.id
+       LEFT JOIN chapter_publications cp ON cp.book_id=b.id AND cp.user_id=ub.user_id
+       LEFT JOIN chapter_subscriptions cs ON cs.book_id=cp.book_id
        WHERE ub.user_id = ? AND ub.hidden = 0 AND b.id IN (${unique.map(() => '?').join(',')})`,
       userId, ...unique,
     );
@@ -396,6 +403,7 @@ export class ShelfService {
         ? {}
         : { shelfState: row.shelf_hidden === 0 ? ('on' as const) : ('off' as const) }),
       ...(row.reading_state === undefined ? {} : { readingState: row.reading_state }),
+      ...(row.new_chapters === undefined ? {} : { newChapters: row.new_chapters }),
     };
   }
 

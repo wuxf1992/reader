@@ -11,7 +11,7 @@ interface Subscription {
 const FIELDS = `p.book_id AS bookId, p.user_id AS userId, COALESCE(s.enabled,0) AS enabled,
   COALESCE(s.interval_minutes,60) AS intervalMinutes, COALESCE(s.next_check_at,0) AS nextCheckAt,
   s.last_check_at AS lastCheckAt, s.last_success_at AS lastSuccessAt, s.last_error AS lastError,
-  COALESCE(s.failures,0) AS failures, COALESCE(s.new_chapters,0) AS newChapters, COALESCE(s.generation,0) AS generation`;
+  COALESCE(s.failures,0) AS failures, COALESCE(json_array_length(s.pending_chapter_ids),0) AS newChapters, COALESCE(s.generation,0) AS generation`;
 
 /** Durable opt-in subscriptions. One bounded sequential worker shares SourceHost's call budget. */
 export class ChapterUpdates {
@@ -42,7 +42,7 @@ export class ChapterUpdates {
           next_check_at = ?, failures = 0, last_error = NULL, generation = generation + 1 WHERE book_id = ?`,
         input.enabled === undefined ? null : Number(input.enabled), input.intervalMinutes === undefined ? null : Number(input.intervalMinutes), this.now(), bookId);
       }
-      if (input.acknowledge === true) this.db.run('UPDATE chapter_subscriptions SET new_chapters = 0 WHERE book_id = ?', bookId);
+      if (input.acknowledge === true) this.db.run("UPDATE chapter_subscriptions SET new_chapters = 0, pending_chapter_ids = '[]' WHERE book_id = ?", bookId);
     });
     return this.list(userId).find((row) => row.bookId === bookId);
   }

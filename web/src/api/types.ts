@@ -87,6 +87,8 @@ export interface Book {
    * once the book is read. `null`: not started and not marked.
    */
   readingState?: ReadingState | null;
+  /** Newly detected chapters still unread on this account. */
+  newChapters?: number;
 }
 
 export type ReadingState = 'reading' | 'want' | 'finished';
@@ -193,6 +195,8 @@ export interface Progress {
   chapterTitle: string;
   device: string;
   updatedAt: number;
+  /** The final page of the chapter is visible, including single-page chapters. */
+  chapterComplete?: boolean;
 }
 
 export type NoteType = 'note' | 'highlight' | 'bookmark';

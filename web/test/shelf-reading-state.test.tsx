@@ -18,6 +18,7 @@ const { ShelfPage } = await import('../src/features/shelf/pages/ShelfPage.tsx');
 
 const root = document.createElement('div');
 document.body.append(root);
+window.matchMedia ??= () => ({ matches: false, addEventListener() {}, removeEventListener() {} } as unknown as MediaQueryList);
 if (typeof ResizeObserver === 'undefined') {
   globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} } as unknown as typeof ResizeObserver;
 }
@@ -113,4 +114,22 @@ it('reads the filter and sort from the URL on every navigation, not once at moun
   expect(shelfCalls.at(-1)?.slice(1, 3)).toEqual(['recent', '']);
   expect(root.querySelector<HTMLInputElement>('input[type=search]')!.value).toBe('');
   expect(root.querySelector('.shelf-title')?.textContent).toBe('书架');
+});
+
+it('shows only the unread new chapter number and names it for screen readers', () => {
+  shelfResult.data.items = [{ ...book, format: 'chapters', newChapters: 12 }];
+  paint('/shelf');
+  expect(root.querySelector('.chapter-update-badge')?.textContent).toBe('12');
+  expect(root.querySelector('.book-open')?.getAttribute('aria-label')).toContain('12 章新章节未读');
+  expect(root.querySelector('.format-badge')?.textContent).toBe('连载');
+});
+it.each([undefined, 0, -1, 1.5, Infinity, NaN])('hides absent or invalid new chapter counts: %s', newChapters => {
+  shelfResult.data.items = [{ ...book, format: 'chapters', newChapters }];
+  paint('/shelf');
+  expect(root.querySelector('.chapter-update-badge')).toBeNull();
+  expect(root.querySelector('.book-open')?.getAttribute('aria-label')).not.toContain('新章节');
+});
+it('does not show a chapter update badge on file books', () => {
+  shelfResult.data.items = [{ ...book, newChapters: 3 }]; paint('/shelf');
+  expect(root.querySelector('.chapter-update-badge')).toBeNull();
 });

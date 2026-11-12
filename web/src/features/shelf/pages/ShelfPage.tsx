@@ -28,10 +28,12 @@ export function BookCard({ book, showAuthor, showProgress, menu }: { book: Book 
   const runtime = useRuntime();
   const src = useCover(runtime.api, book.coverUrl);
   const progress = 'percentage' in book ? book.percentage : runtime.offline?.progressFor(book.id)?.percentage;
+  const newChapters = book.format === 'chapters' && Number.isSafeInteger(book.newChapters) ? Math.max(0, book.newChapters ?? 0) : 0;
   return <div className="book-card" data-shelf-book-id={book.id}>
-    <Link className="book-open" aria-label={`${book.title} ${book.author ?? ''}`.trim()} to={`/book/${encodeURIComponent(book.id)}`}>
+    <Link className="book-open" aria-label={`${book.title} ${book.author ?? ''}`.trim() + (newChapters ? `，${newChapters} 章新章节未读` : '')} to={`/book/${encodeURIComponent(book.id)}`}>
       <div className="cover">
         {src ? <img src={src} alt="" loading="lazy" /> : <div className="placeholder" style={coverTint(book.title || '')}>{book.title || '无封面'}</div>}
+        {newChapters > 0 && <span className="chapter-update-badge" aria-hidden="true">{newChapters}</span>}
         <span className="format-badge">{book.format?.toUpperCase() === 'CHAPTERS' && menu ? '连载' : book.format || '书籍'}</span>
         {showProgress && progress !== undefined && progress > 0 && <div className="cover-progress"><span style={{ width: `${Math.round(Math.max(0, Math.min(1, progress)) * 100)}%` }} /></div>}
       </div>

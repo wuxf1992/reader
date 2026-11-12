@@ -1637,6 +1637,26 @@ book-content {
     );
 }
 
+.book-card .chapter-update-badge {
+  position: absolute;
+  inset-block-start: 6px;
+  inset-inline-end: 6px;
+  min-width: 22px;
+  min-height: 22px;
+  padding: 2px 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-pill);
+  background: var(--color-brand);
+  color: var(--color-on-brand);
+  font-size: var(--text-meta);
+  font-weight: 650;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
 .book-card .format-badge {
   position: absolute;
   inset-block-end: 0.3rem;

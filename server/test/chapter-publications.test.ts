@@ -320,3 +320,65 @@ test('forced chapter refresh replaces cache atomically and preserves old text on
     await assert.rejects(f.chapters.asset('u1', id, ref, undefined, true), { code: 'CHAPTER_SNAPSHOT_EXPIRED' });
   } finally { f.db.close(); await rm(f.root, { recursive: true, force: true }); }
 });
+
+test('new chapter badges follow accepted reading positions without clearing later updates', async () => {
+  const f = await fixture();
+  try {
+    const { ShelfService } = await import('../src/services/shelf.ts');
+    const { SyncService, validateSyncRecord } = await import('../src/services/sync.ts');
+    assert.throws(() => validateSyncRecord({ chapterComplete: 'true' }), { code: 'BAD_PAYLOAD' });
+    const shelf = new ShelfService(f.db), sync = new SyncService(f.db, shelf);
+    const id = await f.chapters.acquire(f.provider, f.context, { entryRef: 'book' }, 'book', { ref: 'book', title: '远程书' });
+    const updates = new ChapterUpdates(f.db, f.chapters);
+    updates.configure('u1', id, { enabled: true });
+    const items = (ids: string[]) => ids.map((id, seq) => ({ id, seq, title: id, kind: 'chapter' as const, mediaType: 'text/plain', ref: 'provider-' + id }));
+    const count = () => shelf.list('u1').items.find(book => book.id === id)!.newChapters;
+    assert.equal(count(), 0, 'existing chapters are the baseline');
+    f.db.run('UPDATE chapter_subscriptions SET new_chapters=91 WHERE book_id=?', id);
+    assert.equal(count(), 0, 'legacy cumulative counts do not become unread badges');
+    f.setItems(items(['one', 'two', 'three', 'four']));
+    let fresh = await updates.check('u1', id);
+    assert.equal(count(), 2);
+    assert.equal(shelf.getMany('u1', [id]).get(id)!.newChapters, 2);
+    assert.equal(shelf.getMany('other', [id]).size, 0);
+    await f.chapters.asset('u1', id, fresh.items[2]!.resourceRef!);
+    assert.equal(count(), 2, 'loading or downloading chapters does not mark them read');
+    let stamp = 100;
+    const progress = (href: string, offset: string, updatedAt = ++stamp, user = 'u1') => sync.push(user, { progress: [{ bookId: id, locator: `r1:${offset}:${href}`, percentage: 1, chapterTitle: '', device: 'test', updatedAt }] });
+    progress(fresh.items[1]!.href, '1.0000');
+    assert.equal(count(), 2, 'opening old chapters does not dismiss updates');
+    progress(fresh.items[2]!.href, '0.5000');
+    assert.equal(count(), 2, 'the current chapter remains unread before its end');
+    progress(fresh.items[2]!.href, '1.0000@123');
+    assert.equal(count(), 1);
+    assert.equal(sync.recentlyRead('u1')[0]!.newChapters, 1);
+    const oldLast = fresh.items[3]!.href;
+    f.setItems(items(['one', 'two', 'three', 'four', 'five']));
+    fresh = await updates.check('u1', id);
+    assert.equal(count(), 2);
+    progress(oldLast, '1.0000');
+    assert.equal(count(), 1, 'a late old-directory write cannot clear the new fifth chapter');
+    progress(fresh.items[4]!.href, '1.0000', 1);
+    assert.equal(count(), 1, 'a rejected stale progress position cannot dismiss updates');
+    f.db.run("INSERT INTO users(id,username,password_hash,role,created_at,updated_at) VALUES('other','other','x','member',0,0)");
+    progress(fresh.items[4]!.href, '1.0000', ++stamp, 'other');
+    assert.equal(count(), 1, 'another account cannot change the owner badge');
+    progress(fresh.items[0]!.href, '0.5000');
+    assert.equal(count(), 1, 'going backwards does not recreate already read updates');
+    progress(fresh.items[4]!.href, '1.0000');
+    assert.equal(count(), 0);
+    assert.equal(updates.list('u1')[0]!.newChapters, 0);
+    await updates.check('u1', id);
+    assert.equal(count(), 0, 'unchanged checks never recreate the badge');
+    f.setItems(items(['five', 'one', 'two', 'three', 'four']));
+    await updates.check('u1', id); assert.equal(count(), 0, 'reordering is not a new chapter');
+    f.setItems(items(['five', 'one', 'two', 'three', 'four', 'six']));
+    await updates.check('u1', id); assert.equal(count(), 1);
+    f.setItems(items(['five', 'one', 'two', 'three', 'four']));
+    await updates.check('u1', id); assert.equal(count(), 0, 'removed updates leave no stale badge');
+    f.setItems(items(['five', 'one', 'two', 'three', 'four', 'short']));
+    fresh = await updates.check('u1', id); assert.equal(count(), 1);
+    sync.push('u1', { progress: [{ bookId: id, locator: `r1:0.0000:${fresh.items[5]!.href}`, percentage: 0, chapterTitle: '', device: 'test', updatedAt: ++stamp, chapterComplete: true }] });
+    assert.equal(count(), 0, 'a single-page chapter can be completed without changing its locator');
+  } finally { f.db.close(); await rm(f.root, { recursive: true, force: true }); }
+});

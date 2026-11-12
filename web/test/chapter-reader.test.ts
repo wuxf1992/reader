@@ -1376,3 +1376,12 @@ it.each(['wheel','pending-touch'] as const)('does not pull a chapter behind an o
  else{const event=new Event('touchend');Object.assign(event,{changedTouches:[{clientY:250}]});host.dispatchEvent(event);}
  expect(turn).not.toHaveBeenCalled();
 });
+
+
+it('sends single-page chapter completion with its real reading position', async () => {
+  const env = await setup(); serve(env.transport, content(['a'])); await env.screen.open(book);
+  const reader = env.screen as unknown as { view: ReaderView };
+  const position = reader.view.position();
+  await env.screen.flushProgress();
+  expect(env.offline.progressFor(book.id)).toMatchObject({ locator: position.locator, chapterComplete: true });
+});

@@ -137,7 +137,10 @@ export function HomePage() {
   const user = useAuthStore(state => state.verifiedUser ?? state.session?.user ?? null);
   const reading = useQuery({
     queryKey: ['home', 'reading', runtime.api.baseUrl, user?.id],
-    queryFn: ({ signal }) => runtime.api.continueReading(1, { signal }),
+    queryFn: ({ signal }) => runtime.api.continueReading(1, { signal, fresh: true }),
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: 'always',
+    refetchInterval: 60_000,
   });
   const shelf = useShelf(1, 'recent');
   // 首页显示最近续播 (偏好设置 › 影音浏览) off: no video/audiobook continue cards; books are not media.

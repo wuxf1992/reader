@@ -1780,6 +1780,7 @@ export class ReaderScreen {
         locator: position.locator,
         percentage: position.percentage,
         chapterTitle: position.chapterTitle,
+        ...(book.format === 'chapters' && position.chapterPages > 0 && position.pageInChapter === position.chapterPages ? { chapterComplete: true } : {}),
         device: this.options.platform.deviceLabel,
         updatedAt: now,
       })

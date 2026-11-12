@@ -128,6 +128,14 @@ export class ChapterPublications {
       if (revision !== publication.revision) {
         const now = Date.now();
         this.db.transaction(() => {
+          const oldIds = new Set((JSON.parse(publication.snapshot_json) as ManifestSnapshot).items.map(item => item.id));
+          const row = this.db.get<{ pending_chapter_ids: string }>('SELECT pending_chapter_ids FROM chapter_subscriptions WHERE book_id = ?', bookId);
+          const pending = new Set<string>(row ? JSON.parse(row.pending_chapter_ids) : []);
+          const currentIds = new Set(snapshot.items.map(item => item.id));
+          for (const item of snapshot.items) if (!oldIds.has(item.id)) pending.add(item.id);
+          this.db.run(`INSERT INTO chapter_subscriptions(book_id,pending_chapter_ids) VALUES(?,?)
+            ON CONFLICT(book_id) DO UPDATE SET pending_chapter_ids=excluded.pending_chapter_ids`,
+          bookId, JSON.stringify([...pending].filter(id => currentIds.has(id))));
           this.saveSnapshot(bookId, revision, snapshot, snapshotJson, now);
           this.db.run(
             'UPDATE chapter_publications SET revision = ?, version = ?, snapshot_json = ?, updated_at = ? WHERE book_id = ?',
@@ -234,7 +242,7 @@ export class ChapterPublications {
         this.db.run('UPDATE books SET content_hash = ?, page_count = ?, updated_at = ? WHERE id = ?', revision, snapshot.items.length, now, bookId);
         this.db.run('DELETE FROM source_acquisitions WHERE book_id = ? AND user_id = ?', bookId, context.userId);
         this.addAcquisition(context, { entryRef }, bookId, now);
-        this.db.run('UPDATE chapter_subscriptions SET new_chapters = 0, generation = generation + 1 WHERE book_id = ?', bookId);
+        this.db.run("UPDATE chapter_subscriptions SET new_chapters = 0, pending_chapter_ids = '[]', generation = generation + 1 WHERE book_id = ?", bookId);
       });
       return { content: this.manifest(context.userId, bookId), href: 'chapter:' + hash(chapterId) };
     });

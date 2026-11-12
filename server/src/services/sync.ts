@@ -1,4 +1,5 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import type { ManifestSnapshot } from '../sources/types.ts';
 import type { Db } from '../db/index.ts';
 import { badRequest } from '../lib/errors.ts';
 import type { BookDto, ShelfService } from './shelf.ts';
@@ -29,6 +30,8 @@ export interface ProgressRecord {
   chapterTitle: string;
   device: string;
   updatedAt: number;
+  /** The final page of the chapter is visible, including single-page chapters. */
+  chapterComplete?: boolean;
 }
 
 export interface NoteRecord {
@@ -66,6 +69,7 @@ export function validateSyncRecord(value: unknown): void {
   }
   if (record.updatedAt !== undefined && (typeof record.updatedAt !== 'number' || !Number.isSafeInteger(record.updatedAt) || record.updatedAt < 0)) throw badRequest('invalid updatedAt', 'BAD_PAYLOAD');
   if (record.percentage !== undefined && (typeof record.percentage !== 'number' || !Number.isFinite(record.percentage))) throw badRequest('invalid percentage', 'BAD_PAYLOAD');
+  if (record.chapterComplete !== undefined && typeof record.chapterComplete !== 'boolean') throw badRequest('invalid chapterComplete', 'BAD_PAYLOAD');
   if (record.deleted !== undefined && typeof record.deleted !== 'boolean') throw badRequest('invalid deleted', 'BAD_PAYLOAD');
 }
 
@@ -153,7 +157,30 @@ export class SyncService {
       userId, record.bookId, record.locator ?? '', percentage,
       record.chapterTitle ?? '', record.device ?? '', record.updatedAt,
     );
+    this.readChapterUpdates(userId, record);
     this.recordHistory(userId, record, percentage);
+  }
+
+  private readChapterUpdates(userId: string, record: ProgressRecord): void {
+    const position = /^r1:(\d+(?:\.\d+)?)(?:@\d+)?:chapter:([a-f0-9]{64})$/.exec(record.locator ?? '');
+    if (!position || Number(position[1]) > 1) return;
+    const row = this.db.get<{ pending_chapter_ids: string; snapshot_json: string; provider_ref: string }>(
+      `SELECT s.pending_chapter_ids,c.snapshot_json,r.provider_ref FROM chapter_publications c
+       JOIN chapter_subscriptions s ON s.book_id=c.book_id
+       JOIN chapter_resources r ON r.book_id=c.book_id AND r.revision=c.revision AND r.chapter_id=?
+       JOIN reading_progress p ON p.book_id=c.book_id AND p.user_id=c.user_id
+       WHERE c.user_id=? AND c.book_id=? AND p.updated_at=? AND p.locator=? AND json_array_length(s.pending_chapter_ids)>0`,
+      position[2]!, userId, record.bookId, record.updatedAt, record.locator,
+    );
+    if (!row) return;
+    const items = (JSON.parse(row.snapshot_json) as ManifestSnapshot).items;
+    const index = items.findIndex(item => item.ref === row.provider_ref && createHash('sha256').update(item.id).digest('hex') === position[2]);
+    if (index < 0) return;
+    // A stored reading position confirms earlier chapters; the current one needs its end reached.
+    const read = new Set(items.slice(0, index + (Number(position[1]) === 1 || record.chapterComplete === true ? 1 : 0)).map(item => item.id));
+    const pending = JSON.parse(row.pending_chapter_ids) as string[];
+    const remaining = pending.filter(id => !read.has(id));
+    if (remaining.length !== pending.length) this.db.run('UPDATE chapter_subscriptions SET pending_chapter_ids=? WHERE book_id=?', JSON.stringify(remaining), record.bookId);
   }
 
   /**
