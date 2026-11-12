@@ -585,6 +585,20 @@ export class ReaderView {
 
   }
 
+  /** Adopt a checked directory without rendering over the current page. */
+  updateWindow(content: BookContent): boolean {
+    const section = this.doc.sections[this.sectionIndex];
+    const item = content.items.find(item => item.href === section?.id);
+    if (!this.staged || !section || !item) return false;
+    const local = adoptWindow(this.doc, content, item.seq);
+    if (local < 0) return false;
+    // Retain the displayed body, selection and scroll position when the directory changes.
+    this.doc.sections[local] = section;
+    this.sectionIndex = local;
+    this.doc.toc = content.items.map(item => ({ id: item.href, label: item.title, depth: 0 }));
+    return true;
+  }
+
   /**
    * Replace the loaded window of a staged book, and land on `spine`.
    *
@@ -811,6 +825,10 @@ export class ReaderView {
     try { if (this.staged) await this.staged.loadSection(index); }
     catch (error) { if (epoch !== this.openingEpoch) return; throw error; }
     if (epoch !== this.openingEpoch) return;
+    // A background directory update can move this chapter while its body is loading.
+    index = this.doc.sections.findIndex(candidate => candidate.id === section.id);
+    if (index < 0) return;
+    this.doc.sections[index] = section;
     if (this.staged && !this.doc.sections[index]?.id.startsWith('chapter:') && shouldPrefetch()) void this.staged.loadSection(index + 1).catch(() => undefined);
     this.sectionIndex = index;
     this.searchAnchor = null;
@@ -824,6 +842,9 @@ export class ReaderView {
       await this.renderReflowable(section);
     }
     if (epoch !== this.openingEpoch) return;
+    index = this.doc.sections.findIndex(candidate => candidate.id === section.id);
+    if (index < 0) return;
+    this.sectionIndex = index;
     this.options.onChapterChange?.(index, section);
     this.refreshSpokenChunks();
     this.restoreOffset();

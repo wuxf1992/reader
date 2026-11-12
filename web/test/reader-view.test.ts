@@ -237,6 +237,25 @@ describe('ReaderView navigation', () => {
     expect(view.position().chapterTitle).toBe('第 91 章');
   });
 
+  it('keeps a pending chapter jump on the same reference when the directory inserts a chapter', async () => {
+    const old = windowOf(0, 2, 2), fresh = windowOf(0, 3, 3);
+    fresh.items = [old.items[0]!, fresh.items[2]!, old.items[1]!].map((item, seq) => ({ ...item, seq }));
+    let finish!: () => void;
+    const doc = createStagedDoc({ kind: 'reflowable', content: old, toc: [], loader: { async read(item) {
+      if (item.href === old.items[1]!.href) await new Promise<void>(resolve => { finish = resolve; });
+      return { html: `<p>${item.title}</p>` };
+    } } });
+    (doc as BookDoc & { staged?: unknown }).staged = doc;
+    const view = make(container, doc); await view.open(0);
+    const pending = view.open(1); await vi.waitFor(() => expect(finish).toBeDefined());
+    const page = view.elementHost.shadow.querySelector('.book-flow')!.firstChild;
+    expect(view.updateWindow(fresh)).toBe(true);
+    expect(view.elementHost.shadow.querySelector('.book-flow')!.firstChild).toBe(page);
+    finish(); await pending;
+    expect(view.position().sectionId).toBe(old.items[1]!.href);
+    expect(view.currentChapterPosition).toBe(2);
+  });
+
   it('refuses a window that does not hold the chapter', async () => {
     const view = make(container, stagedBook(40, 120, 0));
     await view.open(7, 0);

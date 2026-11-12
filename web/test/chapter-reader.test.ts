@@ -1166,6 +1166,28 @@ it('updates metadata and replacement bytes in the background without replacing t
   expect(env.transport.requests.filter(request => request.url.includes('/assets?')).map(request => new URL(request.url, 'http://test').searchParams.get('ref'))).toEqual(['resource:r2:a']);
 });
 
+it.each([['a', 'b', 'c'], ['x', 'a', 'y', 'b', 'c']])('shows the checked directory %j without refreshing or replacing the current page', async (...ids) => {
+  const env = await setup(); await cacheNovel(env);
+  const fresh = content(ids, 'r2'); serve(env.transport, fresh);
+  let finish!: (value: Manifest) => void;
+  vi.spyOn(env.api, 'manifest').mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  vi.spyOn(env.api, 'items').mockResolvedValue(fresh);
+  const refresh = vi.spyOn(env.api, 'refreshPublication');
+  await env.screen.open(book); await click(env.screen, '目录');
+  expect(env.screen.element.textContent).not.toContain('章节 c');
+  const page = body(env.screen), position = (env.screen as unknown as { view: ReaderView }).view.position();
+  finish(manifest(fresh));
+  await vi.waitFor(() => expect(env.screen.element.textContent).toContain('章节 c'));
+  expect(body(env.screen)).toBe(page);
+  expect(body(env.screen)?.textContent).toContain('resource:r1:a');
+  expect((env.screen as unknown as { view: ReaderView }).view.position().locator).toBe(position.locator);
+  expect(refresh).not.toHaveBeenCalled();
+  await click(env.screen, '目录'); await click(env.screen, '下一章');
+  await vi.waitFor(() => expect(body(env.screen)?.textContent).toContain('resource:r2:' + ids[ids.indexOf('a') + 1]));
+  await click(env.screen, '目录'); await click(env.screen, '章节 c');
+  await vi.waitFor(() => expect(body(env.screen)?.textContent).toContain('resource:r2:c'));
+});
+
 it('keeps the readable cache if a replacement chapter is unavailable', async () => {
   const env = await setup(), cache = await cacheNovel(env); serve(env.transport, content(['a', 'b'], 'r2'));
   vi.spyOn(env.api, 'asset').mockRejectedValue(new ApiError('not_found', 'temporarily missing'));

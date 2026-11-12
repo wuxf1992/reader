@@ -955,7 +955,8 @@ export class ReaderScreen {
 
   private async revalidateCachedNovel(book: Book, token: number, openingProgress: Progress | undefined): Promise<void> {
     const run = new AbortController(); this.cacheRefresh = run;
-    const manifest = this.manifest, overrides = this.overrides;
+    let manifest = this.manifest;
+    const overrides = this.overrides;
     const baseUrl = this.options.api.baseUrl, userId = this.options.api.currentSession()?.user.id;
     const stillOpen = () => !run.signal.aborted && !this.disposed && token === this.loadingToken
       && this.manifest === manifest && this.options.api.baseUrl === baseUrl;
@@ -987,7 +988,15 @@ export class ReaderScreen {
               await this.publicationCache.putResource(book.id, ref, bytes);
             }
           }
-          if (current()) await this.publicationCache.putManifest(book.id, fresh);
+          if (!current()) return;
+          await this.publicationCache.putManifest(book.id, fresh);
+          if (!current() || !fresh.content || !isStagedKind(fresh.content.kind)) return;
+          // Publish the checked directory while keeping the current chapter and position intact.
+          this.view?.updateWindow(fresh.content);
+          this.manifest = manifest = fresh;
+          this.content = fresh.content;
+          this.patch({ toc: fresh.content.items.map(item => ({ id: item.href, label: item.title, depth: 0, spine: item.seq })), chapterCount: fresh.content.total, chapterIndex: (this.view?.currentChapterPosition ?? 0) + 1 });
+          if (this.chrome.tocOpen) await this.refreshTocCache();
         }).catch(error => { if (error instanceof ApiError && error.kind !== 'not_found') failed(error); }),
         this.options.api.readingOverrides(book.id, { signal: run.signal }).then(async fresh => {
           if (current() && this.overrides === overrides && Number.isSafeInteger(fresh?.version) && Array.isArray(fresh.corrections)) {
