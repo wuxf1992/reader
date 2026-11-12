@@ -75,6 +75,7 @@ export function registerSyncRoutes(app: FastifyInstance, ctx: AppContext): void 
         locator: body.locator ?? '',
         percentage: typeof body.percentage === 'number' ? body.percentage : 0,
         chapterTitle: body.chapterTitle ?? '',
+        ...(body.chapterComplete === undefined ? {} : { chapterComplete: body.chapterComplete }),
         device: body.device ?? '',
         updatedAt: body.updatedAt ?? Date.now(),
       }],

@@ -405,3 +405,18 @@ test('source details report the current account shelf and preview validated cove
   delete state.cover; await fixture.state(state);
   assert.equal((await h.app.inject({method: 'GET', url: path + 'cover' + query, headers: auth(member)})).statusCode, 404);
 });
+
+test('single progress reports preserve short chapter completion for the shelf badge', async t => {
+  const h = await harness(); t.after(() => h.close());
+  const fixture = await installFixture(h), id = await acquire(h, h.admin);
+  const state = initialState(); state.items.push(chapter('fourth', 3, '第四章')); state.resources.fourth = '短章节正文';
+  await fixture.state(state);
+  const refreshed = await h.app.inject({ method: 'POST', url: `/api/v1/books/${id}/refresh`, headers: auth(h.admin) });
+  assert.equal(refreshed.statusCode, 200);
+  const count = async () => (await h.app.inject({ method: 'GET', url: `/api/v1/books/${id}`, headers: auth(h.admin) })).json().book.newChapters;
+  assert.equal(await count(), 1);
+  const fresh = await manifest(h, h.admin, id), locator = `r1:0.0000:${fresh.items[3]!.href}`;
+  const saved = await h.app.inject({ method: 'PUT', url: `/api/v1/sync/progress/${id}`, headers: auth(h.admin), payload: { locator, percentage: 0, updatedAt: Date.now(), chapterComplete: true } });
+  assert.equal(saved.statusCode, 200); assert.equal(saved.json().progress.locator, locator);
+  assert.equal(await count(), 0);
+});
