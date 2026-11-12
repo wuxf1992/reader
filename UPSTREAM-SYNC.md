@@ -412,3 +412,14 @@ React 全流程浏览器回归已通过，40 张手机 / 桌面截图，无页�
 - GitHub：`59f8d4d` 和源码回退标签 `custom-before-release-20261111`（`75fb5b0`）已先行推送个人 origin；正式发布标签 `custom-release-upstream-20261111` 固定实际上线源码 `59f8d4d`。本文和审查报告的最终发布记录单独提交并推送 custom，main 仍为纯上游 `67c4fbb`；不推上游，不触发 `v*` 镜像工作流。
 - 构建、测试、迁移、首次回退和正式发布回执：`../reader-release-20261111/`，含 build-manifest.json、migration-verification.json、runtime-verification.json、browser-release-*.json、first-attempt-rollback.json、publication.json、live-verification.json。构建环境文件保持 ignored，不上传运行数据或凭据。
 - 未验证：iPhone 真机/锁屏、完整 Android APK、远端 CI、全部外部书站。既有 npm audit 告警（web 六项、server 六项）版本与本次合并前一致；未做无关依赖升级或强制 audit fix。Vite 大包提示仍在。后续发布预检应包含 BusinessSettings 启动初始化，而非只跑 Db 迁移，避免把合法新增设置误判为数据改写。
+
+## 自动采用追更新目录：2026-11-12
+
+- 用户反馈定时追更正常、开书仍需手动刷新目录。确认不是任务丢失：正式九条订阅仍启用，当前每小时检查；但 `revalidateCachedNovel` 把后台取得的新 manifest 只落入本机缓存，没有采用到当前页面，导致目录与章数停留在开书时的快照。定时检查间隔内书站刚发布的章节仍要等下一次成功检查，此次修复不把定时任务改成即时推送。
+- 修复源码 `c2ca052a411916f539c8e64064f235e273637aed`：在落盘成功及账号/服务/开书令牌仍匹配后，更新 manifest、目录、章数和阅读视图的章节映射；保留当前章节对象及其正文、选区、滚动位置。目录中间插章时按稳定 href 重新定位章节索引；正在加载的跳章在返回后重新按 href 定位，避免把旧索引当成新位置。手动刷新/换源/关闭及权限拒绝原有取消逻辑保留。
+- 修复前新增回归复现失败：后台已返回第三章，当前目录仍只有两章。修复后关联四个文件 171 项测试通过，覆盖直接采用目录、新增章节进入、中间插章后的下一章、并发加载时的插章、分页/重排、账号与关闭后的迟到响应、离线和鉴权失败；生产 build（含 typecheck）通过。主工作区首次构建发现依赖目录旧于当前锁文件、缺少 pdfjs-dist，按原锁 `npm ci --ignore-scripts` 补齐后通过，未改依赖声明或锁文件。
+- 最终生产包浏览器验收：novel-cache-open、reader-touch、pwa/smoke 均 exit 0。Chromium/WebKit 手机及相关桌面用例通过缓存先开书、位置两种选择、翻页取消与跨章、PWA 根/子路径更新和离线检查；原断言未放宽。未重复后端/FFmpeg 全量及真机检查，后端源码没有变化。
+- 北京时间 **2026-11-12 18:52:33** 发布完整 310 个网页文件，入口 `assets/client-DRQzlsyM.js`，样式 `assets/index-DpTbR8pc.css`。逐项本机 HTTP SHA-256 及公网 HTTPS index/SW/入口/CSS/manifest 匹配，健康正常。完整旧网页备份 `/opt/reader/backups/web-reader-toc-sync-20261112-105233/web`；保留旧哈希资源，发布脚本校验失败自动恢复旧网页。本次只替换网页，Reader 容器 ID/StartedAt 相同，后端仍为 `reader-github:upstream-20261111-59f8d4d`，未执行数据库/插件变更。
+- 已先推送修复和 `custom-before-toc-sync-20261112`（`23ede21`）；实际网页发布标签 `custom-release-toc-sync-20261112` 指向 `c2ca052`。本文及调研方案单独提交，继续只推个人 origin，不推 upstream 或 `v*` 标签。
+- 新章节角标尚未实施。用户同时要求联网调研实现方式，建议、现状和参考来源见 [新章节标识方案](docs/reader-update-indicator-proposal-20261112.md)。现有 `new_chapters` 是累计检测数，不能直接写成未读章数；消除时机需区分看过目录与读到新增部分，不用无条件 acknowledge 清掉并发新增。
+- 证据目录 `../reader-toc-fix-20261112/`：before.log、after.log、connected.log、build-final.log、browser-final.json、build-manifest.json、live-before.json、publication.json。构建包和线上数据/私有环境不入库；依赖告警及 Vite 大包提示沿用既有版本，未做无关升级。
