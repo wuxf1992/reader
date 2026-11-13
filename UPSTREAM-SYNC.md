@@ -457,3 +457,12 @@ React 全流程浏览器回归已通过，40 张手机 / 桌面截图，无页�
 - 北京时间 **2026-11-13 07:17:18** 发布完整 310 个网页文件，入口 `assets/client-CntFGcNC.js`，样式 `assets/index-9BqJTB8q.css`。全部文件本机 HTTP 哈希匹配，公网 index/SW/入口/CSS/manifest 匹配，健康及现有账号只读书籍/新章计数/插件 1.6.8/mediaState ready 复验通过。五个生产容器的 ID、镜像、启动时间、重启次数和挂载不变；后端仍为 `reader-github:chapter-badges-20261112-32def9d`。未更改数据库、书籍、插件、Compose 或签名密钥。
 - 发布前完整网页备份 `/opt/reader/backups/web-reader-mine-update-20261112-231715/web` 逐文件校验通过，失败路径只恢复网页；保留 239 个旧静态文件供已有页面继续加载。按原清理规则移除过期网页备份 `web-reader-toc-sync-20261112-105233` 与任务临时脚本，最新完整部署、网页、插件备份各一份保留，两份应用镜像保留。测试、截图、配置回退和发布凭据在 `../reader-pwa-diagnosis-20261113/`，不上传私有环境与数据。
 - 源码及回退标签 `custom-before-mine-update-20261113`（`4848128`）已推个人 origin；正式发布标签 `custom-release-mine-update-20261113` 固定 `e475d63`，发布记录另提交 custom，不推 upstream 或 v* 标签。首次使用新卡片须让旧页面更新一次；可先用原自动更新提示，或关闭 Reader 页面和独立窗口后重新打开，不需要清站点数据。未做 iPhone 真机、Android APK、远端 CI 或无关后端全量测试；既有 Vite 大包提示保留。
+
+
+## 首页新章书可见性修复：2026-11-13
+
+- 用户确认在首页看不到数字提醒。只读任务状态确认已有待提醒章节，但对应书排第九，首页只取最近八本；并非该数字没有生成。修复源码 `551ed1bbb4c8b5ac195f252081962d231483c6f7`：在首页已取回的书架数据中将待提醒书稳定排在前面，再取八本；同组原顺序保留，不修改共享查询数组。归零后回到原最近阅读顺序，「继续阅读」仍是最近那本，完整书架排序保持原规则。首页沿用原有首批 60 本数据范围。
+- 新增第九本新章书的回归在修复前失败，修复后首页/书架/PWA/Mine 共 52 项通过；覆盖数字、归零回序、继续阅读与缓存数组不变。类型检查及构建通过。最终 Chromium/WebKit × 手机/桌面四组验证数字直接可见、归零恢复顺序、离线保留数字及续读不变；PWA 根/子路径回归和界面检测通过。[Ponytail 审查](docs/reader-home-updates-review-20261113.md) 结论 Ship。没有新接口、依赖、样式或后台抓取。
+- 北京时间 **2026-11-13 14:49:41** 发布完整 310 个网页文件，入口 `assets/client-CDOfDStC.js`，样式 `assets/index-9BqJTB8q.css`。全部本机 HTTP 哈希、公网 index/SW/入口/CSS/manifest 匹配；公网真实浏览器安装新版离线资源通过，健康正常。五个生产容器及 Compose/签名密钥不变，后端仍为 `reader-github:chapter-badges-20261112-32def9d`，没有写入正式账号、阅读进度或书籍数据。
+- 网页回退备份 `/opt/reader/backups/web-reader-home-updates-20261113-064938/web` 已逐文件验证；保留 267 个旧静态文件供已有页面加载。按原保留规则删除被替代的 `web-reader-mine-update-20261112-231715`，完整部署/网页/插件备份各最近一份及当前/最近应用回退镜像保留。证据 `../reader-chapter-badge-diagnosis-20261113/` 含修复前失败、测试、浏览器截图、构建/发布/清理凭据，不上传正式私有数据。
+- 源码及回退标签 `custom-before-home-updates-20261113`（`c6396c5`）已推个人 origin；发布标签 `custom-release-home-updates-20261113` 固定 `551ed1b`，本记录另提交 custom，不推 upstream 或 v* 标签。未做 iPhone 真机、远端 CI、无关后端全量或所有书源修复；诊断时七条订阅最近检查失败，会影响后续发现新章，本次不伪造数字或回填旧累计数。
