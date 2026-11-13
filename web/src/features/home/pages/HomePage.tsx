@@ -150,9 +150,7 @@ export function HomePage() {
   const unfinished = (items?: Activity[]) => items?.find(item => !item.completed);
   const book = reading.data?.[0];
   const videoActivity = media&&showContinue ? unfinished(video.data?.items) : undefined, audioActivity = media&&showContinue ? unfinished(audio.data?.items) : undefined;
-  const books = [...(shelf.data?.items ?? [])]
-    .sort((a, b) => Number((b.newChapters ?? 0) > 0) - Number((a.newChapters ?? 0) > 0))
-    .slice(0, 8);
+  const books = (shelf.data?.items ?? []).slice(0, 8);
   const name = user?.displayName || user?.username || '';
 
   // Most recent first, whatever kind it is.
@@ -178,7 +176,7 @@ export function HomePage() {
           : !resumes.length && <section className="home-empty" aria-label="继续阅读"><strong>还没有在读的书</strong><Link to="/shelf">去书架挑一本<Icon name="chevron-right" size={16} /></Link></section>)}
     </div>
     {books.length > 0 && <section className="home-shelf" aria-label="我的书架">
-      <div className="home-section"><h2>我的书架</h2><Link to="/shelf">全部<Icon name="chevron-right" size={16} /></Link></div>
+      <div className="home-section"><h2>我的书架</h2><Link to="/shelf">查看书架<Icon name="chevron-right" size={16} /></Link></div>
       <div className="home-shelf-row">{books.map(item => <BookCard key={item.id} book={item} showAuthor={false} showProgress />)}</div>
     </section>}
     {media&&<><Discover channel="video" kind="video" heading="看点什么" to="/media/video" />

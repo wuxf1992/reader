@@ -158,7 +158,7 @@ it('shows unread new chapter digits on the independent continue-reading cover', 
 });
 
 
-it.each([1, 0])('keeps a ninth book visible on home only while it has new chapters: %s', async count => {
+it.each([1, 0])('preserves recent reading order even when a ninth book has new chapters: %s', async count => {
   useAuthStore.setState({ verifiedUser: user as any });
   const recent = Array.from({ length: 8 }, (_, i) => ({ ...book, id: `recent-${i}`, lastReadAt: 20 - i }));
   const updated = { ...book, id: 'ninth', title: '新章连载', format: 'chapters', newChapters: count, lastReadAt: 1 };
@@ -166,8 +166,19 @@ it.each([1, 0])('keeps a ninth book visible on home only while it has new chapte
   mount({ reading: [recent[0]!], shelf, video: [] });
   await until(() => root.querySelectorAll('.home-shelf .book-card').length === 8);
   const ids = [...root.querySelectorAll<HTMLElement>('.home-shelf .book-card')].map(card => card.dataset.shelfBookId);
-  expect(ids).toEqual(count ? ['ninth', ...recent.slice(0, 7).map(book => book.id)] : recent.map(book => book.id));
-  expect(root.querySelector('.home-shelf .chapter-update-badge')?.textContent ?? null).toBe(count ? '1' : null);
+  expect(ids).toEqual(recent.map(book => book.id));
+  expect(root.querySelector('.home-shelf .chapter-update-badge')).toBeNull();
   expect(root.querySelector('.home-resume[data-channel=read]')?.getAttribute('href')).toBe('/book/recent-0');
   expect(shelf.map(book => book.id)).toEqual([...recent.map(book => book.id), 'ninth']);
+});
+
+
+it('keeps new chapter digits on the recent books without changing their order', async () => {
+  const recent = Array.from({ length: 9 }, (_, i) => ({ ...book, id: `read-${i}`, lastReadAt: 20 - i, format: 'chapters', newChapters: i === 2 ? 3 : 0 }));
+  const runtime = mount({ shelf: recent, reading: [recent[0]!], video: [] });
+  await until(() => root.querySelectorAll('.home-shelf .book-card').length === 8);
+  expect([...root.querySelectorAll<HTMLElement>('.home-shelf .book-card')].map(card => card.dataset.shelfBookId)).toEqual(recent.slice(0, 8).map(book => book.id));
+  expect(root.querySelector('[data-shelf-book-id="read-2"] .chapter-update-badge')?.textContent).toBe('3');
+  expect(runtime.api.listBooks).toHaveBeenCalledWith(expect.objectContaining({ sort: 'recent', order: 'desc' }), expect.anything());
+  expect(root.querySelector('.home-section a[href="/shelf"]')?.textContent).toBe('查看书架');
 });
