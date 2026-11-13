@@ -19,13 +19,13 @@ const series = { id: 's1', libraryId: 'l', kind: 'series', title: '示例剧集'
 const episode = { ...series, id: 'i1', kind: 'episode', title: '第 3 集', parentId: 's1' };
 const poster = (id: string, title: string) => ({ id, libraryId: 'l', kind: 'movie', title, parentId: null, metadata: {}, overrides: {}, channel: 'video', libraryName: '片库' });
 
-function mount({ reading = [book], video = [activity({ title: '第 3 集', updatedAt: 5 })], audio = [] as object[], discover = { items: [] as object[], total: 0 } }: { reading?: object[]; video?: object[]; audio?: object[]; discover?: { items: object[]; total: number } } = {}) {
+function mount({ reading = [book], shelf = [book], video = [activity({ title: '第 3 集', updatedAt: 5 })], audio = [] as object[], discover = { items: [] as object[], total: 0 } }: { reading?: object[]; shelf?: object[]; video?: object[]; audio?: object[]; discover?: { items: object[]; total: number } } = {}) {
   const runtime = {
     api: {
       baseUrl: 'https://reader.example.com',
       currentSession: () => ({ user }),
       continueReading: vi.fn().mockResolvedValue(reading),
-      listBooks: vi.fn().mockResolvedValue({ items: [book], total: 1 }),
+      listBooks: vi.fn().mockResolvedValue({ items: shelf, total: shelf.length }),
       coverBytes: vi.fn().mockRejectedValue(new Error('none')),
     },
     offline: { replaceBooks: async () => undefined, books: () => [] },
@@ -155,4 +155,19 @@ it('shows unread new chapter digits on the independent continue-reading cover', 
   expect(root.querySelector('.home-resume[data-channel="read"] .chapter-update-badge')?.textContent).toBe('3');
   expect(root.querySelector('.home-resume[data-channel="read"]')?.getAttribute('aria-label')).toContain('3 章新章节未读');
   expect(root.querySelector('.home-resume[data-channel="video"] .chapter-update-badge')).toBeNull();
+});
+
+
+it.each([1, 0])('keeps a ninth book visible on home only while it has new chapters: %s', async count => {
+  useAuthStore.setState({ verifiedUser: user as any });
+  const recent = Array.from({ length: 8 }, (_, i) => ({ ...book, id: `recent-${i}`, lastReadAt: 20 - i }));
+  const updated = { ...book, id: 'ninth', title: '新章连载', format: 'chapters', newChapters: count, lastReadAt: 1 };
+  const shelf = [...recent, updated];
+  mount({ reading: [recent[0]!], shelf, video: [] });
+  await until(() => root.querySelectorAll('.home-shelf .book-card').length === 8);
+  const ids = [...root.querySelectorAll<HTMLElement>('.home-shelf .book-card')].map(card => card.dataset.shelfBookId);
+  expect(ids).toEqual(count ? ['ninth', ...recent.slice(0, 7).map(book => book.id)] : recent.map(book => book.id));
+  expect(root.querySelector('.home-shelf .chapter-update-badge')?.textContent ?? null).toBe(count ? '1' : null);
+  expect(root.querySelector('.home-resume[data-channel=read]')?.getAttribute('href')).toBe('/book/recent-0');
+  expect(shelf.map(book => book.id)).toEqual([...recent.map(book => book.id), 'ninth']);
 });

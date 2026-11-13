@@ -150,7 +150,9 @@ export function HomePage() {
   const unfinished = (items?: Activity[]) => items?.find(item => !item.completed);
   const book = reading.data?.[0];
   const videoActivity = media&&showContinue ? unfinished(video.data?.items) : undefined, audioActivity = media&&showContinue ? unfinished(audio.data?.items) : undefined;
-  const books = (shelf.data?.items ?? []).slice(0, 8);
+  const books = [...(shelf.data?.items ?? [])]
+    .sort((a, b) => Number((b.newChapters ?? 0) > 0) - Number((a.newChapters ?? 0) > 0))
+    .slice(0, 8);
   const name = user?.displayName || user?.username || '';
 
   // Most recent first, whatever kind it is.
