@@ -9,6 +9,7 @@ import { BookCard } from '../../shelf/pages/ShelfPage.tsx';
 import { useCover } from '../../../ui/use-cover.ts';
 import { coverTint } from '../../../ui/cover-tint.ts';
 import { useShelf } from '../../shelf/queries/shelf.queries.ts';
+import { readingQuery } from '../queries/home.queries.ts';
 import { historyQuery, mediaKeys, type Activity } from '../../media/queries/media.queries.ts';
 import { MediaCover } from '../../media/components/cover.tsx';
 import { resolveWork } from '../../media/services/work.ts';
@@ -135,13 +136,7 @@ export function HomePage() {
   const runtime = useRuntime();
   const media=useMediaEnabled();
   const user = useAuthStore(state => state.verifiedUser ?? state.session?.user ?? null);
-  const reading = useQuery({
-    queryKey: ['home', 'reading', runtime.api.baseUrl, user?.id],
-    queryFn: ({ signal }) => runtime.api.continueReading(1, { signal, fresh: true }),
-    refetchOnWindowFocus: true,
-    refetchOnReconnect: 'always',
-    refetchInterval: 60_000,
-  });
+  const reading = useQuery(readingQuery(runtime));
   const shelf = useShelf(1, 'recent');
   // 首页显示最近续播 (偏好设置 › 影音浏览) off: no video/audiobook continue cards; books are not media.
   const { showContinue } = useMediaPreferences();
