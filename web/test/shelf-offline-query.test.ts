@@ -122,3 +122,32 @@ it('keeps the last known chapter badge with the scoped offline book', async () =
   value.offline.books = () => [{ ...books[0]!, format: 'chapters', newChapters: 3 }];
   expect((await load(value)).items[0].newChapters).toBe(3);
 });
+
+it('offers durable cached books immediately on a fresh page before any network response', () => {
+  const value = runtime();
+  value.api.listBooks = vi.fn(() => new Promise<never>(() => {}));
+  const options = shelfQuery(value);
+  expect((options.placeholderData as Function)(undefined, undefined)).toMatchObject({ items: [books[1], books[0]], total: 2, page: 1 });
+  expect(value.api.listBooks).not.toHaveBeenCalled();
+});
+it('uses the same cached sorting and filters on first paint and offline fallback', () => {
+  const value = runtime();
+  const options = shelfQuery(value, 1, 'title', '甲');
+  expect((options.placeholderData as Function)(undefined, undefined)).toMatchObject({ items: [books[0]], total: 1 });
+});
+it.each(['server', 'account'])('does not use a stale local placeholder after changing %s', scope => {
+  const value = runtime(), options = shelfQuery(value);
+  if (scope === 'server') (value.api as any).baseUrl = 'https://other.test';
+  else value.api.currentSession = () => ({ user: { id: 'other' } }) as any;
+  expect((options.placeholderData as Function)(undefined, undefined)).toBeUndefined();
+});
+
+it('returns fresh books without waiting for the local disk write', async () => {
+  const value = runtime(); value.offline.replaceBooks = vi.fn(() => new Promise<never>(() => {}));
+  expect((await load(value)).items).toEqual(books);
+});
+it('keeps the latest saved server continuation first before progress sync completes', () => {
+  const value = runtime();
+  (value.offline as any).current = { continueReading: [{ id: 'a', lastReadAt: 30 }] };
+  expect(((shelfQuery(value).placeholderData as Function)()).items.map((book: Book) => book.id)).toEqual(['a', 'b']);
+});

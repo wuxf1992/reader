@@ -8,6 +8,7 @@ function runtime() {
   return {
     api: { baseUrl: 'https://reader.test', currentSession: () => ({ user: { id: 'one' } }), continueReading: vi.fn(async () => []) },
     offline: {
+      current: {}, cacheContinueReading: vi.fn(async () => undefined),
       books: () => [{ id: 'a', title: 'A' }, { id: 'b', title: 'B' }, { id: 'unread', title: 'Unread' }],
       progressFor: (id: string) => id === 'unread' ? undefined : ({ bookId: id, percentage: .4, chapterTitle: '第二章', updatedAt: id === 'b' ? 20 : 10 }),
     },
@@ -57,4 +58,22 @@ it.each(['server', 'account'])('does not use cached records after changing %s du
   await vi.advanceTimersByTimeAsync(8000);
   await result;
   expect(readingQuery(value).queryKey).not.toEqual(options.queryKey);
+});
+
+it('uses the last server continuation before a full progress sync has ever completed', () => {
+  const value = runtime();
+  value.offline.books = () => [];
+  value.offline.current.continueReading = [{ id: 'server-book', title: 'Saved response', percentage: .2, chapterTitle: 'Cached chapter', lastReadAt: 30 }] as any;
+  expect(placeholder(value)).toMatchObject([{ id: 'server-book', lastReadAt: 30 }]);
+});
+it('prefers more recent unsynced local reading over the saved server response', () => {
+  const value = runtime();
+  value.offline.current.continueReading = [{ id: 'older', percentage: .1, lastReadAt: 1 }] as any;
+  expect(placeholder(value)).toMatchObject([{ id: 'b', lastReadAt: 20 }]);
+});
+it('returns the online result without waiting for disk persistence', async () => {
+  const value = runtime();
+  value.offline.cacheContinueReading = vi.fn(() => new Promise<never>(() => {}));
+  expect(await load(value)).toEqual([]);
+  expect(value.offline.cacheContinueReading).toHaveBeenCalledWith([]);
 });

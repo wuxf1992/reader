@@ -10,10 +10,12 @@ export function readingQuery(runtime: AppRuntime) {
   const sameScope = () => runtime.api.baseUrl === baseUrl && runtime.api.currentSession()?.user.id === userId;
   const cachedReading = (): ContinueReadingItem[] => {
     if (!userId || !sameScope()) return [];
-    return runtime.offline.books().flatMap(book => {
+    const local = runtime.offline.books().flatMap(book => {
       const progress = runtime.offline.progressFor(book.id);
       return progress ? [{ ...book, percentage: progress.percentage, chapterTitle: progress.chapterTitle, lastReadAt: progress.updatedAt }] : [];
-    }).sort((a, b) => b.lastReadAt - a.lastReadAt).slice(0, 1);
+    });
+    return [...local, ...(runtime.offline.current.continueReading ?? [])]
+      .sort((a, b) => (b.lastReadAt ?? 0) - (a.lastReadAt ?? 0)).slice(0, 1);
   };
   return queryOptions<ContinueReadingItem[]>({
     queryKey: ['home', 'reading', baseUrl, userId],
@@ -28,7 +30,7 @@ export function readingQuery(runtime: AppRuntime) {
       let timeout: ReturnType<typeof setTimeout> | undefined;
       try {
         // Keep a shared token refresh running; only bound this page's wait.
-        return await Promise.race([
+        const response = await Promise.race([
           runtime.api.continueReading(1, { signal: combined.signal, fresh: true }),
           new Promise<never>((_, reject) => {
             timeout = setTimeout(() => {
@@ -37,6 +39,8 @@ export function readingQuery(runtime: AppRuntime) {
             }, 8000);
           }),
         ]);
+        if (sameScope()) void runtime.offline.cacheContinueReading(response).catch(() => undefined);
+        return response;
       } catch (error) {
         if (!(error instanceof ApiError) || (!error.isConnectivity && error.kind !== 'server')) throw error;
         const cached = cachedReading();

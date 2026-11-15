@@ -43,7 +43,7 @@ async function chapterVisible(page, index) {
   }
 }
 async function readCachedNovel(page) {
-  await page.getByText('剑来 第1卷', { exact: true }).first().click();
+  await page.locator(`[data-shelf-book-id="${BOOK_ID}"] .book-open`).click();
   await chapterVisible(page, 1);
   if (await page.locator('.reader-screen').getAttribute('data-chrome') === 'hidden') await page.locator('.stage').click({ position: { x: 195, y: 350 } });
   await page.getByRole('button', { name: '上一章', exact: true }).click();

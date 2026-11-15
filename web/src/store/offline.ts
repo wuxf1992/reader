@@ -1,4 +1,4 @@
-import type { Book, Note, Progress, SyncPull } from '../api/types.ts';
+import type { Book, ContinueReadingItem, Note, Progress, SyncPull } from '../api/types.ts';
 import type { KeyValueStore } from '../core/platform.ts';
 
 /**
@@ -20,6 +20,7 @@ export interface PendingNote {
 }
 
 export interface OfflineSnapshot {
+  continueReading?: ContinueReadingItem[];
   /** Books known to the client, keyed by book id. */
   books: Record<string, Book>;
   /** The client's full view of progress, used to render the shelf offline. */
@@ -75,6 +76,7 @@ function coerceSnapshot(raw: unknown): OfflineSnapshot {
   const value = raw as Partial<OfflineSnapshot>;
   return {
     books: typeof value.books === 'object' && value.books !== null ? value.books : {},
+    ...(Array.isArray(value.continueReading) ? { continueReading: value.continueReading.filter(item => item && typeof item.id === 'string' && typeof item.percentage === 'number') } : {}),
     progress: typeof value.progress === 'object' && value.progress !== null ? value.progress : {},
     notes: typeof value.notes === 'object' && value.notes !== null ? value.notes : {},
     dirtyProgress: stringArray(value.dirtyProgress),
@@ -158,7 +160,13 @@ export class OfflineStore {
     await this.persist();
   }
 
+  async cacheContinueReading(items: ContinueReadingItem[]): Promise<void> {
+    this.snapshot.continueReading = items.slice(0, 1);
+    await this.persist();
+  }
+
   async removeBooks(ids: string[]): Promise<void> {
+    if (this.snapshot.continueReading) this.snapshot.continueReading = this.snapshot.continueReading.filter(book => !ids.includes(book.id));
     for (const id of ids) {
       delete this.snapshot.books[id];
       delete this.snapshot.progress[id];

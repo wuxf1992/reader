@@ -157,6 +157,7 @@ export async function createAppRuntime(defaultServerUrl = '') {
           mediaAllowed = false; playback?.stop();
           void player?.stop().catch(() => undefined);
           void downloads.clear();
+          queryClient.clear();
         }
         scope = nextScope;
         // authenticated() loads the new account's scope before it becomes visible.
@@ -164,7 +165,6 @@ export async function createAppRuntime(defaultServerUrl = '') {
           useAuthStore.getState().setSession(session);
           if (verified) useAuthStore.getState().verify(verified);
         }
-        queryClient.clear();
         if (!session) sync.stop();
       });
       const refresh = () => { void refreshCapabilities().catch(() => undefined); };

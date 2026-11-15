@@ -1,19 +1,13 @@
 import { Navigate, Outlet, type RouteObject } from 'react-router-dom';
 import { AppShell, MediaLayout } from '../App.tsx';
-import { MediaCatalogPage } from '../../features/media/pages/MediaCatalogPage.tsx';
-import { MediaSearchPage } from '../../features/media/pages/MediaSearchPage.tsx';
-import { MediaFavoritesPage } from '../../features/media/pages/MediaFavoritesPage.tsx';
-import { MediaHistoryPage } from '../../features/media/pages/MediaHistoryPage.tsx';
-import { MediaQueuePage } from '../../features/media/pages/MediaQueuePage.tsx';
 import { RouteErrorBoundary } from './error-boundary.tsx';
 import { ShelfPage } from '../../features/shelf/pages/ShelfPage.tsx';
-import { MinePage } from '../../features/account/pages/MinePage.tsx';
-import { LegacySettingsRedirect, SettingsPage } from '../../features/account/pages/SettingsPage.tsx';
-import { AccountPage, OpdsPage } from '../../features/account/pages/AccountPages.tsx';
 import { HomePage } from '../../features/home/pages/HomePage.tsx';
 import { SearchPage } from '../../features/search/pages/SearchPage.tsx';
 import {
   ReaderPage,
+  MediaCatalogPage, MediaSearchPage, MediaFavoritesPage, MediaHistoryPage, MediaQueuePage,
+  MinePage, LegacySettingsRedirect, SettingsPage, AccountPage, OpdsPage,
   MediaLibrariesPage, MediaLibraryCreatePage, MediaLibraryEditPage, MediaLibraryPermissionsPage, MediaTasksPage,
   MediaMetadataEditPage, MediaMatchPage, MediaChaptersPage, MediaEditionPage, MediaStructurePage,
   SourceEditorPage, SourceCredentialsPage, SourceExtensionPage, StatsPage,

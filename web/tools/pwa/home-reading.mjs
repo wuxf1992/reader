@@ -11,7 +11,13 @@ server.server.removeAllListeners('request');
 let mode = 'online';
 const pending = new Set();
 server.server.on('request', (request, response) => {
-  if (new URL(request.url, 'http://localhost').pathname === '/api/v1/library/continue') {
+  const path = new URL(request.url, 'http://localhost').pathname;
+  if (mode === 'hanging-all' && path.startsWith('/api/')) {
+    pending.add(response);
+    response.on('close', () => pending.delete(response));
+    return;
+  }
+  if (path === '/api/v1/library/continue') {
     if (mode === 'hanging') {
       pending.add(response);
       response.on('close', () => pending.delete(response));
@@ -47,10 +53,13 @@ try {
           await page.locator('button[type=submit]').click();
           await page.locator('.app-shell').waitFor();
           await page.waitForFunction(book => window.readerApp.offline.books().some(item => item.id === book), BOOK_ID);
-          if (cached) await page.evaluate(async book => {
-            await window.readerApp.offline.reconcileProgress({ bookId: book, locator: 'chapter:1', percentage: .42, chapterTitle: '本地保存的第二章', device: 'test', updatedAt: Date.now() });
-          }, BOOK_ID);
-          mode = 'hanging';
+          if (cached) {
+            await page.goto(origin + '/#/');
+            await page.waitForFunction(() => window.readerApp.offline.current.continueReading?.length > 0);
+            assert.equal(await page.evaluate(book => window.readerApp.offline.progressFor(book) === undefined, BOOK_ID), true);
+            await page.evaluate(() => window.readerApp.offline.flush());
+          }
+          mode = cached ? 'hanging-all' : 'hanging';
           const start = Date.now();
           await page.goto(origin + '/#/');
           // Reload clears Query's memory cache and exercises startup from durable storage.
@@ -62,16 +71,26 @@ try {
             await card.waitFor({ timeout: 1500 });
             visibleMs = Date.now() - start;
             assert(visibleMs < 2000, `cached continuation should appear immediately, took ${visibleMs}ms`);
-            assert((await card.innerText()).includes('已读 42%'));
+            assert((await card.innerText()).includes('已读 18%'));
+            assert.equal(await page.locator('.home-shelf .book-card').count(), 8);
+            assert.equal(await page.evaluate(() => performance.getEntriesByType('resource').some(entry => entry.initiatorType === 'script' && /\/(MinePage|SettingsPage|AccountPages|MediaCatalogPage)-/.test(entry.name))), false);
             assert.equal(await page.getByText('正在读取在读的书…', { exact: true }).count(), 0);
             await page.waitForFunction(() => window.readerApp.queryClient.getQueryState(['home', 'reading', window.readerApp.api.baseUrl, 'u1'])?.fetchStatus === 'idle', null, { timeout: 10_000 });
             assert.equal(await card.count(), 1);
             if (output) await page.screenshot({ path: `${output}/${engine}-cached.png` });
             mode = 'empty';
+            // Reconnect closes stalled HTTP/1.1 sockets so queued requests can run.
+            for (const response of pending) response.destroy();
             await page.evaluate(() => window.readerApp.queryClient.invalidateQueries({ queryKey: ['home', 'reading'] }));
             await card.waitFor({ state: 'hidden' });
             assert.deepEqual(await page.evaluate(() => window.readerApp.queryClient.getQueryData(['home', 'reading', window.readerApp.api.baseUrl, 'u1'])), []);
             assert.equal(await card.count(), 0);
+            await page.evaluate(() => window.readerApp.queryClient.invalidateQueries({ queryKey: ['shelf'] }));
+            assert.equal(await page.evaluate(() => window.readerApp.queryClient.getQueriesData({ queryKey: ['shelf'] })[0][1].items.length), 60);
+            await page.goto(origin + '/#/me');
+            await page.getByRole('heading', { name: '我的', exact: true }).waitFor();
+            await page.goto(origin + '/#/me/settings');
+            await page.getByRole('heading', { name: '偏好设置', exact: true }).waitFor();
           } else {
             await page.getByText('正在读取在读的书…', { exact: true }).waitFor();
             await page.getByText('在读的书读取失败', { exact: true }).waitFor({ timeout: 10_000 });

@@ -28,7 +28,7 @@ function mount({ reading = [book], shelf = [book], video = [activity({ title: 'ç
       listBooks: vi.fn().mockResolvedValue({ items: shelf, total: shelf.length }),
       coverBytes: vi.fn().mockRejectedValue(new Error('none')),
     },
-    offline: { replaceBooks: async () => undefined, books: () => [] },
+    offline: { current: {}, cacheContinueReading: async () => undefined, replaceBooks: async () => undefined, books: () => [] },
     mediaApi: {
       preferenceScope: () => 'home-test',
       request: vi.fn(async (path: string) => path.startsWith('browse?')

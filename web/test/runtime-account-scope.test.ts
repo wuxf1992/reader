@@ -233,3 +233,25 @@ it('keeps a valid login and applies permissions when caching the refreshed profi
     expect(await platform.kv.get('reader.session.v1')).toBe(JSON.stringify(session));
   } finally { vi.restoreAllMocks(); runtime.queryClient.clear(); useAuthStore.getState().setSession(null); }
 });
+
+it('keeps visible and in-flight page queries during background renewal of the same login', async () => {
+  const transport = new FakeTransport(), platform = makePlatform(transport);
+  platform.setOnline(false);
+  const session: Session = { user: { id: 'cached', username: 'reader', displayName: 'Reader', role: 'member', createdAt: 0 }, accessToken: 'old', refreshToken: 'old-refresh', accessTokenExpiresAt: 0, refreshTokenExpiresAt: 9e15 };
+  await platform.kv.set('reader.session.v1', JSON.stringify(session));
+  transport.json({ ...session, accessToken: 'renewed', refreshToken: 'renewed-refresh', accessTokenExpiresAt: 9e15 });
+  vi.mocked(createWebPlatform).mockResolvedValue(platform);
+  const runtime = await createAppRuntime('https://reader.test'), disconnect = runtime.connect();
+  let finish!: (value: string) => void;
+  try {
+    runtime.queryClient.setQueryData(['visible-home'], ['cached-book']);
+    const pending = runtime.queryClient.fetchQuery({ queryKey: ['background'], queryFn: () => new Promise<string>(resolve => { finish = resolve; }) });
+    await runtime.api.renewSessionIfNeeded();
+    expect(runtime.queryClient.getQueryData(['visible-home'])).toEqual(['cached-book']);
+    expect(runtime.queryClient.getQueryState(['background'])?.fetchStatus).toBe('fetching');
+    finish('updated'); await pending;
+    expect(runtime.queryClient.getQueryData(['background'])).toBe('updated');
+    await runtime.api.discardSession();
+    expect(runtime.queryClient.getQueryData(['visible-home'])).toBeUndefined();
+  } finally { finish?.('done'); disconnect(); runtime.queryClient.clear(); useAuthStore.getState().setSession(null); }
+});

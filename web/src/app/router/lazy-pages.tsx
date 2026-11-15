@@ -88,3 +88,33 @@ export function LibraryBrowsePage() { return <Suspense fallback={fallback}><Libr
 export function LibraryFilesPage() { return <Suspense fallback={fallback}><LibraryFiles /></Suspense>; }
 export function SourcesPage() { return <Suspense fallback={fallback}><Sources /></Suspense>; }
 export function SourceCatalogPage() { return <Suspense fallback={fallback}><SourceCatalog /></Suspense>; }
+
+const Catalog = deferred(() => import('../../features/media/pages/MediaCatalogPage.tsx'), 'MediaCatalogPage');
+export function MediaCatalogPage() { return <Suspense fallback={fallback}><Catalog /></Suspense>; }
+
+const Search = deferred(() => import('../../features/media/pages/MediaSearchPage.tsx'), 'MediaSearchPage');
+export function MediaSearchPage() { return <Suspense fallback={fallback}><Search /></Suspense>; }
+
+const Favorites = deferred(() => import('../../features/media/pages/MediaFavoritesPage.tsx'), 'MediaFavoritesPage');
+export function MediaFavoritesPage() { return <Suspense fallback={fallback}><Favorites /></Suspense>; }
+
+const History = deferred(() => import('../../features/media/pages/MediaHistoryPage.tsx'), 'MediaHistoryPage');
+export function MediaHistoryPage() { return <Suspense fallback={fallback}><History /></Suspense>; }
+
+const Queue = deferred(() => import('../../features/media/pages/MediaQueuePage.tsx'), 'MediaQueuePage');
+export function MediaQueuePage() { return <Suspense fallback={fallback}><Queue /></Suspense>; }
+
+const Mine = deferred(() => import('../../features/account/pages/MinePage.tsx'), 'MinePage');
+export function MinePage() { return <Suspense fallback={fallback}><Mine /></Suspense>; }
+
+const Settings = deferred(() => import('../../features/account/pages/SettingsPage.tsx'), 'SettingsPage');
+export function SettingsPage() { return <Suspense fallback={fallback}><Settings /></Suspense>; }
+
+const LegacySettings = deferred(() => import('../../features/account/pages/SettingsPage.tsx'), 'LegacySettingsRedirect');
+export function LegacySettingsRedirect() { return <Suspense fallback={fallback}><LegacySettings /></Suspense>; }
+
+const Account = deferred(() => import('../../features/account/pages/AccountPages.tsx'), 'AccountPage');
+export function AccountPage() { return <Suspense fallback={fallback}><Account /></Suspense>; }
+
+const Opds = deferred(() => import('../../features/account/pages/AccountPages.tsx'), 'OpdsPage');
+export function OpdsPage() { return <Suspense fallback={fallback}><Opds /></Suspense>; }
