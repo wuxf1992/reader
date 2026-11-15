@@ -18,6 +18,7 @@ import { PlaybackService } from '../features/media/services/PlaybackService.ts';
 import { migrateAppearance } from '../shared/theme/theme.ts';
 import { withOfflineTimeout } from '../core/offline-timeout.ts';
 import { mediaEnabled } from '../shared/stores/features.ts';
+import { startupStage } from '../core/startup.ts';
 
 export function validServerUrl(value?: string): string {
   if (!value?.trim()) return '';
@@ -39,6 +40,7 @@ export async function createAppRuntime(defaultServerUrl = '') {
   let api: ReaderApi;
   const bridge = detectAndroidBridge();
   const baseUrl = () => api?.baseUrl ?? defaultServerUrl;
+  startupStage('storage');
   const platform = await (bridge ? createAndroidPlatform(baseUrl, bridge) : createWebPlatform(baseUrl));
   const sessions: SessionStore = {
     async load() {
@@ -61,12 +63,15 @@ export async function createAppRuntime(defaultServerUrl = '') {
   const sync = new SyncEngine(api, offline, platform);
   const downloads = new OfflineDownloads(api, platform);
   const queryClient = createAppQueryClient();
+  startupStage('settings');
   const loadedSettings = await settings.load();
   useSettingsStore.getState().replace(loadedSettings);
   api.setBaseUrl(validServerUrl(await settings.serverUrl()) || validServerUrl(defaultServerUrl) || inferDefaultUrl());
+  startupStage('session');
   const restored = await api.restore();
   if (restored) migrateAppearance(mediaApi.preferenceScope(), loadedSettings);
   useAuthStore.getState().setSession(restored);
+  startupStage('offline');
   if (restored) {
     await offline.setScope(publicationScope(api.baseUrl, restored.user.id), { claimLegacy: true });
   }

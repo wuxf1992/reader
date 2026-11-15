@@ -105,9 +105,22 @@
       @media (prefers-color-scheme: dark) {
         html, body, .app-startup { background: #1f1713; }
       }
+      .app-startup { color: CanvasText; font: 14px/1.6 system-ui, sans-serif; overflow-y: auto; padding: max(24px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom)); box-sizing: border-box; }
+      .app-startup-content { width: min(100%, 360px); display: flex; flex-direction: column; align-items: center; gap: 16px; }
       .app-startup img { width: 96px; height: 96px; }
-      .app-startup-loading { position: absolute; top: calc(50% + 64px); color: CanvasText; display: flex; align-items: center; gap: 8px; font: 14px sans-serif; opacity: 0; animation: startup-reveal 1ms 100ms forwards; }
+      .app-startup-loading { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 15px; opacity: 0; animation: startup-reveal 1ms 100ms forwards; }
       .app-startup-loading::before { content: ''; width: 14px; height: 14px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: startup-spin 700ms linear infinite; }
+      .app-startup-details { width: 100%; font-size: 13px; }
+      .app-startup-summary { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 16px; font-variant-numeric: tabular-nums; }
+      .app-startup progress { display: block; width: 100%; height: 6px; margin: 10px 0 16px; accent-color: currentColor; }
+      .app-startup-steps { padding: 0; margin: 0; list-style: none; }
+      .app-startup-steps li { display: flex; justify-content: space-between; gap: 16px; padding: 5px 0; color: color-mix(in srgb, CanvasText 70%, transparent); }
+      .app-startup-steps li[data-state="active"] { color: CanvasText; font-weight: 600; }
+      .app-startup-steps li span:last-child { flex-shrink: 0; font-weight: 400; font-variant-numeric: tabular-nums; }
+      .app-startup-note { min-height: 1.6em; margin: 12px 0 0; color: color-mix(in srgb, CanvasText 70%, transparent); overflow-wrap: anywhere; }
+      .app-startup-retry { margin-top: 12px; min-height: 44px; padding: 8px 20px; border: 1px solid currentColor; border-radius: 12px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+      .app-startup-retry:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+      .app-startup[data-failed] .app-startup-loading::before { animation: none; border-style: solid; border-radius: 2px; }
       @keyframes startup-reveal { to { opacity: 1; } }
       @keyframes startup-spin { to { transform: rotate(360deg); } }
       @media (prefers-reduced-motion: reduce) { .app-startup-loading::before { animation: none; } }
@@ -115,7 +128,88 @@
   </head>
   <body>
     <div id="app"></div>
-    <div id="app-startup" class="app-startup" role="status" aria-label="正在启动 reader"><img src="./icons/icon-192.png" width="96" height="96" alt="" /><span class="app-startup-loading">正在加载…</span></div>
+    <div id="app-startup" class="app-startup" role="region" aria-label="Reader 启动状态">
+      <div class="app-startup-content">
+        <img src="./icons/icon-192.png" width="96" height="96" alt="" />
+        <p class="app-startup-loading" role="status"><span id="app-startup-stage">正在加载主程序…</span></p>
+        <div class="app-startup-details">
+          <div class="app-startup-summary"><span id="app-startup-count">步骤进度 0/6 · 0%</span><span id="app-startup-elapsed" aria-live="off">已用 0.0 秒</span></div>
+          <progress id="app-startup-progress" max="6" value="0" aria-label="启动步骤进度"></progress>
+          <ol class="app-startup-steps" aria-label="启动步骤" aria-live="off">
+            <li data-stage="resources" data-state="active"><span>加载主程序和界面资源</span><span>进行中</span></li>
+            <li data-stage="storage"><span>打开本地存储</span><span>等待</span></li>
+            <li data-stage="settings"><span>读取阅读设置</span><span>等待</span></li>
+            <li data-stage="session"><span>恢复登录状态</span><span>等待</span></li>
+            <li data-stage="offline"><span>检查本地书架和阅读进度</span><span>等待</span></li>
+            <li data-stage="render"><span>显示应用界面</span><span>等待</span></li>
+          </ol>
+          <p id="app-startup-note" class="app-startup-note" aria-live="off">正在等待主程序载入。</p>
+          <button id="app-startup-retry" class="app-startup-retry" type="button" hidden>重新加载</button>
+        </div>
+      </div>
+    </div>
+    <script id="reader-startup-status">
+      (() => {
+        const screen = document.getElementById('app-startup');
+        const rows = Array.from(screen.querySelectorAll('[data-stage]'));
+        const heading = document.getElementById('app-startup-stage');
+        const progress = document.getElementById('app-startup-progress');
+        const count = document.getElementById('app-startup-count');
+        const elapsed = document.getElementById('app-startup-elapsed');
+        const note = document.getElementById('app-startup-note');
+        const retry = document.getElementById('app-startup-retry');
+        const started = performance.now();
+        let current = 0, stageStarted = started, stopped = false;
+        const seconds = ms => `${(ms / 1000).toFixed(1)} 秒`;
+        const tick = () => {
+          elapsed.textContent = `已用 ${seconds(performance.now() - started)}`;
+          rows[current].lastElementChild.textContent = `进行中 · ${seconds(performance.now() - stageStarted)}`;
+          if (performance.now() - stageStarted >= 8000) note.textContent = `仍在${rows[current].firstElementChild.textContent}，尚未完成。`;
+        };
+        const timer = setInterval(tick, 250);
+        const cleanup = () => {
+          clearInterval(timer);
+          window.removeEventListener('reader-startup', update);
+          window.removeEventListener('error', resourceError, true);
+        };
+        const fail = message => {
+          if (stopped) return;
+          tick(); stopped = true; cleanup();
+          screen.dataset.failed = 'true';
+          rows[current].dataset.state = 'failed';
+          rows[current].lastElementChild.textContent = `失败 · ${seconds(performance.now() - stageStarted)}`;
+          heading.textContent = `${rows[current].firstElementChild.textContent}未完成`;
+          note.textContent = message || '请检查网络连接后重新加载。';
+          retry.hidden = false;
+        };
+        function update(event) {
+          if (stopped) return;
+          const { stage, message } = event.detail || {};
+          if (stage === 'failed') { fail(message); return; }
+          const next = stage === 'ready' ? rows.length : rows.findIndex(row => row.dataset.stage === stage);
+          if (next <= current) return;
+          rows[current].dataset.state = 'done';
+          rows[current].lastElementChild.textContent = `完成 · ${seconds(performance.now() - stageStarted)}`;
+          progress.value = next;
+          count.textContent = `步骤进度 ${next}/${rows.length} · ${Math.round(next / rows.length * 100)}%`;
+          if (stage === 'ready') { stopped = true; cleanup(); screen.remove(); return; }
+          current = next; stageStarted = performance.now();
+          rows[current].dataset.state = 'active';
+          heading.textContent = `正在${rows[current].firstElementChild.textContent}…`;
+          note.textContent = `当前步骤：${rows[current].firstElementChild.textContent}。`;
+          tick();
+        }
+        function resourceError(event) {
+          const target = event.target;
+          if (target instanceof HTMLScriptElement || (target instanceof HTMLLinkElement && target.rel === 'stylesheet')) fail('界面资源加载失败，请检查网络连接后重新加载。');
+          else if (event instanceof ErrorEvent) fail(event.message);
+        }
+        retry.addEventListener('click', () => location.reload());
+        window.addEventListener('reader-startup', update);
+        window.addEventListener('error', resourceError, true);
+        tick();
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
