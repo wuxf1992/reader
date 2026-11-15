@@ -8,19 +8,6 @@ import { ApiError } from '../src/api/errors.ts';
 vi.mock('../src/core/web-platform.ts', () => ({ createWebPlatform: vi.fn() }));
 vi.mock('../src/features/media/services/player.ts', () => ({ MediaPlayer: class extends EventTarget { element = document.createElement('div'); reconnectNative() {} async stop() {} async flush() {} } }));
 import { createWebPlatform } from '../src/core/web-platform.ts';
-it('reports local startup stages in order without adding any network dependency', async () => {
-  const transport = new FakeTransport(), platform = makePlatform(transport);
-  vi.mocked(createWebPlatform).mockResolvedValue(platform);
-  const stages: string[] = [];
-  const report = (event: Event) => stages.push((event as CustomEvent<{ stage: string }>).detail.stage);
-  window.addEventListener('reader-startup', report);
-  try {
-    const runtime = await createAppRuntime('https://reader.test');
-    expect(stages).toEqual(['storage', 'settings', 'session', 'offline']);
-    expect(transport.requests).toHaveLength(0);
-    runtime.sync.stop();
-  } finally { window.removeEventListener('reader-startup', report); }
-});
 it('publishes a logged-in account only after its private offline scope is loaded', async () => {
   useAuthStore.getState().setSession(null);
   const transport = new FakeTransport(), platform = makePlatform(transport);

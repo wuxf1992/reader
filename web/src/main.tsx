@@ -13,7 +13,6 @@ import { AppProviders } from './app/providers/AppProviders.tsx';
 import { createAppRuntime, inferDefaultUrl } from './app/runtime.ts';
 import { router } from './app/router/router.tsx';
 import { registerPwa } from './core/pwa.ts';
-import { startupStage } from './core/startup.ts';
 
 /**
  * Entry point.
@@ -45,14 +44,11 @@ async function start(): Promise<void> {
   const runtime = await createAppRuntime(import.meta.env.VITE_SERVER_URL ?? inferDefaultUrl());
   window.readerApp = runtime;
   window.__readerFlush = () => runtime.flush();
-  startupStage('render');
   createRoot(appRoot).render(<AppProviders runtime={runtime}><RouterProvider router={router} /></AppProviders>);
-  startupStage('ready');
   document.getElementById('app-startup')?.remove();
 }
 
 void start().catch((err: unknown) => {
-  const message = err instanceof Error ? err.message : String(err);
-  startupStage('failed', message);
-  root.textContent = `客户端启动失败：${message}`;
+  root.textContent = `客户端启动失败：${err instanceof Error ? err.message : String(err)}`;
+  document.getElementById('app-startup')?.remove();
 });
