@@ -466,3 +466,16 @@ React 全流程浏览器回归已通过，40 张手机 / 桌面截图，无页�
 - 北京时间 **2026-11-13 14:49:41** 发布完整 310 个网页文件，入口 `assets/client-CDOfDStC.js`，样式 `assets/index-9BqJTB8q.css`。全部本机 HTTP 哈希、公网 index/SW/入口/CSS/manifest 匹配；公网真实浏览器安装新版离线资源通过，健康正常。五个生产容器及 Compose/签名密钥不变，后端仍为 `reader-github:chapter-badges-20261112-32def9d`，没有写入正式账号、阅读进度或书籍数据。
 - 网页回退备份 `/opt/reader/backups/web-reader-home-updates-20261113-064938/web` 已逐文件验证；保留 267 个旧静态文件供已有页面加载。按原保留规则删除被替代的 `web-reader-mine-update-20261112-231715`，完整部署/网页/插件备份各最近一份及当前/最近应用回退镜像保留。证据 `../reader-chapter-badge-diagnosis-20261113/` 含修复前失败、测试、浏览器截图、构建/发布/清理凭据，不上传正式私有数据。
 - 源码及回退标签 `custom-before-home-updates-20261113`（`c6396c5`）已推个人 origin；发布标签 `custom-release-home-updates-20261113` 固定 `551ed1b`，本记录另提交 custom，不推 upstream 或 v* 标签。未做 iPhone 真机、远端 CI、无关后端全量或所有书源修复；诊断时七条订阅最近检查失败，会影响后续发现新章，本次不伪造数字或回填旧累计数。
+
+
+## 主线整合：2026-11-17（上游 cc8973f，源码完成、未部署）
+
+- 固定 custom 起点 dd32f150f3eeb2169de5b40da4ad2d6fa5991531，上游 cc8973f1436de7e2fdfc9756609daf5cd4b9eeb9，merge-base 67c4fbb；37 个上游提交、106 个变更文件、48 个交集、18 个文本冲突。独立整合分支 sync/upstream-20261117，合并提交 b9a07ac68b054d6a3df2f2b3bf5a96927352e528。main 仅 fast-forward；不重写共享历史。
+- 按用户决定：插件统一 coverRef，最近阅读复用主线 updated 排序并兼容旧 recent 请求；有工具栏时正文图片点击先收起；可收敛部分主线优先。删除旧书库浏览/发现状态与重复封面实现，保留缓存优先、账号边界、统一主题、新章角标、下载和分页。完整决策与问题修复见 [本轮审查](docs/custom-upstream-review-20261117.md)。
+- 补回专注模式即时刷新；修复长按原生看图弹窗接走 pointerup 后的首击丢失，新回归修复前失败、修复后及真实浏览器通过。封面保存保留超时/取消/绑定检查和孤立文件清理，竞态回归通过。迁移同时保留新章计数和新增笔记字段。
+- Node 24.22.3。server 完整 569 项 562 通过/7 媒体默认跳过，另 8 项真实 FFmpeg 通过；新增竞态后相关 API 12 项通过。web 完整 162 文件 1553 Vitest +22 Node 检查通过，最终手势修复后 117 定向复验及最终构建的看图/Chromium-WebKit 手机桌面触摸通过。类型检查、双端构建、Android shell 通过。
+- 18 套浏览器/PWA 场景通过；统一主题、系统栏、正文保真、缓存小说/封面、后台下载、真实 HTTP/SQLite/stdio 插件及全站路由通过。冷重开所有 API 挂起时缓存首页 Chromium 266ms/WebKit 343ms；双引擎无缓存错误/重试通过。截图与浏览器模拟不代表真机。
+- 插件 1.6.11 完整 170 项通过，增强封面 RPC 后 30 项定向复验通过。实际包经官方安装器、stdio 和重启隔离验证；本地 9f24273 / GitHub main 8a200c2912789ef6d54ae2346ee9f473d7f66afb 整树一致。SHA256 5e1ebb7e207be3ace7697d40f0634b8d88600b8015b7b3ba3b10c228ff91ce4c。
+- 合成旧数据库经真实合并 Db 连续升级与旧 schema 读写，账号/书架/进度/笔记保持，完整性与外键通过；未用生产数据或旧 Docker 二进制代替检查。后续发布仍须做正式副本迁移和实际回退验证。
+- 回退标签 custom-before-upstream-20261117 已备份；源码标签 custom-merged-upstream-20261117 指向本次 merge。证据 ../reader-assessment-20261117/ 含回退/完成 bundle、构建清单、插件包、日志和截图归档。原备份保留，本轮不清理生产镜像/备份。
+- 发布状态：本轮只完成源码整合与仓库同步，不部署正式后端、网页或插件，不写正式账号、书籍、进度和配置。iPhone 真机、完整 Android APK、所有外部书站及远端 CI 完成状态未检查。
