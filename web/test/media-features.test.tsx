@@ -46,7 +46,7 @@ it('actual application routes keep account and administrator recovery links acce
   const router=createMemoryRouter(routes,{initialEntries:['/me']});
   try{
     await act(async()=>render(<RuntimeContext value={runtime}><QueryClientProvider client={client}><RouterProvider router={router}/></QueryClientProvider></RuntimeContext>,root));
-    expect(root.querySelector('a[href="/me/admin/users"]')).not.toBeNull();
+    await vi.waitFor(() => expect(root.querySelector('a[href="/me/admin/users"]')).not.toBeNull());
     expect(root.querySelector('a[href="/me/admin/services"]')).not.toBeNull();
     expect(root.querySelector('a[href="/me/account"]')).not.toBeNull();
     expect(root.textContent).not.toContain('影音模块未启用');

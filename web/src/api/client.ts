@@ -305,6 +305,12 @@ export class ReaderApi {
   async createOpdsCredential(name: string): Promise<OpdsCredential & { username: string; password: string; catalogUrl: string }> { return this.call('/api/v1/opds/credentials', 'POST', { name }); }
   async revokeOpdsCredential(id: string): Promise<void> { await this.call('/api/v1/opds/credentials/' + encodeURIComponent(id), 'DELETE'); }
   async deleteCredential(id: string, key: string): Promise<void> { await this.call('/api/v1/sources/' + encodeURIComponent(id) + '/credentials/' + encodeURIComponent(key),'DELETE'); }
+  /** Store another edition's cover as this book's cover. */
+  async changeCover(id: string, entryRef: string, coverRef: string, sourceId?: string): Promise<void> {
+    await this.call('/api/v1/books/' + encodeURIComponent(id) + '/cover-source', 'POST', { entryRef, coverRef, ...(sourceId ? { sourceId } : {}) });
+  }
+  /** A local book goes back to the cover its file carries. */
+  async restoreCover(id: string): Promise<void> { await this.call('/api/v1/books/' + encodeURIComponent(id) + '/cover-source', 'DELETE'); }
   async switchPreview(id: string, entryRef: string): Promise<{ chapters: Array<{ id: string; title: string }>; latestChapter?: string }> {
     return this.call('/api/v1/books/' + encodeURIComponent(id) + '/switch-preview', 'POST', { entryRef });
   }
@@ -389,7 +395,7 @@ export class ReaderApi {
     const params = new URLSearchParams();
     for (const [key, value] of Object.entries(query)) {
       if (value === undefined || value === null || value === '') continue;
-      params.set(key, String(value));
+      params.set(key, String(key === 'sort' && value === 'recent' ? 'updated' : value));
     }
     const suffix = params.size > 0 ? `?${params.toString()}` : '';
     return this.get<BookListPage>(`/api/v1/books${suffix}`, options);
@@ -803,6 +809,38 @@ export class ReaderApi {
     return (await this.get<{ users: UserReadingTotal[] }>(`/api/v1/stats/reading/users?${statsParams(query)}`, options)).users;
   }
 
+  /** 读书笔记 across books: one server-filtered page, newest first. */
+  async notesLibrary(query: NotesLibraryQuery, options: RequestOptions = {}): Promise<NotesLibraryPage> {
+    return this.get<NotesLibraryPage>(`/api/v1/notes/library?${notesParams(query)}`, options);
+  }
+
+  /** The books that have notes under the same filter, for the book picker. */
+  async notesLibraryBooks(query: NotesFilter, options: RequestOptions = {}): Promise<NotesBook[]> {
+    return (await this.get<{ books: NotesBook[] }>(`/api/v1/notes/library/books?${notesParams(query)}`, options)).books;
+  }
+
+  /** This account's 书评 of a book, or null. */
+  async bookReview(bookId: string, options: RequestOptions = {}): Promise<BookReview | null> {
+    return (await this.get<{ review: BookReview | null }>(`/api/v1/notes/reviews/${encodeURIComponent(bookId)}`, options)).review;
+  }
+
+  /** Saves the 书评; an empty body removes it. Online only: reviews are not part of sync. */
+  async saveBookReview(bookId: string, body: string, options: RequestOptions = {}): Promise<BookReview | null> {
+    return (await this.call<{ review: BookReview | null }>(`/api/v1/notes/reviews/${encodeURIComponent(bookId)}`, 'PUT', { body }, options)).review;
+  }
+
+  /** Every tag the account uses, most used first. */
+  async notesLibraryTags(options: RequestOptions = {}): Promise<NotesTag[]> {
+    return (await this.get<{ tags: NotesTag[] }>('/api/v1/notes/library/tags', options)).tags;
+  }
+
+  /** Everything the filter matches as one Markdown or JSON document. */
+  async notesExport(query: NotesFilter, format: 'markdown' | 'json', tz: number, options: RequestOptions = {}): Promise<NotesExport> {
+    const params = new URLSearchParams(notesParams(query));
+    params.set('format', format); params.set('tz', String(tz));
+    return this.get<NotesExport>(`/api/v1/notes/export?${params.toString()}`, options);
+  }
+
   async putProgress(progress: ProgressInput, options: RequestOptions = {}): Promise<Progress | null> {
     const result = await this.call<{ progress: Progress | null }>(
       `/api/v1/sync/progress/${encodeURIComponent(progress.bookId)}`,
@@ -865,7 +903,9 @@ export class ReaderApi {
   }
   async businessAiModels(values?:{baseUrl?:string;apiKey?:string}):Promise<string[]> { return (await this.call<{models:string[]}>('/api/v1/admin/ai/models','POST',values??{})).models; }
   /** What the server's AI can do for a reader; older servers answer 404. */
-  async aiCapabilities(options: RequestOptions = {}): Promise<{ summary: boolean; scan?: boolean }> { return this.get('/api/v1/ai/capabilities', options); }
+  async aiCapabilities(options: RequestOptions = {}): Promise<{ summary: boolean; scan?: boolean; assist?: boolean }> { return this.get('/api/v1/ai/capabilities', options); }
+  /** Translate, explain or answer a question about a passage the reader selected. */
+  async aiAssist(bookId: string, input: { action: 'translate' | 'explain' | 'ask'; text: string; context?: string; question?: string }): Promise<{ answer: string; cached: boolean }> { return this.call('/api/v1/ai/assist', 'POST', { bookId, ...input }); }
   async aiSummary(bookId:string,chapterId:string,content:string):Promise<{summary:string;cached:boolean}>{ return this.call('/api/v1/ai/summary','POST',{bookId,chapterId,content}); }
 
   private async get<T>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -883,7 +923,7 @@ export class ReaderApi {
           .then(response => response.json as T),
         // Availability-bearing media resources are shared while in flight but
         // always revalidated, so an explicit refresh reaches the server.
-        ...(options.fresh || /^\/api\/v1\/books\?/.test(path) && new URLSearchParams(path.split('?')[1]).get('sort') === 'recent' || isLiveNavigationQuery(path) ? { staleTime: 0 } : {}),
+        ...(options.fresh || /^\/api\/v1\/books\?/.test(path) && ['recent', 'updated'].includes(new URLSearchParams(path.split('?')[1]).get('sort') ?? '') || isLiveNavigationQuery(path) ? { staleTime: 0 } : {}),
       });
     } catch (error) {
       // A QueryClient cancellation (cache cleared on account change) or a raw
@@ -1061,6 +1101,27 @@ export interface ReadingStats {
   total: number;
 }
 export interface UserReadingTotal { userId: string; username: string; displayName: string; seconds: number }
+
+export interface NotesFilter { q?: string; type?: NoteType | ''; bookId?: string; tag?: string }
+export interface NotesTag { tag: string; count: number }
+export interface NotesLibraryQuery extends NotesFilter { page?: number; pageSize?: number }
+export interface LibraryNote extends Note { chapterTitle: string; tags: string[]; bookTitle: string; bookAuthor: string }
+export interface NotesLibraryPage { items: LibraryNote[]; total: number; page: number; pageSize: number }
+export interface NotesBook { bookId: string; title: string; author: string; count: number; lastAt: number; reviewed: boolean }
+export interface BookReview { bookId: string; body: string; updatedAt: number }
+export interface NotesExport { filename: string; mime: string; content: string; count: number; reviews: number }
+
+/** Only what is set goes on the wire, so one view has one address (and one cache key). */
+export function notesParams(query: NotesLibraryQuery): string {
+  const params = new URLSearchParams();
+  if (query.q) params.set('q', query.q);
+  if (query.type) params.set('type', query.type);
+  if (query.bookId) params.set('bookId', query.bookId);
+  if (query.tag) params.set('tag', query.tag);
+  if (query.page && query.page > 1) params.set('page', String(query.page));
+  if (query.pageSize) params.set('pageSize', String(query.pageSize));
+  return params.toString();
+}
 
 export function statsParams(query: TimeStatsQuery): string {
   return new URLSearchParams({ from: String(query.from), to: String(query.to), tz: String(query.tz), group: query.group }).toString();

@@ -21,8 +21,8 @@ export function SourceBookDetails({ entry, sourceId, sourceName, inShelf, canPre
   const [descending, setDescending] = useState(true);
   const directoryOpen = location.state?.sourceDirectory === sourceId + ':' + entry.ref;
   const bookCover = entry.coverUrl?.startsWith('/api/v1/books/');
-  const coverPath = entry.coverUrl && entry.shelfBookId !== undefined ? bookCover ? entry.coverUrl
-    : `/api/v1/sources/${encodeURIComponent(sourceId)}/cover?ref=${encodeURIComponent(entry.ref)}` : null;
+  const coverPath = bookCover ? entry.coverUrl : entry.coverRef
+    ? `/api/v1/sources/${encodeURIComponent(sourceId)}/cover?entryRef=${encodeURIComponent(entry.ref)}&coverRef=${encodeURIComponent(entry.coverRef)}` : null;
   const userId = api.currentSession()?.user.id;
   const cover = useCover(api, coverPath, bookCover || !directoryOpen);
   useEffect(() => {

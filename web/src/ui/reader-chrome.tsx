@@ -31,7 +31,7 @@ import { DEFAULT_APP_SETTINGS, READOUT_FIELDS, READOUT_OPTIONS, type ReadoutMode
 import { formatDate } from '../lib/format.ts';
 import { ReaderIndicators } from './reader-indicators.tsx';
 import type { SpeechEngineKind } from '../render/speech.ts';
-import { type ReactNode, type JSX, useLayoutEffect, useRef, useState } from 'react';
+import { Fragment, type ReactNode, type JSX, useLayoutEffect, useRef, useState } from 'react';
 import { Button, IconButton, SectionTitle, SwitchRow } from './toolkit.tsx';
 import { Icon, type IconName } from './icon.tsx';
 import { ActionMenu } from './action-menu.tsx';
@@ -51,6 +51,10 @@ export interface ChromeTocEntry {
   depth: number;
   spine?: number;
   cached?: boolean;
+  /** The volume heading this entry sits under; drawn once, above the first entry that has it. */
+  volume?: string;
+  /** A short line under the label, such as when the chapter was updated. */
+  note?: string;
 }
 
 export interface SpeechBarState {
@@ -146,6 +150,8 @@ export interface ChromeState {
   textAlign: AppSettings['textAlign'];
   brightness: number;
   pageAnimation: AppSettings['pageAnimation'];
+  /** 专注模式; optional so an older state shape still renders. */
+  focusMode?: boolean;
   tapZone: AppSettings['tapZone'];
   /** 点击区域, the 3×3 grid; optional so an older state shape still renders. */
   tapZones?: TapZoneGrid;
@@ -341,8 +347,10 @@ export function ReaderChrome({ state, stage, handlers, tools }: ReaderChromeProp
                 const hasChildren = (state.toc[index + 1]?.depth ?? -1) > entry.depth;
                 if (hasChildren && collapsed.has(entry.id)) hiddenDepth = entry.depth;
                 const reachable = entry.spine !== undefined && entry.spine >= 0;
-                return (
-                  <li key={entry.id + index} data-section={entry.id}>
+                const heading = entry.volume && entry.volume !== state.toc[index - 1]?.volume ? entry.volume : '';
+                return (<Fragment key={entry.id + index}>
+                  {heading && <li className="toc-volume" role="presentation">{heading}</li>}
+                  <li data-section={entry.id}>
                     {hasChildren && <button className="toc-collapse" aria-label={entry.label + (collapsed.has(entry.id) ? ' 展开' : ' 折叠')} aria-expanded={!collapsed.has(entry.id)} onClick={() => { const next = new Set(collapsed); if (next.has(entry.id)) next.delete(entry.id); else next.add(entry.id); setCollapsed(next); }}><Icon name={collapsed.has(entry.id) ? 'chevron-right' : 'chevron-down'} size={16} /></button>}
                     <button
                       type="button"
@@ -355,12 +363,12 @@ export function ReaderChrome({ state, stage, handlers, tools }: ReaderChromeProp
                       onClick={() => handlers.onTocEntry(entry.id)}
                     >
                       <span className="toc-index">{index + 1}</span>
-                      <span className="toc-label">{entry.label}</span>
+                      <span className="toc-label">{entry.label}{entry.note && <small className="toc-note">{entry.note}</small>}</span>
                       {entry.cached && <span className="toc-cached">已缓存</span>}
                       {state.pendingChapterRef === entry.id && <BusyIndicator busy label="加载中…" />}
                     </button>
                   </li>
-                );
+                </Fragment>);
               })}
             </ul>
           )}
@@ -533,6 +541,7 @@ function SettingsBody({ section, state, handlers }: { section: 'text' | 'behavio
   </>;
   return <>
     {state.layout !== 'fixed' && <SegmentedRow label="翻页方式" options={[{ value: 'scroll', label: '滚动' }, { value: 'paged', label: '翻页' }]} value={state.mode} onChange={value => handlers.onSetting({ mode: value as AppSettings['mode'] })} />}
+    {state.layout !== 'fixed' && state.mode === 'scroll' && <SegmentedRow label="专注模式" options={[{ value: 'off', label: '关' }, { value: 'on', label: '开' }]} value={state.focusMode ? 'on' : 'off'} onChange={value => handlers.onSetting({ focus: value === 'on' })} />}
     <SegmentedRow label="翻页动画" options={[{ value: 'slide', label: '滑动' }, { value: 'fade', label: '淡入' }, { value: 'none', label: '无' }]} value={state.pageAnimation} onChange={value => handlers.onSetting({ pageAnimation: value as AppSettings['pageAnimation'] })} />
     <TapZoneEditor grid={normalizeTapZones(state.tapZones, state.tapZone)} onChange={tapZones => handlers.onSetting({ tapZones })} />
     {state.showFitRow && <SegmentedRow label="图片适配" options={[{ value: 'contain', label: '完整' }, { value: 'width', label: '适宽' }]} value={state.fit} onChange={value => handlers.onSetting({ fit: value as AppSettings['fit'] })} />}
@@ -645,8 +654,8 @@ function SpeechBar({ state, handlers }: { state: SpeechBarState; handlers: Chrom
   const playing = state.state === 'playing';
   return (
     <div className="tts-bar" data-state={state.state} role="group" aria-label="朗读控制">
-      {/* The controls are one row of their own, and the sentence with its scrubber
-          is the row below.
+      {/* Two rows, like any player: what is being read with its scrubber, then the
+          transport.
 
           The bar used to be a single row: previous, play/pause, next, the sentence
           and its range, the count chip, and an ✕ — seven things across a phone.
@@ -658,14 +667,30 @@ function SpeechBar({ state, handlers }: { state: SpeechBarState; handlers: Chrom
           reader has to go looking for is a control that does not exist (the same
           argument the rail's own scrollbar is built on).
 
-          Every control is `flex: 1` so the five of them divide the width evenly
-          and the row always fits: no fixed widths to run out of, and the targets
-          grow with the screen instead of huddling in the middle of a tablet. */}
+          Every control is `flex: 1` so they divide the width evenly and the row
+          always fits: no fixed widths to run out of, and the targets grow with the
+          screen instead of huddling in the middle of a tablet. */}
+      <div className="tts-row tts-progress">
+        <span className="tts-text" title={state.label}>
+          {state.label}
+        </span>
+        <input
+          className="tts-range"
+          type="range"
+          min={0}
+          max={max}
+          step={1}
+          value={value}
+          aria-label="朗读进度"
+          onInput={(event) => handlers.onSpeechScrub(Number((event.currentTarget as HTMLInputElement).value))}
+        />
+      </div>
       <div className="tts-row tts-controls">
         <IconButton label="上一句" icon="step-backward" onClick={handlers.onSpeechPrevious} />
         <IconButton
           label={playing ? '暂停朗读' : '继续朗读'}
           icon={playing ? 'pause' : 'play'}
+          className="tts-toggle"
           onClick={handlers.onSpeechToggle}
         />
         <IconButton label="下一句" icon="step-forward" onClick={handlers.onSpeechNext} />
@@ -689,21 +714,6 @@ function SpeechBar({ state, handlers }: { state: SpeechBarState; handlers: Chrom
           icon="stop"
           className="tts-stop"
           onClick={handlers.onStopSpeech}
-        />
-      </div>
-      <div className="tts-row tts-progress">
-        <span className="tts-text" title={state.label}>
-          {state.label}
-        </span>
-        <input
-          className="tts-range"
-          type="range"
-          min={0}
-          max={max}
-          step={1}
-          value={value}
-          aria-label="朗读进度"
-          onInput={(event) => handlers.onSpeechScrub(Number((event.currentTarget as HTMLInputElement).value))}
         />
       </div>
     </div>

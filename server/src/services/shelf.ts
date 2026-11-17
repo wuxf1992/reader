@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { Db } from '../db/index.ts';
 import { applyOverrides, type BaseMetadata } from './merge.ts';
 import { safeJsonParse } from '../lib/text.ts';
@@ -135,6 +136,12 @@ export interface ListOptions {
    */
   path?: string;
   /**
+   * With `path` (or the root, when it is absent): only the books that sit directly in
+   * that folder, not the ones in folders below it. A folder-by-folder view lists the
+   * subfolders beside these, so listing their books here as well would say them twice.
+   */
+  direct?: boolean;
+  /**
    * Which set to list: the reader's shelf, or the library's index.
    *
    * The shelf is the default and the only thing the shelf screen ever wants. The
@@ -250,6 +257,15 @@ export class ShelfService {
         WHERE f.book_id = b.id AND f.missing = 0 AND f.rel_path LIKE ? ESCAPE '\\'
       )`);
       params.push(`${escapeLike(prefix)}/%`);
+      if (options.direct) {
+        where.push(`EXISTS (
+          SELECT 1 FROM book_files f
+          WHERE f.book_id = b.id AND f.missing = 0 AND f.rel_path LIKE ? ESCAPE '\\' AND f.rel_path NOT LIKE ? ESCAPE '\\'
+        )`);
+        params.push(`${escapeLike(prefix)}/%`, `${escapeLike(prefix)}/%/%`);
+      }
+    } else if (options.direct) {
+      where.push(`EXISTS (SELECT 1 FROM book_files f WHERE f.book_id = b.id AND f.missing = 0 AND f.rel_path NOT LIKE '%/%')`);
     }
 
     // 在读 / 想读 / 已读 reads reading_progress through the shelf join (below).
@@ -258,14 +274,27 @@ export class ShelfService {
       where.push(`(${READING_STATE}) = ?`);
       params.push(options.status);
     }
+    const order = options.order === 'asc' ? 'ASC' : 'DESC';
+    const sort = options.sort === 'recent' ? 'updated' : options.sort ?? 'added';
+    if (!['title', 'author', 'added', 'updated'].includes(sort)) throw badRequest('invalid sort');
+    /*
+     * `updated` asks two different questions in the two scopes, and the shelf's is
+     * the one the client calls 最近阅读.
+     *
+     * In the index it is when the *book* last changed. On the shelf it is when this
+     * reader last *read* it, which is on their progress row and not on the book's:
+     * a book's own timestamp moves when its metadata is edited or a chapter source
+     * updates, and never because somebody read it. Sorting the shelf by it is why
+     * finishing an evening in one book left another at the top of 最近阅读. A book
+     * never opened has no progress row; those come after every book that has one,
+     * newest on the shelf first.
+     */
     const sortColumn = {
       title: 'b.title',
       author: 'b.author',
       added: 'ub.added_at',
-      updated: 'b.updated_at',
-      recent: '(SELECT p.updated_at FROM reading_progress p WHERE p.book_id = b.id AND p.user_id = ub.user_id)',
-    }[options.sort ?? 'added'];
-    const order = options.order === 'asc' ? 'ASC' : 'DESC';
+      updated: library ? 'b.updated_at' : `COALESCE(rp.updated_at, 0) ${order}, ub.added_at`,
+    }[sort];
     const whereSql = where.join(' AND ');
     /*
      * Sorting by `added` in library scope sorts on `ub.added_at`, which is `NULL` for a
@@ -372,6 +401,9 @@ export class ShelfService {
       source: row.source,
     };
     const { effective, appliedFields } = applyOverrides(base, overrides);
+    // A cover the user chose sits above the one the scanner extracted, like any manual field.
+    const coverPath = overrides.cover || row.cover_path;
+    if (overrides.cover) appliedFields.push('cover');
     return {
       id: row.id,
       title: effective.title,
@@ -385,7 +417,8 @@ export class ShelfService {
       tags: effective.tags,
       pubdate: effective.pubdate,
       format: row.format,
-      coverUrl: row.cover_path ? `/api/v1/books/${row.id}/cover` : null,
+      // The cover response is immutable-cached; a changed cover file gets a new URL.
+      coverUrl: coverPath ? `/api/v1/books/${row.id}/cover?v=${createHash('sha1').update(coverPath).digest('hex').slice(0, 10)}` : null,
       fileSize: row.file_size,
       pageCount: row.page_count,
       source: effective.source,
@@ -405,6 +438,24 @@ export class ShelfService {
       ...(row.reading_state === undefined ? {} : { readingState: row.reading_state }),
       ...(row.new_chapters === undefined ? {} : { newChapters: row.new_chapters }),
     };
+  }
+
+  /** The cover file to serve: the manually chosen one, else the scanner's. */
+  coverPath(bookId: string): string | null {
+    const manual = this.db.get<{ value: string }>("SELECT value FROM metadata_overrides WHERE book_id = ? AND field = 'cover'", bookId)?.value;
+    return manual || (this.db.get<{ cover_path: string | null }>('SELECT cover_path FROM books WHERE id = ?', bookId)?.cover_path ?? null);
+  }
+
+  /** The folders directly inside a library folder, by name, from the indexed files. */
+  folders(path = ''): string[] {
+    const prefix = path.replace(/\/+$/, ''), start = prefix ? prefix.length + 1 : 0;
+    const rows = this.db.all<{ rel_path: string }>(
+      prefix ? "SELECT rel_path FROM book_files WHERE missing = 0 AND rel_path LIKE ? ESCAPE '\\'" : 'SELECT rel_path FROM book_files WHERE missing = 0',
+      ...(prefix ? [`${escapeLike(prefix)}/%`] : []),
+    );
+    const names = new Set<string>();
+    for (const { rel_path } of rows) { const rest = rel_path.slice(start), end = rest.indexOf('/'); if (end > 0) names.add(rest.slice(0, end)); }
+    return [...names].sort((left, right) => left.localeCompare(right, 'zh-Hans-CN', { numeric: true }));
   }
 
   loadOverrides(bookId: string): Record<string, string> {

@@ -108,6 +108,8 @@ export interface AppSettings extends ViewSettings {
    * synced value would be wrong on one of them.
    */
   shelfDensity: ShelfDensity;
+  /** How 发现 draws books: a list with descriptions, or a grid of covers. */
+  exploreLayout: 'list' | 'grid';
   /** What the shelf sorts by when the reader has not picked this session. */
   shelfSort: ShelfSort;
   /** Show the author under each cover. Off makes the grid much quieter. */
@@ -146,6 +148,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   autoCache: true,
   autoCacheChapters: 3,
   comicDirection: 'ltr',
+  focus: false,
   paper: 'theme',
   paperFollowsDark: true,
   ttsRate: 1,
@@ -155,6 +158,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   ttsAutoAdvance: true,
   ttsEngine: 'auto',
   shelfDensity: 'cozy',
+  exploreLayout: 'list',
   shelfSort: 'recent',
   shelfShowAuthor: true,
   shelfShowProgress: true,
@@ -229,6 +233,8 @@ export class SettingsStore {
         if (parsed.readingTheme !== undefined) this.settings.readingTheme = validReadingTheme(parsed.readingTheme);
         else if (this.settings.paper !== 'theme') this.settings.readingTheme = readingThemeForPaper(this.settings.paper);
         if (this.settings.readingTheme !== undefined) this.settings.paper = 'theme';
+        if (typeof this.settings.focus !== 'boolean') this.settings.focus = false;
+        if (!['list', 'grid'].includes(this.settings.exploreLayout)) this.settings.exploreLayout = DEFAULT_APP_SETTINGS.exploreLayout;
         if (!['recent', 'added', 'title', 'author'].includes(this.settings.shelfSort)) {
           this.settings.shelfSort = DEFAULT_APP_SETTINGS.shelfSort;
         }

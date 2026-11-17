@@ -85,36 +85,32 @@ it('supports arrow, Home and End keys in the source tabs', async () => {
   }
 });
 
-it('keeps discovery closed on entry, loads it on demand and avoids book counts for navigation-only pages', async () => {
+it('opens discovery in its own tab and keeps navigation-only pages free of empty-book messages', async () => {
   const api = await mount();
   expect(api.sourceCatalog).not.toHaveBeenCalled();
-  expect(root.querySelector('.source-navigation')).toBeNull();
-  expect(root.textContent).not.toContain('本页 0 本书');
-  expect(root.textContent).not.toContain('没有找到匹配书籍');
+  expect(root.querySelector('.explore-links')).toBeNull();
   api.sourceCatalog.mockResolvedValueOnce({ title: '书海 / 发现', items: [], navigation: [{ title: '示例书源', ref: 'explore:one' }] });
-  await act(async () => button(root, '书海 / 发现').click()); await settle();
+  await act(async () => button(root, '发现').click()); await settle();
   expect(api.sourceCatalog).toHaveBeenCalledExactlyOnceWith('demo', {});
-  expect(root.querySelector('.source-navigation')?.textContent).toContain('示例书源');
+  expect(root.querySelector('.explore-links')?.textContent).toContain('示例书源');
   expect(root.textContent).not.toContain('本页 0 本书');
   expect(root.querySelector('.catalog-empty')).toBeNull();
   api.sourceCatalog.mockResolvedValueOnce({ title: '示例书源', items: [], navigation: [{ title: '排行榜', ref: 'explore:one:0' }] });
   await act(async () => button(root, '示例书源').click()); await settle();
   expect(api.sourceCatalog).toHaveBeenLastCalledWith('demo', { ref: 'explore:one' });
-  expect(root.querySelector('.source-navigation')?.textContent).toBe('排行榜');
-  await act(async () => button(root, '收起书海 / 发现').click()); await settle();
-  expect(root.querySelector('.source-navigation')).toBeNull();
-  expect(root.querySelector('.catalog-feedback')).toBeNull();
-  expect(button(root, '书海 / 发现').getAttribute('aria-expanded')).toBe('false');
+  expect(root.querySelector('.explore-links')?.textContent).toBe('排行榜');
+  await act(async () => button(root, '搜书').click()); await settle();
+  expect(root.querySelector('.explore-links')).toBeNull();
   await search();
   expect(root.querySelector('.catalog-source-count')?.textContent).toBe('2 条书源');
   expect(api.sourceCatalog).toHaveBeenCalledTimes(2);
 });
 
-it('still loads the catalog automatically for a browse-only source', async () => {
+it('loads a browse-only source through the discovery tab', async () => {
   const api = await mount(['browse']);
+  await act(async () => button(root, '发现').click()); await settle();
   expect(api.sourceCatalog).toHaveBeenCalledExactlyOnceWith('demo', {});
-  expect(root.querySelectorAll('.catalog-book')).toHaveLength(2);
-  expect(button(root, '书海 / 发现')).toBeUndefined();
+  expect(root.querySelectorAll('.explore-book')).toHaveLength(2);
 });
 
 const openUpdates = async () => {
@@ -281,7 +277,7 @@ it.each(['error', 'authorization'])('keeps the source dialog open and reports %s
 it('shows source details, expands the full description and reflects an existing shelf acquisition', async () => {
   const api = await mount();
   const description = '长简介'.repeat(100) + '完整简介结尾';
-  api.sourceDetail.mockResolvedValueOnce({ ...entries[0], shelfBookId: 'existing', coverUrl: 'http://images.example.com/cover.jpg', latestChapter: '第八章 新的故事', description } as any);
+  api.sourceDetail.mockResolvedValueOnce({ ...entries[0], shelfBookId: 'existing', coverRef: 'cover:http://images.example.com/cover.jpg', latestChapter: '第八章 新的故事', description } as any);
   const group = await openGroup();
   await act(async () => button(group, '详情').click());
   await settle(); await settle();
@@ -299,7 +295,7 @@ it('shows source details, expands the full description and reflects an existing 
   expect(detail.textContent).not.toContain('完整简介结尾');
   const image = detail.querySelector('img')!;
   expect(image.alt).toBe('测试小说封面'); expect(image.src).toBe('blob:detail-cover');
-  expect(api.coverBytes).toHaveBeenCalledWith('/api/v1/sources/demo/cover?ref=ref-0', expect.objectContaining({ signal: expect.any(AbortSignal) }), expect.any(Function));
+  expect(api.coverBytes).toHaveBeenCalledWith('/api/v1/sources/demo/cover?entryRef=ref-0&coverRef=' + encodeURIComponent('cover:http://images.example.com/cover.jpg'), expect.objectContaining({ signal: expect.any(AbortSignal) }), expect.any(Function));
   await act(async () => detail.querySelector<HTMLButtonElement>('.sheet-close')!.click());
   await settle();
   expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:detail-cover');
@@ -309,7 +305,7 @@ it('shows source details, expands the full description and reflects an existing 
 
 it('keeps details usable when cover loading fails and shows placeholders for missing fields', async () => {
   const api = await mount();
-  api.sourceDetail.mockResolvedValueOnce({ ...entries[0], authors: [], sourceName: undefined, shelfBookId: null, coverUrl: 'https://images.example.com/missing.jpg' } as any);
+  api.sourceDetail.mockResolvedValueOnce({ ...entries[0], authors: [], sourceName: undefined, shelfBookId: null, coverRef: 'cover:https://images.example.com/missing.jpg' } as any);
   api.coverBytes.mockRejectedValueOnce(new Error('image offline'));
   const group = await openGroup();
   await act(async () => button(group, '详情').click());
@@ -326,7 +322,7 @@ it('keeps details usable when cover loading fails and shows placeholders for mis
 
 it('loads the directory while the cover request is still pending', async () => {
   const api = await mount();
-  api.sourceDetail.mockResolvedValueOnce({ ...entries[0], shelfBookId: null, coverUrl: 'https://images.example.com/slow.jpg' } as any);
+  api.sourceDetail.mockResolvedValueOnce({ ...entries[0], shelfBookId: null, coverRef: 'cover:https://images.example.com/slow.jpg' } as any);
   let coverSignal: AbortSignal | undefined;
   api.coverBytes.mockImplementationOnce((_url: string, options: { signal?: AbortSignal } = {}) => new Promise<Uint8Array>((_resolve, reject) => {
     coverSignal = options.signal;

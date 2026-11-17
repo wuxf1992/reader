@@ -157,7 +157,7 @@ it('uses the existing authenticated manifest endpoint and keeps only chapters in
   expect(transport.requests).toHaveLength(1);
 });
 
-it('refreshes recent reading order on return while retaining other shelf caches', async () => {
+it('refreshes shelf navigation after sync while retaining the library index', async () => {
   const transport = new FakeTransport();
   let read = false;
   transport.respondWith(request => {
@@ -167,11 +167,14 @@ it('refreshes recent reading order on return while retaining other shelf caches'
   const api = await apiWith(transport);
   await api.listBooks({ sort: 'recent' });
   await api.listBooks({ sort: 'added' });
+  await api.listBooks({ scope: 'library', sort: 'added' });
   await api.putProgress({ bookId: 'b', locator: 'r1:0:c0', percentage: 0.4, chapterTitle: '第一章', device: 'test', updatedAt: 300 });
   expect((await api.listBooks({ sort: 'recent' })).items.map(book => book.id)).toEqual(['b', 'a']);
   await api.listBooks({ sort: 'added' });
-  expect(transport.countMatching(request => request.method === 'GET' && request.url.includes('sort=recent'))).toBe(2);
-  expect(transport.countMatching(request => request.method === 'GET' && request.url.includes('sort=added'))).toBe(1);
+  await api.listBooks({ scope: 'library', sort: 'added' });
+  expect(transport.countMatching(request => request.method === 'GET' && request.url.includes('sort=updated'))).toBe(2);
+  expect(transport.countMatching(request => request.method === 'GET' && request.url.endsWith('?sort=added'))).toBe(2);
+  expect(transport.countMatching(request => request.method === 'GET' && request.url.includes('scope=library'))).toBe(1);
 });
 
 describe('a shared in-flight navigation query', () => {
@@ -220,6 +223,21 @@ describe('media writes invalidate the navigation they change', () => {
     '/api/v1/media/ai-scan-jobs', '/api/v1/media/ai-scan-jobs/j-1',
   ])('%s keeps the catalog cache', mutation => {
     for (const query of lists) expect(affectedNavigationQuery(mutation, query)).toBe(false);
+  });
+
+  it('a sync push stales what is made of reading progress: 继续阅读 and the shelf list', () => {
+    const sync = '/api/v1/sync';
+    expect(affectedNavigationQuery(sync, '/api/v1/library/continue?limit=12')).toBe(true);
+    // The shelf's 最近阅读 order and its 在读/已读 filter are read off the progress row.
+    expect(affectedNavigationQuery(sync, '/api/v1/books?scope=shelf&page=1&pageSize=60&sort=updated&order=desc')).toBe(true);
+    expect(affectedNavigationQuery(sync, '/api/v1/books?sort=title&status=reading')).toBe(true);
+    expect(affectedNavigationQuery(sync, '/api/v1/books')).toBe(true);
+    // One book, and the library index, carry no progress.
+    expect(affectedNavigationQuery(sync, '/api/v1/books/b-1')).toBe(false);
+    expect(affectedNavigationQuery(sync, '/api/v1/books?scope=library&path=a')).toBe(false);
+    expect(affectedNavigationQuery(sync, '/api/v1/books?path=a&scope=library')).toBe(false);
+    expect(affectedNavigationQuery(sync, '/api/v1/library/browse?path=a')).toBe(false);
+    expect(affectedNavigationQuery(sync, '/api/v1/media/browse?channel=video')).toBe(false);
   });
 
   it('keeps playback, queue and favorite invalidation narrow', () => {

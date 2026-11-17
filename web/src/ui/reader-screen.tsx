@@ -17,7 +17,13 @@ import { attachGestures } from './gestures.ts';
 import { DEFAULT_APP_SETTINGS, READOUT_FIELDS, withThemeMemory, type AppSettings } from '../store/settings.ts';
 import { createStagedDoc, isStagedKind, windowIndexOf } from '../formats/windowed.ts';
 import type { BookDoc } from '../formats/types.ts';
-import type { TocEntry } from '../api/types.ts';
+import type { ContentItem, TocEntry } from '../api/types.ts';
+
+/** The directory of a chapter book, straight from its items: volumes and notes included. */
+const tocOf = (items: ContentItem[]): ChromeTocEntry[] => items.map((item) => ({
+  id: item.href, label: item.title, depth: 0, spine: item.seq,
+  ...(item.volume ? { volume: item.volume } : {}), ...(item.note ? { note: item.note } : {}),
+}));
 import type { NativePageHost } from './native-page.ts';
 import { TtsEngine, type TtsSnapshot } from '../render/tts.ts';
 import type { SpokenChunk } from '../render/tts-text.ts';
@@ -47,6 +53,11 @@ import { applyBrowserTheme } from './settings.ts';
 import { chineseText, chineseSearchQueries } from '../render/chinese.ts';
 import { tapActionAt } from './tap-zones.ts';
 import { ReadingTimeTracker } from '../features/stats/reading-time.ts';
+import { noteInMarkup } from './footnote.ts';
+import { AiAssistSheet, type AssistAction } from './ai-assist.tsx';
+import { ImageViewer, type ViewerImage } from './image-viewer.tsx';
+import { Sheet } from './sheet.tsx';
+import { Button } from './toolkit.tsx';
 
 export interface ReaderScreenOptions {
   /** Where the shared app theme is stored (see the media theme service). */
@@ -227,6 +238,16 @@ export class ReaderScreen {
   private toolsOpen = false;
   private annotation: AnnotationTarget | null = null;
   private annotationClosedAt = -Infinity;
+  /** The note being read in place, and where its link leads if the reader wants to go there. */
+  private footnote: { paragraphs: string[]; ref: string | null; fragment: string } | null = null;
+  /** The chapter's pictures, open full screen on the one that was tapped. */
+  private viewer: { images: ViewerImage[]; index: number } | null = null;
+  /** True while the platform's own page was taken down so the viewer could be seen over it. */
+  private viewerOverNativePage = false;
+  /** Whether the server offers the AI 选区助手; unknown and old servers are "no". */
+  private assistAvailable = false;
+  /** The passage the AI sheet is open on. */
+  private assist: { anchor: TextAnchor; context: string } | null = null;
   private toolsSelection: TextAnchor | null = null;
   private toolsReturn = '';
   private preview: SpeechEngine | null = null;
@@ -352,11 +373,20 @@ export class ReaderScreen {
             confirmText="跳到最新位置" cancelText="继续当前阅读"
             onConfirm={() => void this.resolveRemoteProgress(true)} onCancel={() => void this.resolveRemoteProgress(false)} />}{this.annotation && <AnnotationPopover key={this.annotation.note?.id ?? encodeAnchor(this.annotation.anchor)} target={this.annotation}
             save={(type, comment, color) => this.saveAnnotation(type, comment, color)} remove={() => this.removeAnnotation()}
-            close={() => { this.annotation = null; this.annotationClosedAt = performance.now(); this.view?.clearSelection(); this.patch({}); }} />}{this.toolsOpen && this.manifest ? <ReadingTools
+            close={() => { this.annotation = null; this.annotationClosedAt = performance.now(); this.view?.clearSelection(); this.patch({}); }}
+            {...(this.assistAvailable ? { askAi: () => this.openAssist() } : {})} />}{this.assist && <AiAssistSheet
+            key={encodeAnchor(this.assist.anchor)} quote={this.assist.anchor.quote} ask={(action, question) => this.askAi(action, question)} keep={comment => this.keepAnswer(comment)}
+            onClose={() => { this.assist = null; this.patch({}); }} />}{this.viewer && <ImageViewer
+            key={this.viewer.images[this.viewer.index]?.src} images={this.viewer.images} start={this.viewer.index}
+            onClose={() => this.closeViewer()} />}{this.footnote && <Sheet
+            title="注释" size="compact" className="footnote-sheet" onClose={() => { this.footnote = null; this.patch({}); }}
+            footer={<Button onClick={() => this.goToNote()}>跳到注释处</Button>}>
+            <div className="footnote-text">{this.footnote.paragraphs.map((paragraph, index) => <p key={index}>{paragraph}</p>)}</div>
+          </Sheet>}{this.toolsOpen && this.manifest ? <ReadingTools
             api={this.options.api} cache={this.publicationCache} offline={this.options.offline} downloads={this.options.downloads}
             sync={this.options.sync} manifest={this.manifest} selection={this.toolsSelection}
             currentChapter={this.chrome.chapterIndex}
-            locator={this.view?.position()?.locator ?? ''} returnLocator={this.toolsReturn}
+            locator={this.view?.position()?.locator ?? ''} chapterTitle={this.view?.position()?.chapterTitle ?? ''} returnLocator={this.toolsReturn}
             sections={signal => this.searchSections(signal)} navigate={target => this.navigateTool(target)}
             searchQueries={query => chineseSearchQueries(query, this.settings.chineseVariant)}
             displayText={text => chineseText(text, this.settings.chineseVariant)}
@@ -425,6 +455,110 @@ export class ReaderScreen {
     applyBrowserTheme(document.documentElement, this.settings.theme, this.element);
   }
 
+  /**
+   * Shows the note a reference points at without leaving the page.
+   *
+   * Returns whether the tap is being answered here. A note in the chapter on
+   * screen is read straight from it. One in another chapter of the loaded window
+   * (the usual "notes at the back of the book") has to be fetched first, so the
+   * tap is claimed at once and falls back to the jump if what arrives is not a
+   * note. A chapter outside the window is left to the jump, which already knows
+   * how to fetch a window.
+   */
+  private previewNote(ref: string | null, fragment: string): boolean {
+    const view = this.view, doc = this.doc;
+    if (!view || !doc || this.toolsOpen || this.navigating) return false;
+    const current = view.position().sectionIndex;
+    const index = ref === null ? current : view.indexOfSection(this.localSectionId(ref));
+    if (index < 0) return false;
+    const show = (paragraphs: string[]): void => { this.annotation = null; this.footnote = { paragraphs, ref: index === current ? null : ref, fragment }; this.patch({}); };
+    if (index === current) {
+      const paragraphs = view.noteAt(fragment);
+      if (paragraphs) show(paragraphs);
+      return paragraphs !== null;
+    }
+    const epoch = this.viewEpoch;
+    void (async () => {
+      let paragraphs: string[] | null = null;
+      try {
+        const lazy = doc as BookDoc & { loadSection?(index: number): Promise<import('../formats/types.ts').Section | null> };
+        const section = lazy.loadSection ? await lazy.loadSection(index) : doc.sections[index];
+        if (section?.html && section.bodyIsMarkup !== false) paragraphs = noteInMarkup(section.html, fragment);
+      } catch { /* unreadable right now: the jump reports it in its own words */ }
+      if (epoch !== this.viewEpoch || this.disposed) return;
+      if (paragraphs) show(paragraphs); else void this.goToChapterRef(`${ref}#${fragment}`);
+    })();
+    return true;
+  }
+
+  /**
+   * Opens the AI sheet on the current selection.
+   *
+   * The context is taken now, from the chapter on screen: the paragraph the
+   * selection sits in, which is what tells a model which "他" a sentence means,
+   * or failing that the few characters the anchor carries on either side.
+   */
+  private openAssist(): void {
+    const anchor = this.annotation?.anchor;
+    if (!anchor) return;
+    const context = this.view?.passageAround(anchor) || `${anchor.prefix}${anchor.quote}${anchor.suffix}`;
+    this.assist = { anchor, context };
+    this.annotation = null;
+    this.patch({});
+  }
+
+  private async askAi(action: AssistAction, question: string): Promise<string> {
+    const book = this.book, assist = this.assist;
+    if (!book || !assist) throw new Error('阅读器已关闭');
+    const { anchor, context } = assist;
+    const result = await this.options.api.aiAssist(book.id, { action, text: anchor.quote, ...(context !== anchor.quote ? { context } : {}), ...(question ? { question } : {}) });
+    return result.answer;
+  }
+
+  /** Keeps an AI answer as an annotation on the passage it was about, so it shows in 读书笔记. */
+  private async keepAnswer(comment: string): Promise<void> {
+    const book = this.book, assist = this.assist;
+    if (!book || !assist) throw new Error('阅读器已关闭');
+    const chapterTitle = this.view?.position()?.chapterTitle;
+    await this.options.offline.upsertNotes([{ id: newId(), bookId: book.id, type: 'note', locator: encodeAnchor(assist.anchor),
+      text: assist.anchor.quote, comment, color: '#ffd54f', ...(chapterTitle !== undefined ? { chapterTitle } : {}), updatedAt: Date.now() }]);
+    this.options.sync.schedule(); this.paintNotes();
+  }
+
+  /**
+   * Opens the comic page on screen in the picture viewer.
+   *
+   * On Android the page is drawn by the platform in a view above the WebView, and
+   * a viewer inside the WebView would open underneath it. The native page is taken
+   * down for as long as the viewer is open and drawn again when it closes.
+   */
+  private openPagePicture(): boolean {
+    const picture = this.view?.pagePicture();
+    if (!picture) return false;
+    if (this.options.pageHost) { this.options.pageHost.hide(); this.viewerOverNativePage = true; }
+    this.viewer = picture;
+    this.patch({});
+    return true;
+  }
+
+  private closeViewer(): void {
+    this.viewer = null;
+    this.patch({});
+    if (!this.viewerOverNativePage) return;
+    this.viewerOverNativePage = false;
+    const view = this.view;
+    if (view) void view.open(view.currentSectionIndex(), 0).catch(() => undefined);
+  }
+
+  private goToNote(): void {
+    const note = this.footnote;
+    if (!note) return;
+    this.footnote = null;
+    this.patch({});
+    if (note.ref === null) this.view?.revealFragment(note.fragment);
+    else void this.goToChapterRef(`${note.ref}#${note.fragment}`);
+  }
+
   private async generateAiSummary(): Promise<void> {
     if (this.chrome.aiSummary) { this.patch({ aiSummary: '' }); return; }
     if (!this.book || !this.chrome.currentSectionId || this.chrome.aiSummaryBusy) return;
@@ -441,7 +575,11 @@ export class ReaderScreen {
   }
 
   /** Opens a book: fetch bytes, parse, restore position, start reporting. */
-  async open(book: Book): Promise<void> {
+  /**
+   * @param at A place to go to once the book is open (a note's locator, from 读书笔记),
+   *   instead of staying at the saved reading position.
+   */
+  async open(book: Book, at = ''): Promise<void> {
     const budget = { timedOut: false };
     this.cacheRefresh?.abort(); this.remoteProgress = null;
     this.positionReady = false;
@@ -452,7 +590,7 @@ export class ReaderScreen {
     this.pdfLoading = pdfLoading;
     this.closeAlternatives(); this.chapterRefresh?.abort(); this.chapterRefresh = null;
     const token = ++this.loadingToken;
-    this.toolsOpen = false; this.annotation = null; this.toolsReturn = ''; this.toolsSelection = null; this.stopPreview();
+    this.toolsOpen = false; this.annotation = null; this.footnote = null; this.assist = null; this.viewer = null; this.viewerOverNativePage = false; this.toolsReturn = ''; this.toolsSelection = null; this.stopPreview();
     this.content = null; this.book = book;
     this.manualDownloadRunning = this.options.downloads.running(book.id);
     let opened = false;
@@ -481,7 +619,7 @@ export class ReaderScreen {
       // An older server without the endpoint keeps the button, as it always had.
       if (typeof this.options.api.aiCapabilities === 'function' && this.chrome.aiSummaryAvailable === undefined) {
         void this.options.api.aiCapabilities().then(capabilities => {
-          if (!this.disposed) this.patch({ aiSummaryAvailable: capabilities.summary });
+          if (!this.disposed) { this.assistAvailable = capabilities.assist === true; this.patch({ aiSummaryAvailable: capabilities.summary }); }
         }).catch(error => {
           if (!this.disposed && error instanceof ApiError && error.kind === 'not_found') this.patch({ aiSummaryAvailable: true });
         });
@@ -513,7 +651,8 @@ export class ReaderScreen {
         if (token !== this.loadingToken) return;
         this.prefetchReady = true; this.startPrefetch();
         if (this.chrome.statusState === 'loading') this.hideStatus();
-        if (cached) void this.revalidateCachedNovel(book, token, openingProgress);
+        await this.openRequested(at, token);
+        if (cached) void this.revalidateCachedNovel(book, token, at ? this.options.offline.progressFor(book.id) : openingProgress);
         return;
       }
 
@@ -538,6 +677,7 @@ export class ReaderScreen {
       else this.hideStatus();
 
       await this.restorePosition(book, token, budget);
+      await this.openRequested(at, token);
     } catch (err) {
       if (token !== this.loadingToken) return;
       this.handleLoadError(err);
@@ -594,6 +734,7 @@ export class ReaderScreen {
         title: item.title,
         level: 0,
         spine: item.seq,
+        ...(item.volume ? { volume: item.volume } : {}), ...(item.note ? { note: item.note } : {}),
       }));
     }
     if (token !== this.loadingToken) return null;
@@ -601,6 +742,7 @@ export class ReaderScreen {
     this.patch({ toc: toc.map((entry) => ({
       id: entry.href, label: entry.title, depth: entry.level,
       ...(entry.spine === undefined ? {} : { spine: entry.spine }),
+      ...(entry.volume ? { volume: entry.volume } : {}), ...(entry.note ? { note: entry.note } : {}),
     })) });
 
     this.content = content;
@@ -771,8 +913,11 @@ export class ReaderScreen {
   private async saveAnnotation(type: 'highlight' | 'note' | 'bookmark', comment: string, color: string): Promise<void> {
     if (!this.book || !this.annotation) return;
     const { anchor, note } = this.annotation;
+    // A new note records the chapter on screen; an edited one keeps its chapter and its tags.
+    const chapterTitle = note ? note.chapterTitle : this.view?.position()?.chapterTitle;
     await this.options.offline.upsertNotes([{ id: note?.id ?? newId(), bookId: this.book.id,
-      type, locator: encodeAnchor(anchor), text: anchor.quote, comment, color, updatedAt: Date.now() }]);
+      type, locator: encodeAnchor(anchor), text: anchor.quote, comment, color,
+      ...(chapterTitle !== undefined ? { chapterTitle } : {}), ...(note?.tags ? { tags: note.tags } : {}), updatedAt: Date.now() }]);
     this.options.sync.schedule(); this.paintNotes();
   }
   private async removeAnnotation(): Promise<void> {
@@ -1100,7 +1245,7 @@ export class ReaderScreen {
       const blob = await this.options.api.refreshChapter(book.id, item.resourceRef ?? item.href, { signal: run.signal });
       if (token !== this.loadingToken || run.signal.aborted) return;
       await this.publicationCache.putResource(book.id, renditionRef(item), new Uint8Array(await blob.arrayBuffer()));
-      const toc = content.items.map(value => ({ id: value.href, label: value.title, depth: 0, spine: value.seq }));
+      const toc = tocOf(content.items);
       const doc = createStagedDoc({ kind: content.kind, content, toc, orderedByBook: true, loader: { read: value => this.readStagedSection(book, value) } });
       (doc as BookDoc & { staged?: unknown }).staged = doc;
       // Navigation remains possible during the network request; restore the current landing chapter.
@@ -1166,7 +1311,7 @@ export class ReaderScreen {
       if (token !== this.loadingToken) return;
       const result = await this.options.api.switchSource(book.id, this.alternativeRef, this.chrome.alternativeChapter!, String(this.content?.revision ?? previous.content?.revision ?? previous.revision));
       if (token !== this.loadingToken) return;
-      const content = result.content, toc = content.items.map(item => ({ id: item.href, label: item.title, depth: 0, spine: item.seq }));
+      const content = result.content, toc = tocOf(content.items);
       const doc = createStagedDoc({ kind: content.kind, content, toc, orderedByBook: true, loader: { read: item => this.readStagedSection(book, item) } });
       (doc as BookDoc & { staged?: unknown }).staged = doc;
       const index = doc.sections.findIndex(section => section.id === result.href);
@@ -1202,7 +1347,7 @@ export class ReaderScreen {
         this.flashStatus('目录已更新，暂无新章节', 3200);
         return;
       }
-      const toc = content.items.map((item) => ({ id: item.href, label: item.title, depth: 0, spine: item.seq }));
+      const toc = tocOf(content.items);
       const doc = createStagedDoc({
         kind: content.kind, content, toc, orderedByBook: true,
         loader: { read: (item) => this.readStagedSection(book, item) },
@@ -1397,6 +1542,7 @@ export class ReaderScreen {
         void this.goToChapterRef(ref);
         return true;
       },
+      onNoteLink: (link) => epoch === this.viewEpoch && this.previewNote(link.ref, link.fragment),
       onChapterChange: (index, section) => {
         if (epoch !== this.viewEpoch) return;
         this.annotation = null;
@@ -1476,7 +1622,18 @@ export class ReaderScreen {
         else void view.endDrag(null);
         return true;
       },
-      onLongPress: () => this.setChromeVisible(true),
+      // On a comic a tap turns the page, so its page is opened as a picture by a
+      // long press; everywhere else a long press brings the bars back.
+      onLongPress: () => { if (this.bodyGesturesBlocked()) return; if (!this.openPagePicture()) this.setChromeVisible(true); },
+      // A tap on a picture opens it, with the rest of the chapter's pictures behind it.
+      onTapTarget: (path) => {
+        if (this.bodyGesturesBlocked() || performance.now() - this.annotationClosedAt < 600) return true;
+        if (this.chromeVisible) { this.setChromeVisible(false); return true; }
+        const pictures = this.view?.picturesAt(path);
+        if (!pictures) return false;
+        this.annotation = null; this.viewer = pictures; this.patch({});
+        return true;
+      },
       hasSelection: () => hasTextSelection(this.stage),
     });
 
@@ -1485,15 +1642,40 @@ export class ReaderScreen {
     // arrows follow the reading direction, so in a right-to-left comic ← is forward.
     this.viewListeners.push(
       bindKeys(this.element, (key, shift) => {
-        if (this.bodyGesturesBlocked()) return;
+        if (this.bodyGesturesBlocked()) return false;
         if (this.chromeVisible && ['ArrowRight', 'ArrowLeft', 'PageDown', 'PageUp', ' '].includes(key)) this.setChromeVisible(false);
         const rtl = this.isRtl();
         if (key === 'PageDown' || (key === ' ' && !shift) || key === (rtl ? 'ArrowLeft' : 'ArrowRight')) void this.turnPage('next');
         else if (key === 'PageUp' || (key === ' ' && shift) || key === (rtl ? 'ArrowRight' : 'ArrowLeft')) void this.turnPage('previous');
-        else if (key === 's' || key === 'S') this.toggleSpeech();
         else if (key === 'Escape') this.setChromeVisible(false);
+        // 专注模式 reads a paragraph at a time; outside it the arrows are not ours.
+        else if (key === 'ArrowDown' || key === 'ArrowUp') return this.view?.focusStep(key === 'ArrowDown' ? 1 : -1) ?? false;
+        else this.letterKey(key.toLowerCase());
+        return false;
       }),
     );
+  }
+
+  /**
+   * The reader's single-key commands (docs/ui.md §3.10).
+   *
+   * Each is something a button already does; the key only saves the reach for it.
+   * `bindKeys` has already ruled out a modifier, a text field and an open sheet,
+   * so a letter here is never somebody typing.
+   */
+  private letterKey(key: string): void {
+    if (key === 's') this.toggleSpeech();
+    else if (key === 't') { this.setChromeVisible(true); this.toggleToc(); }
+    else if (key === 'f') this.openTools();
+    else if (key === 'b') void this.toggleBookmark();
+    else if (key === '[') void this.goToChapter(-1);
+    else if (key === ']') void this.goToChapter(1);
+    else if (key === 'h' && this.annotation && !this.annotation.note) {
+      // The selection toolbar's own 高亮, in the default colour.
+      void this.saveAnnotation('highlight', '', '#ffd54f').then(() => {
+        this.annotation = null; this.annotationClosedAt = performance.now(); this.view?.clearSelection(); this.patch({});
+      }).catch((error: unknown) => this.flashStatus(error instanceof Error ? error.message : '高亮失败', 2600));
+    }
   }
 
   /** Whether forward is to the left: a comic set to 右→左, or a right-to-left book. */
@@ -1515,6 +1697,7 @@ export class ReaderScreen {
       chineseVariant: this.settings.chineseVariant,
       brightness: this.settings.brightness,
       pageAnimation: this.settings.pageAnimation,
+      focus: this.settings.focus,
       tapZone: this.settings.tapZone,
       txtIndent: this.settings.txtIndent,
       txtParagraphGap: this.settings.txtParagraphGap,
@@ -1579,7 +1762,7 @@ export class ReaderScreen {
   }
 
   private bodyGesturesBlocked(): boolean {
-    return this.chrome.tocOpen || this.chrome.settingsOpen || this.toolsOpen
+    return this.chrome.tocOpen || this.chrome.settingsOpen || this.toolsOpen || !!this.assist || !!this.viewer || !!this.footnote
       || !!this.element.querySelector('dialog[open]');
   }
 
@@ -1679,6 +1862,22 @@ export class ReaderScreen {
     }
   }
 
+  /**
+   * Goes to the place the book was opened for. It runs after the saved position is
+   * restored, so a place that can no longer be found leaves the reader where they
+   * were, with the reason, rather than on the first page.
+   */
+  private async openRequested(at: string, token: number): Promise<void> {
+    if (!at || token !== this.loadingToken || !this.view) return;
+    try {
+      await this.navigateTool(decodeAnchor(at) ?? at);
+      this.flashStatus('已跳到笔记位置', 1800);
+    } catch (error) {
+      if (token !== this.loadingToken) return;
+      this.flashStatus(error instanceof Error ? error.message : '无法定位到这条笔记', 4000);
+    }
+  }
+
   /** Goes back to a place from 阅读记录; that place then becomes the saved position. */
   private async restoreHistory(locator: string): Promise<void> {
     this.patch({ bookInfoOpen: false });
@@ -1710,7 +1909,7 @@ export class ReaderScreen {
       for (const note of here) await this.options.offline.deleteNote(note.id);
       this.flashStatus('已移除本页书签', 1800);
     } else {
-      await this.options.offline.upsertNotes([{ id: newId(), bookId: book.id, type: 'bookmark', locator, text: book.title, comment: '', color: '', updatedAt: Date.now() }]);
+      await this.options.offline.upsertNotes([{ id: newId(), bookId: book.id, type: 'bookmark', locator, text: book.title, comment: '', color: '', chapterTitle: this.view?.position()?.chapterTitle ?? '', updatedAt: Date.now() }]);
       this.flashStatus('已为本页加书签', 1800);
     }
     this.options.sync.schedule();
@@ -1915,7 +2114,7 @@ export class ReaderScreen {
 
     let entries: ChromeTocEntry[] = [];
     if (book.format === 'chapters' && this.content) {
-      entries = this.content.items.map((item) => ({ id: item.href, label: item.title, depth: 0, spine: item.seq }));
+      entries = tocOf(this.content.items);
       this.patch({ toc: entries });
       return;
     }
@@ -2062,7 +2261,11 @@ export class ReaderScreen {
 
   /** Whole-book index of a contents entry, from the fetched table of contents. */
   private tocSpineFor(ref: string): number | null {
-    const entry = this.chrome.toc.find((candidate) => candidate.id === ref);
+    // A link into a chapter may name a place the contents never listed; the chapter
+    // itself is still the one the contents know.
+    const chapter = ref.split('#')[0];
+    const entry = this.chrome.toc.find((candidate) => candidate.id === ref)
+      ?? this.chrome.toc.find((candidate) => candidate.id.split('#')[0] === chapter);
     return entry?.spine ?? null;
   }
 
@@ -2686,6 +2889,7 @@ function settingsView(
     chineseVariant: settings.chineseVariant,
     brightness: settings.brightness,
     pageAnimation: settings.pageAnimation,
+    focusMode: settings.focus,
     tapZone: settings.tapZone,
     tapZones: settings.tapZones,
     txtEncoding: settings.txtEncoding,
@@ -2804,7 +3008,7 @@ function bindChapterPull(host: HTMLElement, active: () => boolean, turn: (direct
  * page-turner. The same handler therefore serves a Bluetooth remote and a
  * desktop keyboard, with no per-host branching.
  */
-function bindKeys(target: HTMLElement, handler: (key: string, shift: boolean) => void): () => void {
+function bindKeys(target: HTMLElement, handler: (key: string, shift: boolean) => boolean): () => void {
   const onKeyDown = (event: KeyboardEvent): void => {
     // On the document, not the reader element: nothing in the reader holds focus
     // when a book opens, so a listener on the element heard no key until the reader
@@ -2822,7 +3026,8 @@ function bindKeys(target: HTMLElement, handler: (key: string, shift: boolean) =>
     // input is adjusted, and the settings panel is a column of range inputs.
     if (document.querySelector('dialog[open], [role=dialog], [role=alertdialog]')) return;
     if (event.key === ' ' || event.key === 'PageDown' || event.key === 'PageUp') event.preventDefault();
-    handler(event.key, event.shiftKey);
+    // True when the key was taken and the browser's own answer (scrolling) must not also happen.
+    if (handler(event.key, event.shiftKey)) event.preventDefault();
   };
   document.addEventListener('keydown', onKeyDown);
   return () => document.removeEventListener('keydown', onKeyDown);

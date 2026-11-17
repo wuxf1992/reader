@@ -260,6 +260,16 @@ describe('selection and long press', () => {
     expect(h.saw.zones).toEqual([]);
   });
 
+  it('accepts the next tap when a long-press modal takes the pointer release', () => {
+    const h = harness();
+    h.stage.dispatchEvent(pointer('pointerdown', { clientX: 260, clientY: 300 }));
+    vi.advanceTimersByTime(600);
+    expect(h.saw.longPresses).toBe(1);
+    // A native modal opens before release, so pointerup never returns to the stage.
+    press(h.stage, [260, 300]);
+    expect(h.saw.zones).toEqual(['next']);
+  });
+
   it('lets a control keep its own click when the reader tapped it', () => {
     // The other half of "controls win": the gesture layer suppresses the click that
     // follows a page turn, and it must not suppress the click a *button* is waiting

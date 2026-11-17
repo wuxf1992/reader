@@ -57,14 +57,15 @@ export function shelfSortKey(book: Book, sort: ShelfSort): string {
  */
 export type ReadingTimes = ReadonlyMap<string, number>;
 
-/** Newest read first, never-opened books last, ties broken on the book id. */
+/** Match the server: reading time, added time, title, then id. */
 export function sortByRecency(books: Book[], times: ReadingTimes): Book[] {
   return [...books].sort((left, right) => {
     const leftAt = times.get(left.id) ?? 0;
     const rightAt = times.get(right.id) ?? 0;
     if (leftAt !== rightAt) return rightAt - leftAt;
-    // A stable tie-break, for the same reason `compareBooks` has one: two books
-    // opened in the same second must not swap places between two renders.
+    const added = (right.addedAt ?? 0) - (left.addedAt ?? 0);
+    if (added) return added;
+    if (left.title !== right.title) return left.title < right.title ? -1 : 1;
     return left.id.localeCompare(right.id);
   });
 }

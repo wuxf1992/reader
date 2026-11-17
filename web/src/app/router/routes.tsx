@@ -1,4 +1,5 @@
-import { Navigate, Outlet, type RouteObject } from 'react-router-dom';
+import { Navigate, Outlet, useSearchParams, type RouteObject } from 'react-router-dom';
+import { LIBRARY_PATH, librarySearchPath } from '../../shared/library-link.ts';
 import { AppShell, MediaLayout } from '../App.tsx';
 import { RouteErrorBoundary } from './error-boundary.tsx';
 import { ShelfPage } from '../../features/shelf/pages/ShelfPage.tsx';
@@ -10,19 +11,26 @@ import {
   MinePage, LegacySettingsRedirect, SettingsPage, AccountPage, OpdsPage,
   MediaLibrariesPage, MediaLibraryCreatePage, MediaLibraryEditPage, MediaLibraryPermissionsPage, MediaTasksPage,
   MediaMetadataEditPage, MediaMatchPage, MediaChaptersPage, MediaEditionPage, MediaStructurePage,
-  SourceEditorPage, SourceCredentialsPage, SourceExtensionPage, StatsPage,
+  SourceEditorPage, SourceCredentialsPage, SourceExtensionPage, StatsPage, NotesPage,
   AdminUsersPage, AdminRegistrationPage, AdminServicesPage,
   MediaDetailPage, MediaPlayerPage, MediaFoldersPage, MediaNarratorsPage,
-  LibraryPage, LibraryBrowsePage, LibraryFilesPage, SourcesPage, SourceCatalogPage,
+  LibraryFilesPage, SourcesPage, SourceCatalogPage,
 } from './lazy-pages.tsx';
+
+/** A library link that carried a search keeps it: it opens 搜书 over the local library. */
+function LibraryRedirect() {
+  const query = useSearchParams()[0].get('q')?.trim();
+  return <Navigate to={query ? librarySearchPath(query) : LIBRARY_PATH} replace />;
+}
 
 export const routes = [{
   path: '/', element: <AppShell />, errorElement: <RouteErrorBoundary />, children: [
     { index: true, element: <HomePage /> },
     { path: 'shelf', element: <ShelfPage /> },
     { path: 'search', element: <SearchPage /> },
-    { path: 'library', element: <LibraryBrowsePage /> },
-    { path: 'library/books', element: <LibraryPage /> },
+    // 书库 is the local library in 发现; its old addresses still land there.
+    { path: 'library', element: <LibraryRedirect /> },
+    { path: 'library/books', element: <LibraryRedirect /> },
     { path: 'library/files', element: <LibraryFilesPage /> },
     { path: 'sources', element: <SourcesPage /> },
     // The legacy hash route /sources/search opens the complete sources hub;
@@ -51,6 +59,7 @@ export const routes = [{
       { index: true, element: <MinePage /> },
       { path: 'settings', element: <SettingsPage /> },
       { path: 'stats', element: <StatsPage /> },
+      { path: 'notes', element: <NotesPage /> },
       { path: 'account', element: <AccountPage /> },
       { path: 'opds', element: <OpdsPage /> },
       { path: 'admin/users', element: <AdminUsersPage /> },

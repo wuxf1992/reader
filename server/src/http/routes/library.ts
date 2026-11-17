@@ -303,7 +303,8 @@ export function registerLibraryRoutes(app: FastifyInstance, ctx: AppContext): vo
       const manifest = await ctx.sources.chapters.manifest(user.id, id);
       return {
         revision: manifest.revision,
-        toc: manifest.items.map((item) => ({ href: item.href, title: item.title, level: 0, spine: item.seq })),
+        toc: manifest.items.map((item) => ({ href: item.href, title: item.title, level: 0, spine: item.seq,
+          ...(item.volume ? { volume: item.volume } : {}), ...(item.note ? { note: item.note } : {}) })),
       };
     }
     const handler = resolveHandler(ctx, id, book.format);
@@ -483,9 +484,9 @@ export function registerLibraryRoutes(app: FastifyInstance, ctx: AppContext): vo
   app.get('/api/v1/books/:id/cover', { preHandler: auth }, async (request, reply) => {
     const { id } = request.params as { id: string };
     if (ctx.sources?.chapters.has(id)) ctx.sources.chapters.binding(currentUser(request).id, id);
-    const row = ctx.db.get<{ cover_path: string | null }>('SELECT cover_path FROM books WHERE id = ?', id);
-    if (!row?.cover_path) throw notFound('no cover for this book', 'NO_COVER');
-    const abs = resolveInside(ctx.config.dataDir, assertSafeRel(row.cover_path));
+    const coverPath = ctx.shelf.coverPath(id);
+    if (!coverPath) throw notFound('no cover for this book', 'NO_COVER');
+    const abs = resolveInside(ctx.config.dataDir, assertSafeRel(coverPath));
     if (!existsSync(abs)) throw notFound('cover cache missing', 'NO_COVER');
     const ext = extname(abs).toLowerCase();
     const mime = ext === '.png' ? 'image/png' : ext === '.gif' ? 'image/gif' : ext === '.svg' ? 'image/svg+xml' : ext === '.webp' ? 'image/webp' : 'image/jpeg';
@@ -745,7 +746,19 @@ export function registerLibraryRoutes(app: FastifyInstance, ctx: AppContext): vo
       await ctx.uploads.discard(staged);
       throw forbidden('only an administrator may overwrite library files', 'ADMIN_REQUIRED');
     }
-    return ctx.uploads.commit(staged, target, policy, { booksOnly: !admin });
+    const result = await ctx.uploads.commit(staged, target, policy, { booksOnly: !admin });
+    // The one book that does go straight onto a shelf: the uploader's own.
+    const now = Date.now();
+    const uploader = currentUser(request);
+    for (const bookId of new Set(result.uploaded.map((item) => item.bookId).filter((id): id is string => !!id))) {
+      ctx.db.run(
+        `INSERT INTO user_books (user_id, book_id, added_at, hidden) VALUES (?, ?, ?, 0)
+         ON CONFLICT(user_id, book_id) DO UPDATE SET hidden = 0,
+         added_at = CASE WHEN user_books.hidden = 1 THEN excluded.added_at ELSE user_books.added_at END`,
+        uploader.id, bookId, now,
+      );
+    }
+    return result;
   });
 
   /**

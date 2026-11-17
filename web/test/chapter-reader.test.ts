@@ -356,6 +356,23 @@ describe('chapter publication reading', () => {
     expect(body(env.screen)?.textContent).toContain('resource:r1:b');
   });
 
+  it('opens at the place it was asked for (a note from 读书笔记) instead of the saved position', async () => {
+    const env = await setup(); serve(env.transport, content(['a', 'b']));
+    await env.offline.setProgress({ bookId: book.id, locator: 'r1:0.0000:chapter:a', percentage: 0,
+      chapterTitle: 'a', device: 'phone', updatedAt: 10 });
+    await env.screen.open(book, 'r1:0.0000:chapter:b');
+    expect(body(env.screen)?.textContent).toContain('resource:r1:b');
+  });
+
+  it('stays at the saved position, and says why, when the requested place is gone', async () => {
+    const env = await setup(); serve(env.transport, content(['a', 'b']));
+    await env.offline.setProgress({ bookId: book.id, locator: 'r1:0.0000:chapter:b', percentage: 0.5,
+      chapterTitle: 'b', device: 'phone', updatedAt: 10 });
+    await env.screen.open(book, 'rt1:' + JSON.stringify({ sectionId: 'chapter:b', start: 0, end: 4, quote: '不在书里', prefix: '', suffix: '' }));
+    expect(body(env.screen)?.textContent).toContain('resource:r1:b');
+    expect(document.body.textContent).toContain('原文位置已变化');
+  });
+
   it('switches from the contents panel only after chapter selection and preserves the old view on failure', async () => {
     const env = await setup(); let failSwitch = true;
     env.transport.respondWith(request => {
@@ -1275,6 +1292,26 @@ it('turns pages from the keyboard without the reader having focused anything fir
   expect(turn.mock.calls.map(call => call[0])).toEqual(['next', 'previous']);
 });
 
+it('answers the single-key commands, and leaves a key with a modifier to the browser', async () => {
+  const env = await setup(); serve(env.transport, content(['a', 'b']));
+  await env.screen.open(book);
+  const screen = env.screen as unknown as { goToChapter(delta: number): Promise<void>; toggleBookmark(): Promise<void>; openTools(): void };
+  const chapter = vi.spyOn(screen, 'goToChapter').mockResolvedValue(undefined);
+  const bookmark = vi.spyOn(screen, 'toggleBookmark').mockResolvedValue(undefined);
+  const tools = vi.spyOn(screen, 'openTools').mockImplementation(() => undefined);
+  const press = (key: string, init: KeyboardEventInit = {}) => act(() => { document.body.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, ...init })); });
+  await press(']'); await press('['); await press('B'); await press('f');
+  await press('f', { ctrlKey: true });
+  expect(chapter.mock.calls.map(call => call[0])).toEqual([1, -1]);
+  expect(bookmark).toHaveBeenCalledTimes(1);
+  expect(tools).toHaveBeenCalledTimes(1);
+  // T opens the contents; with that sheet open the keys belong to it.
+  await press('t');
+  await vi.waitFor(() => expect(document.querySelector('dialog[open]')).not.toBeNull());
+  await press(']');
+  expect(chapter).toHaveBeenCalledTimes(2);
+});
+
 it('fetches the configured next chapter while the current one is read, once', async () => {
   const env = await setup(undefined, undefined, 'u1', 'http://one.test', { autoCache: true, autoCacheChapters: 1 }); serve(env.transport, content(['a', 'b', 'c']));
   await env.screen.open(book);
@@ -1292,6 +1329,8 @@ it('bookmarks the page on screen from the top bar, and the same button removes i
   await act(async () => { button().click(); });
   await vi.waitFor(() => expect(button().getAttribute('aria-pressed')).toBe('true'));
   expect(env.offline.notesFor(book.id).filter((note) => note.type === 'bookmark')).toHaveLength(1);
+  // 读书笔记 says which chapter a note is from.
+  expect(env.offline.notesFor(book.id)[0]?.chapterTitle).toBe('章节 a');
   await act(async () => { button().click(); });
   await vi.waitFor(() => expect(button().getAttribute('aria-pressed')).toBe('false'));
   expect(env.offline.notesFor(book.id).filter((note) => note.type === 'bookmark')).toHaveLength(0);
@@ -1384,4 +1423,29 @@ it('sends single-page chapter completion with its real reading position', async 
   const position = reader.view.position();
   await env.screen.flushProgress();
   expect(env.offline.progressFor(book.id)).toMatchObject({ locator: position.locator, chapterComplete: true });
+});
+
+
+it('dismisses controls on a picture tap before opening the viewer, and blocks taps behind it', async () => {
+  const env = await setup(); serve(env.transport, content(['a'])); await env.screen.open(book);
+  const screen = env.screen as unknown as { view: ReaderView; setChromeVisible(visible: boolean): void };
+  const pictures = vi.spyOn(screen.view, 'picturesAt').mockReturnValue({ index: 0, images: [{ src: 'data:image/png;base64,AQ==', alt: '插图' }] });
+  const stage = env.screen.element.querySelector<HTMLElement>('.stage')!;
+  const tap = async () => act(() => {
+    for (const type of ['pointerdown', 'pointerup']) {
+      const event = new Event(type, { bubbles: true, composed: true });
+      Object.assign(event, { clientX: 150, clientY: 300, pointerType: 'touch', button: 0 });
+      stage.dispatchEvent(event);
+    }
+  });
+  await act(() => screen.setChromeVisible(true));
+  await tap();
+  expect(env.screen.element.dataset.chrome).toBe('hidden');
+  expect(pictures).not.toHaveBeenCalled();
+  expect(document.querySelector('.image-viewer')).toBeNull();
+  await tap();
+  await vi.waitFor(() => expect(document.querySelector('dialog.image-viewer[open]')).not.toBeNull());
+  expect(pictures).toHaveBeenCalledTimes(1);
+  await tap();
+  expect(pictures).toHaveBeenCalledTimes(1);
 });

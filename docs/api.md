@@ -139,7 +139,7 @@
 | `path` | 只返回**这个目录下**（含子目录）有文件的书。库内相对路径，`''` 等于不过滤 |
 | `scope` | `shelf`（默认）\| `library`。见下 |
 | `status` | `reading` \| `want` \| `finished`，仅书架范围生效，见 [`PUT /books/:id/reading-status`](#put-booksidreading-status) |
-| `sort` | `title` \| `author` \| `added` \| `updated`，默认 `added` |
+| `sort` | `title` \| `author` \| `added` \| `updated`，默认 `added`。`updated` 在书架（默认 scope）是**本账号最近阅读这本书的时间**（阅读进度的更新时间，没读过的排在后面、按入库时间新到旧）；在 `scope=library` 是书本身的更新时间。未知值返回 `400` |
 | `order` | `asc` \| `desc`，默认 `desc` |
 | `page` `pageSize` | 默认 1 / 50，`pageSize` 夹到 1–200 |
 
@@ -502,6 +502,8 @@ pdf / 单图没有独立目录，回落到 items。来源章节出版物（`chap
 也可以以可写方式挂载以启用上传和管理员文件管理。改名、移动、删除和新建目录等端点同样会修改
 可写书库中的目录项；只读挂载时所有这些写操作统一返回 `403 READ_ONLY_MOUNT`。
 
+**书库和书架是两回事。** 扫描到的新书只进入书库；上传成功的书加入上传者自己的书架。业务设置 `library.autoShelf`（「书库 → 新书自动加入所有账号的书架」，默认关闭）开启后，新书会加到每个账号的书架，新建的账号也带上书库里的全部书。
+
 **成员只能新增书籍。** 管理员的上传不受限制。成员能否上传由业务设置 `library.memberUpload`
 （「我的 → 服务配置 → 书库 → 允许成员上传书籍」，默认开启）决定；关闭时成员的
 `POST` 在读取请求体之前就返回 `403 UPLOAD_DISABLED`。开启时，成员（`role=member`）的上传：
@@ -834,6 +836,8 @@ manifest 的每个条目还带 `ref`，即这个文件对应的**资源引用**�
 
 注意：`notes[].type` 只接受 `note` / `highlight` / `bookmark`，其他值整批返回 `400 BAD_NOTE_TYPE`。
 `notes[].deleted: true` 是删除（写墓碑）。
+`notes[]` 另有两个可选字段：`chapterTitle`（做笔记时的章节标题）和 `tags`（字符串数组，至多 10 个、每个至多 32 字，否则 `400 BAD_PAYLOAD`）。
+字段缺失表示保持服务端原值，`tags: []` 表示清空；拉取时两者总是返回。
 
 ### `GET /sync/progress/:bookId`
 
@@ -875,6 +879,55 @@ manifest 的每个条目还带 `ref`，即这个文件对应的**资源引用**�
 
 写墓碑。幂等：不存在也返回 `{ "ok": true }`。
 
+### `GET /notes/library?q=&type=&bookId=&page=&pageSize=`
+
+读书笔记的跨书列表（设计见[读书笔记管理](notes-library.zh-CN.md)），只读，按更新时间倒序。
+
+- `q`：在原文和批注里做子串匹配，`%`、`_` 按字面匹配；
+- `type`：`highlight` / `note` / `bookmark`，其他值返回 `400 BAD_NOTE_TYPE`；
+- `bookId`：只看一本书；
+- `tag`：只看带这个标签的笔记（整个标签精确匹配）；
+- `page` 从 1 起，`pageSize` 默认 50、上限 200；非正整数返回 `400 BAD_PAGE`。
+
+→ `{ "items": [{ "id", "bookId", "type", "locator", "text", "comment", "color", "chapterTitle", "tags": ["..."], "updatedAt", "bookTitle", "bookAuthor" }], "total": 12, "page": 1, "pageSize": 50 }`
+
+页码超界返回空 `items` 和真实的 `total`，不报错。书名与作者含手动元数据；书不在书架上时取扫描得到的值。
+
+### `GET /notes/library/books?q=&type=`
+
+有笔记的书，按最近笔记时间倒序，供筛选。`bookId` 参数被忽略。
+
+→ `{ "books": [{ "bookId", "title", "author", "count": 3, "lastAt": 1789537864820, "reviewed": true }] }`
+
+`reviewed` 表示有书评。没有按关键词、类型、标签筛选时，只有书评的书也会列出（`count` 为 0），书评的时间计入 `lastAt`。
+
+### `GET /notes/library/tags`
+
+当前账号用过的全部标签，按条数倒序。不受筛选影响。
+
+→ `{ "tags": [{ "tag": "金句", "count": 4 }] }`
+
+### `GET /notes/reviews/:bookId`、`PUT /notes/reviews/:bookId`
+
+当前账号对一本书的书评。不进同步。
+
+- `GET` → `{ "review": { "bookId", "body", "updatedAt" } }`，没有书评时 `review` 为 `null`。
+- `PUT { "body": "..." }` 保存（首尾空白会去掉），最后一次写入为准；`body` 为空即删除，返回 `{ "review": null }`。
+  超过 20000 字返回 `400 REVIEW_TOO_LONG`，`body` 不是字符串返回 `400 BAD_REVIEW`，书不存在返回 `404`。
+
+### `GET /notes/export?format=markdown|json&tz=<分钟>&q=&type=&bookId=&tag=`
+
+把筛选命中的全部笔记导出为一份文档，以 JSON 文本返回（不是文件流，Android 外壳无法处理下载）。
+
+→ `{ "filename": "reader-notes-2026-11-12.md", "mime": "text/markdown", "content": "...", "count": 12, "reviews": 1 }`
+
+`count` 是笔记条数，`reviews` 是书评篇数。书评放在所在书的开头；没有按关键词、类型、标签筛选时，只有书评的书也会导出。
+
+- `markdown`（默认）：按书、再按章节分组，原文为引用块，批注为正文，每条末尾一行是日期、类型和 `#标签`；不含书签；日期按 `tz`（相对 UTC 的分钟偏移）换算。
+- `json`：`{ "version": 1, "exportedAt", "books": [{ "id", "title", "author", "notes": [...] }] }`，含书签与 `locator`。
+
+其他 `format` 返回 `400 BAD_FORMAT`。
+
 ---
 
 ## 本地与 OPDS 来源
@@ -893,7 +946,8 @@ manifest 的每个条目还带 `ref`，即这个文件对应的**资源引用**�
 | POST /sources/:id/search/cancel | body `{sessionId}`，取消进行中的搜索 → `{ok:true}` |
 | GET /sources/:id/search-filters | 来源声明的搜索筛选项 |
 | GET /sources/:id/entries?ref=条目引用 | 查询条目详情 |
-| POST /sources/:id/acquire | body `{entryRef, optionId?}`，获取条目并加入当前账号书架 → `{kind:"ready", publicationId}` |
+| POST /sources/:id/acquire | body `{entryRef, optionId?}`，获取条目并加入当前账号书架 → `{kind:"ready", publicationId}`；章节书的条目带 `coverRef` 时同时保存封面（失败不影响加入书架） |
+| GET /sources/:id/cover?entryRef=&coverRef= | 条目封面。由服务端通过来源读取（`readResource({publicationRef: entryRef, ref: coverRef})`），只接受 PNG/JPEG/GIF/WebP 且字节与类型相符，插件的图片地址不会到达浏览器 |
 | GET /sources/:id/credentials | 当前账号在该来源的凭据状态：`available`、`fields:[{key,label,configured}]` 等，不含明文 |
 | PUT /sources/:id/credentials/:key、DELETE 同路径 | 保存（body `{value}`）/ 删除当前账号的一项凭据 → `{ok:true}` |
 | GET /sources/:id/publications/:publicationRef/manifest | 调试用：直接读取来源的章节目录 |
@@ -924,6 +978,9 @@ pluginId 是接口兼容字段。创建返回 201 与 source 对象。本地来�
 | POST /books/:id/alternatives | body `{sessionId, cursor?, resultLimit?}`，以 SSE 返回可替换的来源结果（事件同搜索） |
 | POST /books/:id/switch-preview | body `{entryRef}`，读取候选条目的目录 → `{chapters:[{id,title}], latestChapter}` |
 | POST /books/:id/switch-source | body `{entryRef, chapterId, revision}`，换源 |
+| GET /books/:id/cover-candidate?entryRef=&coverRef= | 换封面时的候选封面，经这本书所属的来源读取，限制同上 |
+| POST /books/:id/cover-source | body `{entryRef, coverRef, sourceId?}`，把书源中某个版本的封面存为这本书的封面；封面地址随之变化（`coverUrl` 带 `?v=`）。来自书源的书经它自己的来源读取；本地书必须给出 `sourceId`，封面作为手动覆盖保存（`manualFields` 含 `cover`），重新扫描不会替换 |
+| DELETE /books/:id/cover-source | 本地书恢复文件自带的封面 |
 | POST /books/:id/switch-quality | body `{entryRef, chapterId}`，试读候选条目的一章用于比较（返回该章内容、`latestChapter` 和 `elapsedMs`），不改动书 |
 | GET /subscriptions | 当前账号的章节更新订阅（`{subscriptions}`） |
 | PATCH /books/:id/subscription | body `{enabled?, intervalMinutes?（15–10080）, acknowledge?}` → `{subscription}` |
@@ -1070,8 +1127,8 @@ AI 配置在业务设置的 `ai` 分组（见下文 Administrator business setti
 
 ### `GET /ai/capabilities`
 
-任何已登录账号可读 → `{ "summary": true }`。`summary` 为 AI 与章节总结都已启用且地址、密钥、模型齐全；不返回任何配置值。
-阅读器据此决定是否显示「AI 总结」按钮；旧服务端没有此接口（404）时客户端照旧显示。
+任何已登录账号可读 → `{ "summary": true, "scan": false, "assist": true }`。每一项为 AI 与对应功能（章节总结、媒体扫描、选区助手）都已启用且地址、密钥、模型齐全；不返回任何配置值。
+阅读器据此决定是否显示「AI 总结」按钮和选区工具条的「问AI」；旧服务端没有此接口（404）时客户端照旧显示「AI 总结」，不显示「问AI」。
 
 ### `POST /ai/summary`
 
@@ -1079,6 +1136,19 @@ AI 配置在业务设置的 `ai` 分组（见下文 Administrator business setti
 
 正文按配置的 `maxInputChars` 截断；结果按账号、书、章节、正文哈希和提示词哈希缓存。AI 或章节总结未启用返回 `403 AI_DISABLED`，
 地址 / 密钥 / 模型未配置完整返回 `400`。
+
+### `POST /ai/assist`
+
+就读者选中的一段文字翻译、解释或提问。
+
+`{ "bookId": "...", "action": "translate" | "explain" | "ask", "text": "选中的文字", "context": "可选，所在段落", "question": "action 为 ask 时必填" }`
+→ `{ "answer": "...", "cached": false }`。
+
+- `text` 去除首尾空白后不能为空，最多 4000 字（超出返回 `400 AI_TEXT_TOO_LONG`）；`context` 截断到 2000 字；`question` 最多 500 字。
+- 翻译与回答使用配置的 `assistLanguage`（默认「简体中文」）；原文已是该语言时翻译改为通俗转述。
+- 选中的文字和上下文在提示词里用 `<<<` / `>>>` 围起并声明为材料，其中的指令不执行。
+- 结果按账号、书和请求哈希（动作、文字、上下文、问题、语言、模型）缓存；上游失败不缓存。
+- AI 或选区助手未启用返回 `403 AI_DISABLED`；上游失败返回 `502 AI_REQUEST_FAILED` / `AI_CONNECTION_FAILED` / `AI_EMPTY_RESPONSE`。
 
 ---
 
@@ -1216,3 +1286,8 @@ All endpoints require the account access token in the Authorization header. Read
 - PUT /api/v1/books/:id/reading-overrides accepts the same object. A correction contains id, anchor (sectionId, start, end, quote, prefix, suffix), and replacement. The submitted version must match the latest version; stale writes return `409 CONFLICT`. The response is the saved object with `version` incremented by one. Up to 500 corrections are allowed, with each quote/replacement at most 4,000 characters. headingPrefix is a literal single-line prefix of at most 60 characters.
 - POST /api/v1/books/:id/reading-overrides/undo accepts { version } and saves the preceding snapshot as a new version. History is scoped to account/book and stored in DATA_DIR/reader.db; it never rewrites library files.
 - POST /api/v1/tts/test accepts { voice?, speed? }, synthesizes a fixed sample and returns { bytes, contentType, elapsedMs, cached }. Failure codes include TTS_DISABLED, TTS_AUTH, TTS_TIMEOUT, TTS_CONTENT, TTS_EMPTY and TTS_UPSTREAM. It does not accept an upstream URL. Audio playback remains GET /api/v1/tts.
+
+### 来源条目和章节目录的可选字段
+
+- `CatalogEntry.coverRef`：封面资源引用，约定用 `readResource({publicationRef: entry.ref, ref: coverRef})` 读取。
+- 章节目录条目（插件 `getManifest` 的 `items`，以及 `/books/:id/manifest`、`/books/:id/toc` 的条目）可带 `volume`（所属卷名，相邻且相同的条目归在同一个卷标题下）和 `note`（标题下的一行说明，例如更新时间）。两者都是最长 200 字符的字符串，缺省时不出现。

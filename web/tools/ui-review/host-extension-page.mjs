@@ -69,9 +69,9 @@ try {
   const config = await bounds('.sources-body');
   const card = await bounds('.sources-body .sources-card');
   assert.ok(Math.abs(card.left - config.left - 14.4) < 1 && Math.abs(card.width - config.width + 28.8) < 1, 'nested plugin cards align with the content gutter');
-  await page.goto(base+'/#/library'); await page.locator('.library-browse-body').waitFor();
-  assert.deepEqual(await bounds('.library-browse-body'),config,'library and plugin configuration share the same width and position');
-  const libraryHeader = await bounds('.collection-header');
+  await page.goto(base+'/#/library'); await page.locator('.sources-body').waitFor();
+  assert.deepEqual(await bounds('.sources-body'),config,'library and plugin configuration share the same width and position');
+  const libraryHeader = await bounds('.sources-header');
   await page.goto(base+'/#/sources'); await page.locator('.sources-hub').waitFor();
   assert.deepEqual(await bounds('.sources-body'),config,'source hub and library share the same width and position');
   assert.deepEqual(await bounds('.sources-header'),libraryHeader,'source and library headings align');

@@ -6,6 +6,7 @@ import { useCover } from '../../../ui/use-cover.ts';
 import { coverTint } from '../../../ui/cover-tint.ts';
 import { BookGridSkeleton } from '../../../ui/book-grid-skeleton.tsx';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { LIBRARY_PATH } from '../../../shared/library-link.ts';
 import { useScrollMemory } from '../../../shared/ui/use-scroll-memory.ts';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import type { Book, ContinueReadingItem, ReadingState } from '../../../api/types.ts';
@@ -22,6 +23,7 @@ import { useSwipeTabs } from '../../../shared/ui/use-swipe-tabs.ts';
 import { notify } from '../../../ui/notifications.ts';
 import { Pager } from '../../../ui/pager.tsx';
 import { ActionMenu, type MenuItems } from '../../../ui/action-menu.tsx';
+import { ChangeCoverSheet } from '../../../ui/change-cover-sheet.tsx';
 import { describeShelfAction, SHELF_ACTION_LABELS } from '../../../ui/shelf-membership.ts';
 
 export function BookCard({ book, showAuthor, showProgress, menu }: { book: Book | ContinueReadingItem; showAuthor: boolean; showProgress: boolean; menu?: MenuItems }) {
@@ -73,6 +75,7 @@ export function ShelfPage() {
   const gridRef = useRef<HTMLDivElement>(null);
   const motionAnimations = useRef(new Map<string, Animation>());
   const pendingMotion = useRef<{ key: string; before: ShelfSnapshot } | null>(null);
+  const [coverBook, setCoverBook] = useState<Book | null>(null);
   // 在读 / 想读 / 已读 and one 分组 (a series or a tag), all in the URL like the page and sort.
   const status = isReadingState(params.get('status')) ? params.get('status') as ReadingState : undefined;
   const series = params.get('series') || undefined, tag = series ? undefined : params.get('tag') || undefined;
@@ -169,6 +172,8 @@ export function ShelfPage() {
   const menuItems = (book: Book): MenuItems => [
     ...readingStates.filter(state => state !== book.readingState).map(state => ({ label: '标记为' + readingLabels[state], onSelect: () => void act(book, state) })),
     book.readingState && { label: '清除标记', onSelect: () => void act(book, 'clear') },
+    // Any book can take its cover from a book source's edition of it.
+    { label: '更换封面', onSelect: () => setCoverBook(book) },
     { label: SHELF_ACTION_LABELS.remove, danger: true, onSelect: () => void act(book, 'remove') },
   ];
   const groupOptions = [
@@ -192,7 +197,7 @@ export function ShelfPage() {
   // own they pushed the first cover a third of the way down the screen (ui.md §3.4).
   const phone = useMediaQuery('(max-width: 700px)');
   const discover = <nav className="collection-links shelf-links" aria-label="发现书籍">
-    <Link className="button collection-link" to="/library"><Icon name="library" size={18} /><span>书库</span><Icon name="chevron-right" /></Link>
+    <Link className="button collection-link" to={LIBRARY_PATH}><Icon name="library" size={18} /><span>书库</span><Icon name="chevron-right" /></Link>
     <Link className="button collection-link" to="/sources"><Icon name="search" size={18} /><span>书源</span><Icon name="chevron-right" /></Link>
   </nav>;
   return <div ref={swipe} id="shelf-scroll" className="shelf shelf-screen">
@@ -226,11 +231,12 @@ export function ShelfPage() {
       {query.isPending && <><FloatingNotice message="正在加载书架…" busy /><BookGridSkeleton density={settings.shelfDensity} /></>}
       {query.error && <Callout tone="error" title="书架加载失败" action={{ label: '重试', onClick: () => void query.refetch() }}>{describeError(query.error)}</Callout>}
       {query.data && !query.isPlaceholderData && cards.length === 0 && filtered && !queryText && <div className="empty-state collection-empty"><Icon name="book" className="empty-glyph" /><p>{status ? `还没有${readingLabels[status]}的书` : '这个分组里没有书'}</p><p className="muted">{status === 'want' ? '在书籍的“⋯”菜单里可以标记想读。' : '换一个分类，或查看全部书籍。'}</p><div className="empty-actions"><button type="button" className="button" onClick={clearFilters}>查看全部书籍</button></div></div>}
-      {query.data && !query.isPlaceholderData && cards.length === 0 && !(filtered && !queryText) && <div className="empty-state collection-empty"><Icon name="book" className="empty-glyph" /><p>{queryText ? '没有匹配的书' : '书架还没有书'}</p><p className="muted">{queryText ? '换个关键词，或者检查一下作者名的写法' : '从书库挑选喜欢的书，或通过书源搜索，加入书架后就能开始阅读。'}</p><div className="empty-actions">{queryText ? <button type="button" className="button" onClick={clearSearch}>清除搜索</button> : <><Link className="button primary" to="/sources"><Icon name="search" size={16} />去搜书</Link><Link className="button" to="/library"><Icon name="library" size={16} />打开书库</Link></>}</div></div>}
+      {query.data && !query.isPlaceholderData && cards.length === 0 && !(filtered && !queryText) && <div className="empty-state collection-empty"><Icon name="book" className="empty-glyph" /><p>{queryText ? '没有匹配的书' : '书架还没有书'}</p><p className="muted">{queryText ? '换个关键词，或者检查一下作者名的写法' : '从书库挑选喜欢的书，或通过书源搜索，加入书架后就能开始阅读。'}</p><div className="empty-actions">{queryText ? <button type="button" className="button" onClick={clearSearch}>清除搜索</button> : <><Link className="button primary" to="/sources"><Icon name="search" size={16} />去搜书</Link><Link className="button" to={LIBRARY_PATH}><Icon name="library" size={16} />打开书库</Link></>}</div></div>}
       {cards.length > 0 && <div ref={gridRef} aria-busy={query.isFetching || undefined} className="book-grid" data-density={settings.shelfDensity} data-show-author={String(settings.shelfShowAuthor)} data-show-progress={String(settings.shelfShowProgress)}>{cards.map(book => <BookCard key={book.id} book={book} showAuthor={settings.shelfShowAuthor} showProgress={settings.shelfShowProgress} menu={menuItems(book)} />)}</div>}
       {query.data && pages > 1 && <Pager className="shelf-pager" page={Math.min(page, pages)} pageCount={pages} busy={query.isFetching} onGo={next => go({ page: next })} />}
     </section>
     {settingsOpen && <ShelfSettingsSheet settings={settings} onPatch={patch => { void runtime.updateSettings(patch); }} onClose={() => setSettingsOpen(false)} onOpenExternalReader={() => { setSettingsOpen(false); navigate('/me/opds', { state: { returnTo: '/shelf' } }); }} />}
+    {coverBook && <ChangeCoverSheet book={coverBook} onClose={() => setCoverBook(null)} onChanged={() => void query.refetch()} />}
     {groupsOpen && <DialogView dialog={{ kind: 'pick', title: groups.isPending ? '分组 · 正在读取…' : groups.error ? '分组 · 读取失败' : '分组', options: groupOptions, resolve: (_value: string | null) => undefined } satisfies Dialog} destructive="" onClose={answer => {
       setGroupsOpen(false);
       if (typeof answer !== 'string') return;

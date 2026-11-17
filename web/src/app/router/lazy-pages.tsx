@@ -23,6 +23,7 @@ const itemManagement = () => import('../../features/media/pages/MediaItemManagem
 const sourceEditor = () => import('../../features/sources/pages/SourceEditorPage.tsx');
 const sourceCredentials = () => import('../../features/sources/pages/SourceCredentialsPage.tsx');
 const stats = () => import('../../features/stats/pages/StatsPage.tsx');
+const notes = () => import('../../features/notes/pages/NotesPage.tsx');
 const sourceExtension = () => import('../../features/sources/pages/SourceExtensionPage.tsx');
 const admin = () => import('../../features/account/pages/AdminPages.tsx');
 const mediaDetail = () => import('../../features/media/pages/MediaDetailPage.tsx');
@@ -48,6 +49,7 @@ const SourceEditor = deferred(sourceEditor, 'SourceEditorPage');
 const SourceCredentials = deferred(sourceCredentials, 'SourceCredentialsPage');
 const SourceExtension = deferred(sourceExtension, 'SourceExtensionPage');
 const Stats = deferred(stats, 'StatsPage');
+const Notes = deferred(notes, 'NotesPage');
 const AdminUsers = deferred(admin, 'AdminUsersPage');
 const AdminRegistration = deferred(admin, 'AdminRegistrationPage');
 const AdminServices = deferred(admin, 'AdminServicesPage');
@@ -55,8 +57,6 @@ const MediaDetail = deferred(mediaDetail, 'MediaDetailPage');
 const MediaPlayer = deferred(mediaPlayer, 'MediaPlayerPage');
 const MediaFolders = deferred(mediaFolders, 'MediaFoldersPage');
 const MediaNarrators = deferred(mediaNarrators, 'MediaNarratorsPage');
-const Library = deferred(library, 'LibraryPage');
-const LibraryBrowse = deferred(library, 'LibraryBrowsePage');
 const LibraryFiles = deferred(library, 'LibraryFilesPage');
 const Sources = deferred(sources, 'SourcesPage');
 const SourceCatalog = deferred(sourceCatalog, 'SourceCatalogPage');
@@ -75,6 +75,7 @@ export function MediaStructurePage() { return <Suspense fallback={fallback}><Str
 export function SourceEditorPage() { return <Suspense fallback={fallback}><SourceEditor /></Suspense>; }
 export function SourceCredentialsPage() { return <Suspense fallback={fallback}><SourceCredentials /></Suspense>; }
 export function StatsPage() { return <Suspense fallback={fallback}><Stats /></Suspense>; }
+export function NotesPage() { return <Suspense fallback={fallback}><Notes /></Suspense>; }
 export function SourceExtensionPage() { return <Suspense fallback={fallback}><SourceExtension /></Suspense>; }
 export function AdminUsersPage() { return <Suspense fallback={fallback}><AdminUsers /></Suspense>; }
 export function AdminRegistrationPage() { return <Suspense fallback={fallback}><AdminRegistration /></Suspense>; }
@@ -83,8 +84,6 @@ export function MediaDetailPage() { return <Suspense fallback={fallback}><MediaD
 export function MediaPlayerPage() { return <Suspense fallback={fallback}><MediaPlayer /></Suspense>; }
 export function MediaFoldersPage() { return <Suspense fallback={fallback}><MediaFolders /></Suspense>; }
 export function MediaNarratorsPage() { return <Suspense fallback={fallback}><MediaNarrators /></Suspense>; }
-export function LibraryPage() { return <Suspense fallback={fallback}><Library /></Suspense>; }
-export function LibraryBrowsePage() { return <Suspense fallback={fallback}><LibraryBrowse /></Suspense>; }
 export function LibraryFilesPage() { return <Suspense fallback={fallback}><LibraryFiles /></Suspense>; }
 export function SourcesPage() { return <Suspense fallback={fallback}><Sources /></Suspense>; }
 export function SourceCatalogPage() { return <Suspense fallback={fallback}><SourceCatalog /></Suspense>; }

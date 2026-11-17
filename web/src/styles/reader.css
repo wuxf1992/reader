@@ -148,6 +148,13 @@
   --reader-text-align: inherit;
   --reader-page-margin: 1.5rem;
   --reader-brightness: 1;
+  /* The picture viewer's bed and the controls drawn on it: dark in every theme, like a lightbox. */
+  --reader-viewer-bed: rgba(14, 13, 12, 0.96);
+  --reader-viewer-ink: #F3F0EA;
+  --reader-viewer-control: rgba(20, 19, 18, 0.62);
+  --reader-viewer-edge: rgba(255, 255, 255, 0.28);
+  /* How much of the page outside the focused paragraph is covered (专注模式). */
+  --reader-focus-veil: 0.68;
   --reader-measure: 42rem;
 
   --reader-page-padding-inline: 1.5rem;
@@ -420,6 +427,93 @@ html[data-reader-chrome], html[data-reader-chrome] body {
   background: #000;
   opacity: clamp(0, calc(1 - var(--reader-brightness)), 0.5);
 }
+
+/*
+ * The picture viewer (`ui/image-viewer.tsx`): the one overlay that is the whole
+ * window rather than a sheet (docs/ui.md §3.7).
+ */
+.image-viewer {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: var(--reader-viewer-bed);
+  color: var(--reader-viewer-ink);
+  overflow: hidden;
+}
+.image-viewer::backdrop { background: var(--reader-viewer-bed); }
+.image-viewer-surface {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  /* Every drag on this surface is the viewer's: no scrolling, no browser zoom, no pull-to-refresh. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: zoom-in;
+}
+.image-viewer-surface[data-zoomed='true'] { cursor: grab; }
+.image-viewer-surface img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  transform-origin: center;
+  will-change: transform;
+  -webkit-user-drag: none;
+  -webkit-touch-callout: none;
+}
+.image-viewer-surface img[data-settling='true'] { transition: transform var(--motion-duration) var(--motion-ease); }
+.image-viewer-bar {
+  position: absolute;
+  inset: 0 0 auto 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: calc(var(--space-2) + var(--safe-top)) calc(var(--space-3) + var(--safe-right)) var(--space-2) calc(var(--space-3) + var(--safe-left));
+  pointer-events: none;
+}
+.image-viewer-count { font-size: var(--text-ui); font-variant-numeric: tabular-nums; padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); background: var(--reader-viewer-control); border: 1px solid var(--reader-viewer-edge); }
+.image-viewer .icon-button {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  /* Dark with a light edge: the control has to read on the bed and on a white plate alike. */
+  background: var(--reader-viewer-control);
+  border: 1px solid var(--reader-viewer-edge);
+  color: var(--reader-viewer-ink);
+  pointer-events: auto;
+}
+.image-viewer .icon-button:disabled { opacity: 0.35; }
+/* Stepping by button is for a mouse; a finger swipes, and the buttons would sit on the picture. */
+.image-viewer-step { display: none; position: absolute; top: 50%; left: calc(var(--space-3) + var(--safe-left)); transform: translateY(-50%); }
+.image-viewer-step.image-viewer-next { left: auto; right: calc(var(--space-3) + var(--safe-right)); }
+@media (hover: hover) and (pointer: fine) {
+  .image-viewer-step { display: inline-flex; align-items: center; justify-content: center; }
+}
+
+/*
+ * 专注模式.
+ *
+ * Two veils of paper over the page, above and below the paragraph being read
+ * (`ReaderView.syncFocus` places them). Paper at part strength rather than a
+ * style on the text: the book's own colours and rules are left alone, and the
+ * faded text keeps the relationship between ink and paper in every theme.
+ */
+.focus-veil {
+  position: absolute;
+  z-index: 4;
+  pointer-events: none;
+  background: var(--reader-paper);
+  opacity: var(--reader-focus-veil);
+}
+.focus-veil[hidden] { display: none; }
 
 /*
  * The host is the scroll container in scroll mode and a plain frame in paged
@@ -2026,6 +2120,29 @@ book-content {
   background: color-mix(in srgb, var(--reader-accent) 12%, transparent);
 }
 
+/* A volume heading: names the chapters under it, and is not one of them. */
+.toc-list .toc-volume {
+  margin-top: var(--space-2);
+  padding: 0.45rem 0.6rem 0.25rem;
+  color: var(--reader-muted);
+  font-size: var(--text-label);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.toc-list .toc-volume:first-child {
+  margin-top: 0;
+}
+
+/* When a chapter was updated, or how long it is: a quiet second line. */
+.toc-note {
+  display: block;
+  margin-top: 0.1rem;
+  color: var(--reader-muted);
+  font-size: var(--text-meta);
+  font-weight: 400;
+}
+
 /* A row for a chapter the loaded window cannot reach. It is still listed — the
    book does have that chapter — but it must not look tappable, because tapping it
    is the case the panel used to accept in silence. */
@@ -2155,19 +2272,22 @@ book-content {
   touch-action: manipulation;
 }
 
-.progress-scrubber::-webkit-slider-runnable-track {
+.progress-scrubber::-webkit-slider-runnable-track,
+.tts-range::-webkit-slider-runnable-track {
   height: 0.3rem;
   border-radius: var(--radius-xs);
   background: color-mix(in srgb, var(--reader-line) 70%, transparent);
 }
 
-.progress-scrubber::-moz-range-track {
+.progress-scrubber::-moz-range-track,
+.tts-range::-moz-range-track {
   height: 0.3rem;
   border-radius: var(--radius-xs);
   background: color-mix(in srgb, var(--reader-line) 70%, transparent);
 }
 
-.progress-scrubber::-webkit-slider-thumb {
+.progress-scrubber::-webkit-slider-thumb,
+.tts-range::-webkit-slider-thumb {
   appearance: none;
   -webkit-appearance: none;
   width: 1.1rem;
@@ -2182,7 +2302,8 @@ book-content {
   box-shadow: 0 1px 4px color-mix(in srgb, #000 18%, transparent);
 }
 
-.progress-scrubber::-moz-range-thumb {
+.progress-scrubber::-moz-range-thumb,
+.tts-range::-moz-range-thumb {
   width: 1.1rem;
   height: 1.1rem;
   border-radius: 50%;
@@ -2191,7 +2312,8 @@ book-content {
   box-shadow: 0 1px 4px color-mix(in srgb, #000 18%, transparent);
 }
 
-.progress-scrubber:focus-visible {
+.progress-scrubber:focus-visible,
+.tts-range:focus-visible {
   outline: var(--focus-ring);
   outline-offset: var(--focus-offset);
 }
@@ -2349,9 +2471,11 @@ book-content {
   bottom: var(--reader-chrome-bottom);
   z-index: var(--reader-layer-bar);
   display: flex;
+  /* A column: the two rows are stacked. Without this they sat side by side, and the
+     sentence, the count and the scrubber were each squeezed to a few characters. */
   flex-direction: column;
   align-items: stretch;
-  gap: 0.35rem;
+  gap: var(--space-2);
   padding: 0.35rem 0.5rem;
   background: var(--reader-surface-float);
   backdrop-filter: blur(10px);
@@ -2430,26 +2554,42 @@ book-content {
   color: var(--reader-ink);
 }
 
+/* What is being read, on a line of its own, and the scrubber under it at full width. */
 .tts-bar .tts-progress {
-  gap: var(--space-2);
-  padding-inline: 0.15rem;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-1);
 }
 
 .tts-bar .tts-text {
-  flex: 0 1 auto;
-  max-width: 40%;
-  font-size: var(--text-label);
-  color: var(--reader-muted);
+  font-size: var(--text-ui);
+  color: var(--reader-ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+/* Play/pause is the control the bar exists for, and is drawn as the primary one. */
+.tts-bar .tts-toggle {
+  background: var(--reader-primary);
+  color: var(--reader-on-primary);
+}
+
+.tts-bar .tts-controls .icon-button {
+  width: auto;
+  height: 2.75rem;
+}
+
+/* The same track and thumb as the page scrubber: one kind of slider in the reader. */
 .tts-range {
-  flex: 1 1 auto;
   min-width: 0;
   margin: 0;
-  accent-color: var(--reader-accent);
+  appearance: none;
+  -webkit-appearance: none;
+  height: 1.5rem;
+  background: transparent;
+  cursor: pointer;
+  touch-action: manipulation;
 }
 
 /*
@@ -2477,13 +2617,12 @@ book-content {
  */
 @media (pointer: coarse) {
   .chip { position: relative; }
-  .chip::before, .book-card .book-more::before, .book-card .book-shelve::before {
+  .chip::before, .book-card .book-more::before {
     content: '';
     position: absolute;
     inset: -0.5rem;
   }
   .chip::before { inset-inline: -0.15rem; }
-  .book-card .book-shelve::before { inset-block: -0.75rem; }
 }
 
 .chip[aria-pressed='true'] {
@@ -2960,207 +3099,6 @@ book-content {
  * bar off the bottom of the phone. `display: contents` makes the host vanish for
  * layout purposes and keeps the tree's children exactly where they were.
  */
-
-/* ---- library: the header's two-page switch ---- */
-
-/*
- * 书库 · 浏览 — the shop.
- *
- * Everything here exists because this half of the library is a *different kind of
- * page* from the file list beside it, which is what the review's second round asked
- * for (「两者列表显示逻辑不一样」): a shop puts the search at the top, fills the
- * window with covers, and gives each one a single action. The file page puts a
- * breadcrumb at the top and gives each row a menu.
- */
-
-/*
- * The search field, on the shop's own scroller.
- *
- * The field itself is the shelf's control — same pill, same glyph, same 16px — so
- * this rule only says where it sits and how wide it is allowed to be. It is inset by
- * the same token the shelf's is (`--shelf-search-inset`), which is the way two screens
- * keep their one shared control looking like one control.
- *
- * It is *not* capped at `--shelf-measure`: the shop's grid is uncapped (see below),
- * and a search field that stopped growing while the covers beside it kept going would
- * be the row that disagrees with the page.
- */
-/* 书库's subfolders: one scrollable row of chips under the search field, on its gutter. */
-.library-folders {
-  display: flex;
-  gap: var(--space-1);
-  overflow-x: auto;
-  padding: 0 var(--shelf-search-inset) var(--space-2);
-  scrollbar-width: none;
-}
-.library-folders .chip { display: inline-flex; align-items: center; gap: var(--space-1); flex: none; white-space: nowrap; }
-
-.library-search {
-  max-width: none;
-  /*
-   * The same gutter the shelf's field has, and *only* that: the field is as wide as
-   * the page, so there is no measure to subtract and no second inset to add. The
-   * covers below use the same token through their padding (see `.library-browse-grid`),
-   * which is what makes the field and the grid share a column.
-   */
-  padding-inline: var(--shelf-search-inset);
-  box-sizing: border-box;
-  margin: calc(var(--shelf-search-inset) + 0.4rem) 0;
-}
-
-/*
- * …and the panels that hang off the row are placed against the *input*, not the row.
- *
- * The magnifier and the clear button are `position: absolute` against this box, which
- * resolves against its *padding box* — so a row with a 0.75rem gutter would put both of
- * them in the gutter, i.e. the glyph would float in the margin and the clear button
- * would sit on top of the cover beside it. Their own offsets are therefore the field's
- * border plus the row's padding, which is one number rather than a coincidence.
- */
-.library-search .search-glyph {
-  inset-inline-start: calc(var(--shelf-search-inset) + 0.7rem);
-}
-
-.library-search .search-clear {
-  inset-inline-end: calc(var(--shelf-search-inset) + 0.3rem);
-}
-
-/*
- * The covers, laid out as a shop rather than as a shelf.
- *
- * The one difference from `.book-grid` that matters: this grid has **no measure
- * cap**. The shelf caps its width because a shelf is the reader's own collection at a
- * density they chose, and eleven covers across a desktop window is a wall rather than
- * a list. The library is the *server's* folder: its size is a fact about the disk, and
- * a reader browsing it on a wide screen wants more of it visible, not more margin. So
- * the columns are `auto-fill` with no maximum, and growing the window shows more books.
- *
- * The padding is the file listing's own gutter plus the search inset, because the
- * field above and the covers below it share the column and have to line up.
- */
-/*
- * The covers' own gutters, and they are *wider* than the field's by the page's own
- * padding: the field is the one control that spans the full content box (it is a
- * single row, and a search box narrower than the list it filters reads as decoration),
- * while the covers keep the page gutter they share with every other grid. The
- * difference is the point of the check below — the field must be inset from the
- * covers, not aligned with them.
- */
-.library-browse-grid {
-  padding: 0.25rem calc(0.9rem + var(--shelf-search-inset)) 0.75rem;
-}
-
-/*
- * …and the covers themselves get the shop's own size ladder.
- *
- * The shelf's ladder is tuned for a *capped* column, and the cap is what keeps it
- * from producing eleven covers a row. With the cap removed (this grid has none — see
- * above) the same minimum would tile a 1600px window with covers 130px wide, which is
- * the failure the ladder exists to prevent and would come back the moment the two
- * grids stop sharing a width rule. So the shop's minimums are the next step up, and
- * they keep climbing with the window: more of the folder on screen, and every cover
- * still big enough to read a title on.
- */
-.library-browse-grid[data-density='compact'] {
-  --shelf-cover-min: 6.5rem;
-}
-
-.library-browse-grid[data-density='comfortable'] {
-  --shelf-cover-min: 11rem;
-}
-
-@media (min-width: 40rem) {
-  .library-browse-grid {
-    --shelf-cover-min: 10.5rem;
-  }
-
-  .library-browse-grid[data-density='compact'] {
-    --shelf-cover-min: 8rem;
-  }
-
-  .library-browse-grid[data-density='comfortable'] {
-    --shelf-cover-min: 13rem;
-  }
-}
-
-@media (min-width: 72rem) {
-  /*
-   * Past the shelf's own measure the shop keeps adding columns instead of margin,
-   * because there is nothing to cap to: the covers are already at a readable size
-   * and the folder is genuinely large. This is the one place in the product where a
-   * wider window shows *more*, and it is the point of an uncapped grid.
-   */
-  .library-browse-grid {
-    --shelf-cover-min: 11.5rem;
-  }
-}
-
-/*
- * The one line above the grid, when there is something to say about it.
- *
- * `:empty` rather than a `hidden` attribute, because the component decides the
- * sentence and an empty one should cost no space at all: a blank 18px row above a
- * grid of covers is a gap the reader reads as a rendering mistake.
- */
-
-
-/*
- * A preview card: the shelf's card, with a *second* control on it.
- *
- * The card was a `<button>` on the shelf, and it cannot be one here — a button
- * inside a button is invalid, and the browser fixes it by hoisting the inner one
- * out of the outer, which puts the shelve control somewhere else on the page. So
- * the open target is an inner button and the card is a plain box that positions it.
- *
- * `position: relative` is what the shelve control is placed against, and the control
- * sits at the cover's *bottom-left*, opposite the format badge: the two would
- * otherwise overlap on a compact cover, and the badge is the quieter of the two so
- * it is the one that keeps its corner.
- */
-.book-card.is-row {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-}
-
-/*
- * 加入书架, on the cover of a book that is not on the shelf.
- *
- * A pill over the artwork rather than a row under the title: the row under the title
- * is where the author lives, and a control that appears and disappears there would
- * make one card in a row taller than its neighbours — which is the ragged baseline
- * the grid's two-line title exists to prevent. Over the cover it costs nothing, and
- * it is on the artwork the reader is already looking at.
- *
- * It is *absent* rather than disabled for a book that is already shelved: a control
- * that can only be pressed to no effect is a control the reader learns to distrust,
- * and "this one is mine already" is not a state that needs saying on every card.
- */
-.book-card .book-shelve {
-  position: absolute;
-  inset-block-start: 0.3rem;
-  inset-inline-start: 0.3rem;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.15rem;
-  border: 0;
-  border-radius: var(--radius-pill);
-  padding: 0.15rem 0.4rem;
-  background: color-mix(in srgb, var(--reader-fill) 92%, transparent);
-  color: var(--reader-on-fill);
-  font-size: var(--text-micro);
-  font-family: inherit;
-  line-height: 1.5;
-  backdrop-filter: blur(4px);
-  box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
-  cursor: pointer;
-  touch-action: manipulation;
-}
-
-.book-card .book-shelve .icon {
-  font-size: var(--text-meta);
-}
 
 .manager-crumbs {
   flex: 1 1 auto;
@@ -3646,6 +3584,80 @@ book-content {
 .catalog-empty > .icon { font-size:1.7rem; color:var(--reader-muted); }
 .catalog-empty p { margin:0; font-size:var(--text-ui); color:var(--reader-muted); line-height:1.7; }
 .catalog-book { padding:1.4rem 0; align-items:flex-start; }
+/* 发现: a trail of where you are, the levels below as chips, then books. */
+.explore-trail { display:flex; flex-wrap:wrap; align-items:center; gap:var(--space-1); margin-bottom:var(--space-3); font-size:var(--text-ui); color:var(--reader-muted); }
+.explore-trail span { display:inline-flex; align-items:center; gap:var(--space-1); }
+.explore-trail button { min-height:44px; padding:0 var(--space-1); border:0; background:transparent; color:var(--reader-accent); font:inherit; cursor:pointer; }
+.explore-trail button:disabled { opacity:.6; cursor:default; }
+.explore-trail strong { color:var(--reader-ink); font-size:var(--text-title); overflow-wrap:anywhere; }
+.explore-filter { width:100%; box-sizing:border-box; min-height:44px; margin-bottom:var(--space-3); padding:.6rem .8rem; border:1px solid var(--reader-line); border-radius:var(--radius-md); background:var(--reader-paper); color:var(--reader-ink); font:inherit; font-size:var(--text-title); }
+.explore-filter::-webkit-search-cancel-button, .explore-filter::-webkit-search-decoration { appearance:none; display:none; }
+.explore-links { display:flex; flex-wrap:wrap; gap:var(--space-2); }
+.explore-link { min-height:44px; max-width:100%; padding:.5rem .9rem; border:1px solid var(--reader-line); border-radius:var(--radius-pill); background:var(--reader-surface); color:var(--reader-ink); font:inherit; font-size:var(--text-ui); overflow-wrap:anywhere; cursor:pointer; }
+.explore-link:disabled { opacity:.6; cursor:default; }
+.explore-link:focus-visible, .explore-trail button:focus-visible { outline:var(--focus-ring); outline-offset:2px; }
+@media (hover: hover) and (pointer: fine) {
+  .explore-link:hover { border-color:var(--reader-accent); color:var(--reader-accent); }
+  .explore-trail button:hover { text-decoration:underline; }
+}
+.explore-links + .explore-books { margin-top:var(--space-4); }
+.explore-book { display:grid; grid-template-columns:auto minmax(0, 1fr); gap:var(--space-2) var(--space-3); padding:var(--space-3) 0; border-top:1px solid var(--reader-line); }
+.explore-book:first-child { border-top:0; padding-top:0; }
+.explore-book .lazy-cover { width:4rem; grid-row:span 2; }
+.explore-book-text { min-width:0; }
+.explore-book-text strong { display:block; font-size:var(--text-title); overflow-wrap:anywhere; }
+.explore-book-text small { display:block; margin-top:.2rem; color:var(--reader-muted); font-size:var(--text-meta); overflow-wrap:anywhere; }
+.explore-book-text p { margin:.4rem 0 0; color:var(--reader-muted); font-size:var(--text-ui); line-height:1.6; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.explore-book-actions { grid-column:2; display:flex; gap:var(--space-2); justify-content:flex-end; }
+.explore-book-actions .button { min-height:44px; }
+/* 发现's own bar: what the local library adds (upload, file manager) on the left, the layout choice on the right. */
+.explore-tools { display:flex; flex-wrap:wrap; align-items:center; gap:var(--space-2); margin-bottom:var(--space-3); }
+/* The source picker leads the bar; its name is the control's own label, so the caption is for assistive tech only. */
+.explore-tools .searchable-select { flex:1 1 12rem; min-width:0; max-width:22rem; margin-right:auto; }
+.explore-tools .searchable-select-label { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+.explore-tools .searchable-select > .searchable-select-trigger { min-height:44px; border-radius:var(--radius-md); background:var(--reader-surface); text-align:left; justify-content:space-between; }
+.explore-tools .searchable-select-menu { width:min(22rem, calc(100vw - 3rem)); border-radius:var(--radius-md); }
+.explore-tools .searchable-select-options { max-height:15rem; }
+.explore-tools .searchable-select-options button { min-height:42px; justify-content:space-between; }
+.explore-tools .button, .explore-tools label.button { min-height:44px; display:inline-flex; flex-direction:row; align-items:center; gap:var(--space-1); margin:0; white-space:nowrap; }
+.explore-tools .button.is-disabled { opacity:.5; pointer-events:none; }
+.explore-layout.segmented { flex:none; }
+/* A phone has one row for the picker and one for the rest, where the two local actions keep their icon and lose their words. */
+@media (max-width: 34rem) {
+  .explore-tools .searchable-select { flex-basis:100%; max-width:none; }
+  .explore-tools .button { min-width:44px; justify-content:center; }
+  .explore-tools .button > span { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+  .explore-layout.segmented { margin-left:auto; }
+}
+.explore-layout.segmented button { flex:none; min-height:44px; padding:0 var(--space-3); }
+.explore-layout.segmented button:focus-visible { outline:var(--focus-ring); outline-offset:-2px; }
+.explore-links + .explore-grid { margin-top:var(--space-4); }
+.explore-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(5.5rem, 1fr)); gap:var(--space-4) var(--space-3); }
+.explore-card { display:flex; flex-direction:column; gap:var(--space-2); min-width:0; }
+.explore-card-open { display:flex; flex-direction:column; flex:1 1 auto; gap:.2rem; min-width:0; padding:0; border:0; background:transparent; color:var(--reader-ink); font:inherit; text-align:left; cursor:pointer; }
+.explore-card-open:focus-visible { outline:var(--focus-ring); outline-offset:2px; }
+.explore-card .lazy-cover { width:100%; margin-bottom:.2rem; }
+.explore-card strong { font-size:var(--text-ui); line-height:1.35; overflow-wrap:anywhere; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.explore-card small { color:var(--reader-muted); font-size:var(--text-meta); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.explore-card > .button { min-height:40px; width:100%; font-size:var(--text-ui); }
+@media (pointer: coarse) { .explore-card > .button { min-height:44px; } }
+@media (min-width: 720px) { .explore-grid { grid-template-columns:repeat(auto-fill, minmax(8rem, 10rem)); } }
+.catalog-book-main { display:flex; align-items:flex-start; gap:var(--space-3); }
+.catalog-book-main > div { flex:1; min-width:0; }
+/* A source's cover: a fixed 3:4 frame, so rows do not jump when the image arrives. */
+.lazy-cover { flex:none; display:block; width:3rem; aspect-ratio:3 / 4; overflow:hidden; border-radius:var(--radius-sm); background:var(--reader-surface); border:1px solid var(--reader-line); }
+.lazy-cover img { display:block; width:100%; height:100%; object-fit:cover; }
+.lazy-cover-placeholder { display:grid; place-items:center; width:100%; height:100%; color:var(--reader-muted); font-size:var(--text-title); }
+.cover-picker-status { margin:0 0 var(--space-3); color:var(--reader-muted); font-size:var(--text-ui); }
+.cover-picker-source { display:flex; flex-direction:column; gap:var(--space-1); margin-bottom:var(--space-3); color:var(--reader-muted); font-size:var(--text-ui); }
+.cover-picker-restore { margin-top:var(--space-4); min-height:44px; }
+.cover-picker-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(6rem, 1fr)); gap:var(--space-3); }
+.cover-picker-item { display:flex; flex-direction:column; align-items:stretch; gap:var(--space-1); min-height:44px; padding:var(--space-1); border:1px solid transparent; border-radius:var(--radius-md); background:transparent; color:var(--reader-ink); font:inherit; cursor:pointer; text-align:center; }
+.cover-picker-item .lazy-cover { width:100%; }
+.cover-picker-item small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--reader-muted); font-size:var(--text-meta); }
+.cover-picker-item:focus-visible { outline:var(--focus-ring); outline-offset:2px; }
+.cover-picker-item:disabled { opacity:.6; cursor:default; }
+@media (hover: hover) and (pointer: fine) { .cover-picker-item:hover { border-color:var(--reader-line); background:var(--reader-surface); } }
 .catalog-book strong { font-size:var(--text-title); }
 .catalog-book .source-description { line-height:1.75; color:var(--reader-muted); margin:.7rem 0 0; }
 .catalog-book .sources-actions { padding-top:.2rem; }
@@ -3758,6 +3770,8 @@ svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; verti
 .reader-actions .icon { font-size: var(--text-display); }
 .reader-actions .top-button-label { font-size: var(--text-meta); font-weight: 400; }
 @media (max-width: 700px) {
+  /* Panels are a fixed half screen; a compact sheet (a note, a confirmation) stays
+     as tall as what it says (docs/ui.md §3.7). */
   .reader-screen .sheet:not([data-size='compact']) {
     height: min(62vh, calc(100vh - var(--safe-top) - 1.5rem));
     height: min(62dvh, calc(100dvh - var(--safe-top) - 1.5rem));
@@ -3765,7 +3779,19 @@ svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; verti
   }
 }
 .reader-screen .sheet .field { padding-block: 0.8rem; }
-.reader-screen .sheet .tts-bar { position: static; border-radius: var(--radius-md); width: auto; transform: none; margin-bottom: 1rem; }
+.reader-screen .sheet .tts-bar {
+  /* In the 朗读 sheet the bar is a card among the settings, not a strip over the page. */
+  position: static;
+  width: auto;
+  transform: none;
+  margin-bottom: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--reader-line);
+  border-radius: var(--radius-md);
+  background: var(--reader-surface);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
 .reader-screen .sheet .field { grid-template-columns: minmax(5.5rem, max-content) minmax(0, 1fr); gap: 0.75rem; padding-block: 0.5rem; }
 .reader-screen .field input[type='range'] { min-height: 32px; }
 .reader-screen .field input[type='range']::-webkit-slider-runnable-track { height: 4px; border-radius: var(--radius-xs); background: var(--reader-line); }
@@ -3901,10 +3927,7 @@ svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; verti
 .shelf-head-actions .shelf-links { max-width: none; margin: 0; padding: 0; gap: .4rem; }
 .shelf-head-actions .shelf-links .collection-link.button { flex: none; min-width: 0; padding: 0 .75rem; }
 .shelf-head-actions .shelf-links .collection-link.button > svg { display: none; }
-.shelf-screen .shelf-search input, .library-search input { border-radius: var(--radius-lg); min-height: 48px; }
-.library-browse-screen .library-search { margin-top: .35rem; }
-.library-path { margin-top: .75rem; padding: .25rem 0 0; }
-.library-path .manager-crumb { min-height: 44px; }
+.shelf-screen .shelf-search input { border-radius: var(--radius-lg); min-height: 48px; }
 .collection-empty.empty-state { width: calc(100% - 2rem); max-width: 30rem; margin: clamp(1.5rem, 7vh, 4rem) auto 2rem; padding: 1.75rem 1.25rem; gap: .7rem; border: 1px solid var(--reader-line); border-radius: var(--radius-xl); background: color-mix(in srgb, var(--reader-surface) 45%, var(--reader-paper)); }
 .collection-empty .empty-glyph { box-sizing: content-box; width: 30px; height: 30px; padding: 1rem; border-radius: var(--radius-lg); background: color-mix(in srgb, var(--reader-accent) 9%, transparent); color: var(--reader-accent); opacity: 1; margin-bottom: .5rem; }
 .collection-empty p { font-size: var(--text-title); line-height: 1.5; }
@@ -3930,7 +3953,6 @@ svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; verti
   .shelf-screen .book-card .book-more:hover { background: color-mix(in srgb, var(--reader-accent) 8%, transparent); }
 }
 @media (prefers-reduced-motion: reduce) { .shelf-screen .book-open:active .cover { transform: none; } }
-.library-browse-body > .manager-status { position: static; background: transparent; backdrop-filter: none; border: 0; margin: .75rem auto; }
 .file-manager-header .manager-crumbs { margin-top: .75rem; padding: .25rem 0; }
 .file-manager-header .manager-crumb { min-height: 44px; }
 .library-files-screen .manager-list { margin: .5rem 1rem; border: 1px solid var(--reader-line); border-radius: var(--radius-lg); overflow: hidden; }
@@ -3972,7 +3994,7 @@ svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; verti
   .collection-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: .5rem 2rem; padding-top: 2rem; }
   .collection-header .collection-links { margin-top: 0; }
   .collection-header .manager-crumbs { grid-column: 1 / -1; }
-  .collection-header, .library-browse-body, .library-files-screen .manager-body { width: calc(100% - 2 * var(--page-gutter) + 1.8rem); max-width: var(--collection-measure); margin-inline: auto; }
+  .collection-header, .library-files-screen .manager-body { width: calc(100% - 2 * var(--page-gutter) + 1.8rem); max-width: var(--collection-measure); margin-inline: auto; }
   .library-files-screen .manager-row { grid-template-columns: 24px minmax(0, 1fr) minmax(15rem, 22rem) 44px; min-height: 64px; padding-block: .5rem; }
   .library-files-screen .manager-check { grid-row: 1; }
   .library-files-screen .manager-meta { grid-column: 3; grid-row: 1; justify-content: flex-end; padding-left: 0; }
@@ -4118,6 +4140,21 @@ svg.icon { display: inline-block; width: 1em; height: 1em; flex-shrink: 0; verti
 @media (hover: hover) and (pointer: fine) { .annotation-actions button:hover { background: var(--reader-surface); }}
 .annotation-popover blockquote, .annotation-editor blockquote { margin: .3rem 0 .75rem; padding: .5rem .75rem; border-inline-start: 3px solid var(--reader-accent); max-height: 6rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 .annotation-comment { margin: .5rem; max-height: 8rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* A note read in place: the book's words in the app's own sheet, set as reading text. */
+.footnote-text { color: var(--reader-ink); font-size: var(--text-title); line-height: 1.7; overflow-wrap: anywhere; user-select: text; }
+.footnote-text p { margin: 0; }
+.footnote-text p + p { margin-top: var(--space-2); }
+/* AI 选区助手: the passage, what to do with it, and the one current answer. */
+.ai-assist { display: grid; gap: var(--space-3); }
+.ai-assist blockquote { margin: 0; padding: var(--space-2) var(--space-3); border-inline-start: 3px solid var(--reader-accent); max-height: 7rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--reader-muted); }
+.ai-assist-actions { display: flex; gap: var(--space-2); }
+.ai-assist-actions .button { flex: 1; min-height: 44px; }
+.ai-assist-ask { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: var(--space-2); }
+.ai-assist-ask .button { min-height: 44px; }
+.ai-assist-status, .ai-assist-hint { margin: 0; color: var(--reader-muted); font-size: var(--text-label); }
+.ai-assist-error { margin: 0; color: var(--color-danger); font-size: var(--text-ui); overflow-wrap: anywhere; }
+.ai-assist-keep { display: flex; justify-content: flex-end; }
+.ai-assist-answer { color: var(--reader-ink); font-size: var(--text-title); line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
 .annotation-editor { display: grid; gap: 1rem; }
 .annotation-editor label { display: grid; gap: .5rem; }
 .annotation-editor textarea { box-sizing: border-box; width: 100%; min-height: 6rem; padding: .75rem; font: inherit; border: 1px solid var(--reader-line); border-radius: var(--radius-sm); background: var(--reader-paper); color: var(--reader-ink); resize: vertical; }

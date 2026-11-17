@@ -85,8 +85,8 @@ try {
       const unchanged = await page.locator('.book-card img').first().getAttribute('src');
       await page.waitForTimeout(50);
       assert.equal(await page.locator('.book-card img').first().getAttribute('src'), unchanged, '304 must not replace the image URL');
-      await page.evaluate(() => {location.hash = '#/library';});
-      await page.locator('.library-screen .book-card').first().waitFor();
+      await page.evaluate(() => {location.hash = '#/';});
+      await page.locator('.home-shelf .book-card').first().waitFor();
       await checkImage(image);
       await page.evaluate(() => {location.hash = '#/shelf';});
       await page.locator('.shelf-screen .book-card').first().waitFor();

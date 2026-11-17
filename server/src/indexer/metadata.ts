@@ -496,7 +496,9 @@ export async function saveCover(
         ? '.webp'
       : cover.contentType.includes('gif')
         ? '.gif'
-        : '.jpg';
+        : cover.contentType.includes('webp')
+          ? '.webp'
+          : '.jpg';
   const rel = join('covers', `${bookId}${ext}`);
   const abs = join(dataDir, rel);
   await mkdir(dirname(abs), { recursive: true });

@@ -315,6 +315,27 @@ describe('ReaderChrome', () => {
     expect(tree.querySelector('.reader-size-stepper')).toBeNull();
   });
 
+  it('offers 专注模式 in scroll mode only, off unless the reader turns it on', () => {
+    const onSetting = vi.fn();
+    const row = () => container.querySelector<HTMLElement>('.segmented[aria-label="专注模式"]');
+    const pressed = () => row()!.querySelector('[aria-pressed="true"]')?.textContent;
+    const show = (state: Partial<ChromeState>) => { render(h(ReaderChrome, { state: chromeState({ settingsOpen: true, settingsTab: 'behavior', ...state }), stage: document.createElement('div'), handlers: { ...handlers(), onSetting } }), container); if (container.querySelector('.reader-settings-home')) settingsPage('翻页与点击'); };
+    show({ mode: 'paged' });
+    expect(row()).toBeNull();
+    show({ mode: 'scroll', layout: 'fixed' });
+    expect(row()).toBeNull();
+    show({ mode: 'scroll' });
+    expect(pressed()).toBe('关');
+    // The same row as its neighbours, so label and control line up with theirs.
+    expect(row()!.parentElement!.className).toBe(container.querySelector('.segmented[aria-label="翻页方式"]')!.parentElement!.className);
+    act(() => [...row()!.querySelectorAll('button')].find(button => button.textContent === '开')!.click());
+    expect(onSetting).toHaveBeenLastCalledWith({ focus: true });
+    show({ mode: 'scroll', focusMode: true });
+    expect(pressed()).toBe('开');
+    act(() => [...row()!.querySelectorAll('button')].find(button => button.textContent === '关')!.click());
+    expect(onSetting).toHaveBeenLastCalledWith({ focus: false });
+  });
+
   it('sets each of the nine tap cells, and keeps the last 菜单 cell a menu', () => {
     const onSetting = vi.fn();
     const stage = document.createElement('div');
