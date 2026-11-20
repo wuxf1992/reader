@@ -441,6 +441,62 @@ describe('chapter publication reading', () => {
     expect(body(second.screen)?.querySelector('img')?.getAttribute('src')).toMatch(/^data:image\/png/);
     expect(second.transport.requests.some((request) => request.url.includes('/assets?'))).toBe(false);
   });
+  it('opens cached EPUB text immediately while refreshing its styles in the background', async () => {
+    const epub: Book = { ...book, format: 'epub' };
+    const kv = new MemoryKv(); const blobs = new MemoryBlobs();
+    const styled = content(['styled']); styled.kind = 'reflowable';
+    delete styled.items[0]!.format; styled.items[0]!.mediaType = 'application/xhtml+xml';
+    const ref = styled.items[0]!.resourceRef!;
+    const stale = '<html><head><link rel="stylesheet" href="/api/v1/books/b/assets?__reader-book-resource__=1&amp;ref=book.css"/></head><body><p>旧的缓存</p></body></html>';
+    const cache = new PublicationCache(kv, blobs, publicationScope('http://one.test', 'u1'));
+    // Offline first: the stale copy is still the chapter.
+    await cache.putResource(book.id, ref, new TextEncoder().encode(stale));
+    const offline = await setup(kv, blobs);
+    offline.transport.respondWith((request) => {
+      if (request.url.endsWith('/manifest')) return { status: 200, headers: {}, json: { ...manifest(styled), book: epub } };
+      if (request.url.includes('/assets?')) throw new ApiError('offline', 'offline');
+      return { status: 200, headers: {}, json: { progress: null } };
+    });
+    await offline.screen.open(epub);
+    expect(body(offline.screen)?.textContent).toContain('旧的缓存');
+    offline.screen.dispose(); screens.splice(screens.indexOf(offline.screen), 1);
+    const online = await setup(kv, blobs);
+    let release!: () => void;
+    const network = new Promise<void>(resolve => { release = resolve; });
+    online.transport.respondWith(async (request) => {
+      if (request.url.endsWith('/manifest')) return { status: 200, headers: {}, json: { ...manifest(styled), book: epub } };
+      if (request.url.includes('/assets?')) {
+        await network;
+        return { status: 200, headers: {}, bytes: new TextEncoder().encode('<html><head><style data-href="book.css">p { color: red; }</style></head><body><p>新的正文</p></body></html>') };
+      }
+      return { status: 200, headers: {}, json: { progress: null } };
+    });
+    await online.screen.open(epub);
+    expect(body(online.screen)?.textContent).toContain('旧的缓存');
+    release();
+    await vi.waitFor(async () => {
+      expect(new TextDecoder().decode((await cache.resource(book.id, ref))!)).toContain('<style data-href="book.css">');
+    });
+    expect(body(online.screen)?.textContent).toContain('旧的缓存');
+  });
+  it('opens and marks a Kindle chapter cached by a background download while offline', async () => {
+    const kv = new MemoryKv(), blobs = new MemoryBlobs();
+    const kindle: Book = { ...book, format: 'mobi' };
+    const staged = content(['kindle']); staged.kind = 'reflowable';
+    const item = staged.items[0]!;
+    item.href = 'xhtml:text/part0000.xhtml';
+    delete item.resourceRef; delete item.format;
+    item.mediaType = 'text/html';
+    const cache = new PublicationCache(kv, blobs, publicationScope('http://one.test', 'u1'));
+    await cache.putManifest(kindle.id, { ...manifest(staged), book: kindle });
+    await cache.putResource(kindle.id, item.href, new TextEncoder().encode('<p>普通正文</p>'));
+    await cache.putResource(kindle.id, 'offline:' + item.href, new TextEncoder().encode('<p>离线正文</p>'));
+    const offline = await setup(kv, blobs);
+    offline.transport.failWith(new ApiError('offline', 'offline'));
+    await offline.screen.open(kindle);
+    expect(body(offline.screen)?.textContent).toContain('离线正文');
+    expect(offline.transport.requests.some(request => request.url.includes('/assets?'))).toBe(false);
+  });
   it('ignores delayed chapter callbacks after disposal and an offline account switch', async () => {
     const env = await setup();
     let release!: () => void;

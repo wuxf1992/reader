@@ -21,7 +21,7 @@ function paint(busy = false, wide = false) {
 it('closes a mobile sheet when its title is pulled down, without requiring X or the backdrop', () => {
   const { dialog, close, pointer, header } = paint();
   pointer(header, 'pointerdown', 100); pointer(dialog, 'pointermove', 230);
-  expect(dialog.style.getPropertyValue('--sheet-drag-y')).toBe('130px');
+  expect(dialog.style.transform).toBe('translateY(130px)');
   pointer(dialog, 'pointerup', 230); expect(close).toHaveBeenCalledOnce();
 });
 it('keeps short pulls and cancelled gestures open and clears their preview', () => {
@@ -29,7 +29,7 @@ it('keeps short pulls and cancelled gestures open and clears their preview', () 
   pointer(header, 'pointerdown', 100); pointer(dialog, 'pointermove', 120); pointer(dialog, 'pointerup', 120);
   expect(close).not.toHaveBeenCalled(); expect(dialog.hasAttribute('data-dragging')).toBe(false);
   pointer(header, 'pointerdown', 100); pointer(dialog, 'pointermove', 240); pointer(dialog, 'pointercancel', 240);
-  expect(close).not.toHaveBeenCalled(); expect(dialog.style.getPropertyValue('--sheet-drag-y')).toBe('');
+  expect(close).not.toHaveBeenCalled(); expect(dialog.style.transform).toBe('');
 });
 it.each([{ busy: true, wide: false }, { busy: false, wide: true }])('does not dismiss busy or desktop sheets: %o', ({ busy, wide }) => {
   const { dialog, close, pointer, header } = paint(busy, wide);

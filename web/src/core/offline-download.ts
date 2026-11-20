@@ -2,7 +2,15 @@ import { ApiError } from '../api/errors.ts';
 import type { ReaderApi } from '../api/client.ts';
 import type { Manifest } from '../api/types.ts';
 import { OFFLINE_FILE, PublicationCache } from '../store/publications.ts';
-import { renditionRef } from '../ui/rendition.ts';
+import { offlineRenditionRef, renditionRef } from '../ui/rendition.ts';
+
+/**
+ * Formats downloaded chapter by chapter, in a range the reader picks. A Kindle book
+ * is one of them: the server reads the container, and each chapter is fetched in its
+ * self-contained form (`offline:` — stylesheet and images inside it) so it renders
+ * with no network. See docs/kindle-formats.zh-CN.md.
+ */
+export const RANGED_FORMATS: readonly string[] = ['chapters', 'txt', 'mobi'];
 
 export interface DownloadState {
   status: 'idle' | 'running' | 'paused' | 'cancelled' | 'complete' | 'error';
@@ -55,7 +63,7 @@ export class OfflineDownload {
     signal.throwIfAborted();
     if (!this.current()) throw new ApiError('aborted', '账号或服务已切换，下载已暂停');
   }
-  async start(from = 1, to = ['chapters', 'txt'].includes(this.manifest.book.format) ? this.manifest.content?.total ?? 1 : 1): Promise<void> {
+  async start(from = 1, to = RANGED_FORMATS.includes(this.manifest.book.format) ? this.manifest.content?.total ?? 1 : 1): Promise<void> {
     if (this.run) return;
     const run = this.run = new AbortController();
     this.pending = this.download(run, from, to).finally(() => { if (this.run === run) this.run = null; });
@@ -71,10 +79,10 @@ export class OfflineDownload {
       this.assertCurrent(signal);
       const overrides = await this.cache.overrides(book.id);
       this.assertCurrent(signal);
-      const chapters = ['chapters', 'txt'].includes(book.format) && !!this.manifest.content && !(book.format === 'txt' && overrides?.headingPrefix);
+      const chapters = RANGED_FORMATS.includes(book.format) && !!this.manifest.content && !(book.format === 'txt' && overrides?.headingPrefix);
       const total = chapters ? this.manifest.content?.total ?? 0 : 1;
       if (book.format === 'image' && this.manifest.files.length > 1) throw new Error('图片目录暂不支持整书离线下载');
-      if (!['chapters', 'epub', 'txt', 'pdf', 'cbz', 'zip', 'image'].includes(book.format)) throw new Error('此格式暂不支持整书离线下载');
+      if (!['chapters', 'epub', 'txt', 'pdf', 'cbz', 'zip', 'image', 'mobi'].includes(book.format)) throw new Error('此格式暂不支持整书离线下载');
       if (!Number.isInteger(from) || !Number.isInteger(to) || from < 1 || to < from || to > total) throw new Error('章节范围无效');
       await this.update({ status: 'running', from, to, total: to - from + 1, completed: 0, message: '正在下载', revision: this.manifest.content?.revision });
       this.assertCurrent(signal);
@@ -101,7 +109,8 @@ export class OfflineDownload {
         }
         if (items.length !== to - from + 1) throw new Error('目录已变化，请重新打开书籍再下载');
         for (const item of items) {
-          this.assertCurrent(signal); const ref = renditionRef(item);
+          this.assertCurrent(signal);
+          const ref = offlineRenditionRef(book.format, renditionRef(item));
           const cached = await this.cache.resource(book.id, ref);
           this.assertCurrent(signal);
           if (!cached) {

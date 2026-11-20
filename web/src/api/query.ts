@@ -99,9 +99,18 @@ export function affectedNavigationQuery(mutation: string, query: string): boolea
   }
   if (mutation.startsWith('/api/v1/media/')) return affectedByMediaWrite(mutation, query);
   if (/^\/api\/v1\/(notes|tts|ai|auth)(?:\/|$)/.test(mutation)) return false;
-  if (mutation === '/api/v1/library/upload') return query.startsWith('/api/v1/books') || query.startsWith('/api/v1/library/browse');
+  // An upload or a scan changes which books the library holds, and 书库 in 发现 lists them
+  // through the built-in source, so its pages are as stale as the shelf's.
+  if (mutation === '/api/v1/library/upload' || mutation === '/api/v1/library/scan') {
+    return query.startsWith('/api/v1/books') || query.startsWith('/api/v1/library/browse') || /^\/api\/v1\/sources\/[^/]+\/(browse|entries)(?:\?|$)/.test(query);
+  }
   if (mutation === '/api/v1/library/browse/shelf') return query.startsWith('/api/v1/books') || query.startsWith('/api/v1/library/continue');
   if (/^\/api\/v1\/library\/browse\//.test(mutation)) return query.startsWith('/api/v1/library/browse') || query.startsWith('/api/v1/books');
+  // A book's metadata and cover are the library's, drawn by every list it is in: the
+  // shelf, the library index and 书库 in 发现 — not only the book itself.
+  if (/^\/api\/v1\/books\/[^/]+\/(metadata|cover-source)(?:\/|$)/.test(mutation)) {
+    return query.startsWith('/api/v1/books') || /^\/api\/v1\/library\/(browse|continue|facets)(?:[/?]|$)/.test(query) || /^\/api\/v1\/sources\/[^/]+\/(browse|entries)(?:\?|$)/.test(query);
+  }
   if (/^\/api\/v1\/books\//.test(mutation)) {
     const readingStatus = mutation.match(/^\/api\/v1\/books\/([^/]+)\/reading-status$/);
     if (readingStatus) {

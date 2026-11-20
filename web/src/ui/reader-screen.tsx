@@ -4,7 +4,7 @@ import { applyCorrections, emptyOverrides, type ReadingOverrides } from './readi
 import { loadTxt } from '../formats/txt.ts';
 import { ApiError } from '../api/errors.ts';
 import { dismissNotice, notify } from './notifications.ts';
-import { renditionRef } from './rendition.ts';
+import { cachedChapterLacksStyles, offlineRenditionRef, renditionRef } from './rendition.ts';
 import type { ReaderApi } from '../api/client.ts';
 import type { Book, BookContent, Manifest, Note, Progress } from '../api/types.ts';
 import { loadBook, isImagePath, extensionOf } from '../formats/index.ts';
@@ -775,6 +775,15 @@ export class ReaderScreen {
    * the reference as-is, so an unknown value is a no-op rather than a failed
    * chapter.
    */
+  private async cachedStagedSection(book: Book, ref: string): Promise<Uint8Array | null> {
+    const offline = offlineRenditionRef(book.format, ref);
+    if (offline !== ref) {
+      const saved = await this.publicationCache.resource(book.id, offline);
+      if (saved) return saved;
+    }
+    return this.publicationCache.resource(book.id, ref);
+  }
+
   private async readStagedSection(
     book: Book,
     item: { href: string; kind: string; mediaType: string; format?: string; resourceRef?: string },
@@ -783,7 +792,17 @@ export class ReaderScreen {
     // Keyed by the rendition, not just the section: a client that read the plain
     // text before this change and the markup after it must not serve the cached
     // plain text for a chapter it is now rendering as a document.
-    const cached = await this.publicationCache.resource(book.id, ref);
+    const cached = await this.cachedStagedSection(book, ref);
+    if (cached && (book.format === 'epub' || book.format === 'mobi') && cachedChapterLacksStyles(cached, item.mediaType)) {
+      const token = this.loadingToken, signal = AbortSignal.timeout(2500);
+      // Keep the current chapter in place. The refreshed bytes are used the next time it opens.
+      void this.options.api.asset(book.id, ref, { signal }).then(async fresh => {
+        const bytes = new Uint8Array(await fresh.arrayBuffer());
+        if (signal.aborted || token !== this.loadingToken || this.disposed || cachedChapterLacksStyles(bytes, item.mediaType)) return;
+        if (!await this.publicationCache.resource(book.id, ref) || signal.aborted || token !== this.loadingToken) return;
+        await this.publicationCache.putResource(book.id, ref, bytes);
+      }).catch(() => undefined);
+    }
     if (!cached) { this.stopPrefetch(); this.prefetchChapter = null; }
     const blob = cached ? new Blob([toArrayBuffer(cached)]) : await this.options.api.asset(book.id, ref);
     if (!cached) {
@@ -941,7 +960,7 @@ export class ReaderScreen {
         for (const item of window.items) {
           signal.throwIfAborted();
           const ref = renditionRef(item);
-          const bytes = await this.publicationCache.resource(book.id, ref);
+          const bytes = await this.cachedStagedSection(book, ref);
           if (!bytes) throw new Error('部分章节未缓存，离线搜索不完整；已保留找到的结果');
           const html = new TextDecoder().decode(bytes);
           yield { id: item.href, title: item.title, text: this.searchText(/(?:xhtml|html|xml)/i.test(item.mediaType) ? html : textToChapterHtml(html),item.href) };
@@ -2036,7 +2055,8 @@ export class ReaderScreen {
       }
       this.patch({ toc: this.chrome.toc.map(entry => {
         const href = entry.id.split('#')[0]!;
-        return { ...entry, cached: cached.has(OFFLINE_FILE) || cached.has(refs.get(href) ?? href) };
+        const ref = refs.get(href) ?? href;
+        return { ...entry, cached: cached.has(OFFLINE_FILE) || cached.has(ref) || cached.has(offlineRenditionRef(book.format, ref)) };
       }) });
     } catch {
       if (current()) this.patch({ toc: this.chrome.toc.map(entry => ({ ...entry, cached: false })) });

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import type { SourceEntry, SourceInstance, SourcePage } from '../../../api/sources.ts';
+import type { LibraryScanResult } from '../../../api/types.ts';
 import { useRuntime } from '../../../app/providers/runtime-context.tsx';
 import { useAuthStore } from '../../../shared/stores/auth.store.ts';
 import { useSettingsStore } from '../../../shared/stores/settings.store.ts';
@@ -11,6 +12,16 @@ import { SearchableSelect } from '../../../ui/searchable-select.tsx';
 import { Button, Callout, Icon } from '../../../ui/toolkit.tsx';
 import { SourceBookDetails } from './SourceBookDetails.tsx';
 import { Sheet } from '../../../ui/sheet.tsx';
+import { BookMetadataSheet } from '../../../ui/book-metadata-sheet.tsx';
+import { ChangeCoverSheet, type CoverBook } from '../../../ui/change-cover-sheet.tsx';
+
+/** What a scan found, in the words of ui.md §4: what changed, or that nothing did. */
+export function describeScan(result: LibraryScanResult): string {
+  const parts = [result.added && `新增 ${result.added} 本`, result.updated && `更新 ${result.updated} 本`, result.removed && `${result.removed} 本文件已不在`]
+    .filter(Boolean);
+  const failed = result.failed ? `${parts.length ? '；' : ''}${result.failed} 个文件读取失败` : '';
+  return parts.length || failed ? `书库已更新：${parts.join('、')}${failed}` : '书库已是最新';
+}
 
 /** One step of the trail: the page a crumb leads back to. */
 interface Crumb { ref?: string; title: string }
@@ -73,6 +84,37 @@ export function SourceExplore({ sources }: { sources: SourceInstance[] }) {
     } catch (reason) { setError(reason instanceof Error ? reason.message : '上传失败，请重试'); }
     finally { setUploading(false); }
   };
+  // 刷新: look at the library again and reload the level being shown. An administrator's
+  // refresh scans first, so a file just copied into the books folder turns up here.
+  const [refreshing, setRefreshing] = useState(false);
+  const refresh = async () => {
+    const run = epoch.current;
+    setRefreshing(true); setError('');
+    try {
+      const result = await runtime.api.refreshLibrary(admin);
+      for (const key of ['shelf', 'search', 'library-files']) void queryClient.invalidateQueries({ queryKey: [key] });
+      if (epoch.current === run) await open(trail.slice(0, -1), current?.ref);
+      if (result) notify(describeScan(result), { kind: result.failed ? 'error' : 'success' });
+    } catch (reason) { if (epoch.current === run) setError(reason instanceof Error ? reason.message : '刷新失败，请重试'); }
+    finally { setRefreshing(false); }
+  };
+  // An administrator edits 书库's books and gives them another cover from here, on the
+  // shelf or not: what is changed is the library's, shown to every reader.
+  const [editing, setEditing] = useState<string | null>(null);
+  const [covering, setCovering] = useState<CoverBook | null>(null);
+  const changeCover = async (bookId: string) => {
+    const run = epoch.current;
+    try {
+      // The sheet offers 恢复文件封面 only to a book whose cover was set by hand.
+      const { book } = await runtime.api.getBook(bookId);
+      if (epoch.current !== run) return;
+      setDetail(null); setCovering({ id: book.id, title: book.title, format: book.format, manualFields: book.manualFields });
+    } catch (reason) { notify(reason instanceof Error ? reason.message : '读取书籍失败', { kind: 'error' }); }
+  };
+  const changed = () => {
+    for (const key of ['shelf', 'search', 'library-files', 'source-detail']) void queryClient.invalidateQueries({ queryKey: [key] });
+    void open(trail.slice(0, -1), current?.ref);
+  };
   const loadMore = async () => {
     if (!page?.nextCursor || more || !selectedId) return;
     const run = epoch.current;
@@ -87,7 +129,7 @@ export function SourceExplore({ sources }: { sources: SourceInstance[] }) {
     finally { setMore(false); }
   };
   useEffect(() => {
-    ++epoch.current; setPage(undefined); setTrail([]); setError(''); setDetail(null); setAcquired({});
+    ++epoch.current; setPage(undefined); setTrail([]); setError(''); setDetail(null); setEditing(null); setCovering(null); setAcquired({});
     if (selectedId) void open([]);
     return () => { ++epoch.current; };
   }, [selectedId]);
@@ -114,6 +156,7 @@ export function SourceExplore({ sources }: { sources: SourceInstance[] }) {
       <div className="explore-tools">
         <SearchableSelect label="选择来源" value={selectedId} options={sources.map(source => ({ value: source.id, label: source.name + (source.isDefault ? '（默认）' : '') }))} onChange={setSourceId} />
         {canUpload && <label className={'button' + (uploading || busy ? ' is-disabled' : '')}><Icon name="upload" size={18} /><span>{uploading ? '上传中…' : '上传书籍'}</span><input hidden type="file" multiple disabled={uploading || busy} onChange={event => { const files = Array.from(event.currentTarget.files ?? []); if (files.length) void upload(files); event.currentTarget.value = ''; }} /></label>}
+        {local && <button type="button" className="button" disabled={refreshing || busy || uploading} aria-label={admin ? '扫描书库并刷新' : '刷新书库'} title={admin ? '扫描书库并刷新' : '刷新书库'} onClick={() => void refresh()}><Icon name="refresh" size={18} /><span>{refreshing ? (admin ? '扫描中…' : '刷新中…') : '刷新'}</span></button>}
         {local && admin && <Link className="button" to={current?.ref ? `/library/files?path=${encodeURIComponent(current.ref)}` : '/library/files'}><Icon name="folder" size={18} /><span>文件管理</span></Link>}
         <div className="segmented explore-layout" role="group" aria-label="布局">{([['list', '列表'], ['grid', '网格']] as const).map(([value, label]) => <button type="button" key={value} aria-pressed={layout === value} onClick={() => { void runtime.updateSettings({ exploreLayout: value }); }}>{label}</button>)}</div>
       </div>
@@ -147,6 +190,12 @@ export function SourceExplore({ sources }: { sources: SourceInstance[] }) {
       {detailQuery.isPending && <p>正在读取书籍详情…</p>}{detailQuery.error && <Callout tone="error">{detailQuery.error.message}</Callout>}
       <SourceBookDetails key={selectedId + ':' + detail.ref} entry={detail} sourceId={selectedId} sourceName={selected?.name} inShelf={!!(acquired[detail.ref] || detail.shelfBookId || detail.metadata?.publicationId)} canPreview={!!selected?.descriptor?.capabilities.includes('acquire.chapters') && !detailQuery.isFetching} onChapterCount={(ref, count) => setDetail(previous => previous?.ref === ref ? { ...previous, metadata: { ...previous.metadata, chapterCount: count } } : previous)} />
       {(detail.options?.length ? detail.options : [{ id: '', label: '加入书架' }]).map(option => <Button key={option.id} disabled={!!(acquired[detail.ref] || detail.shelfBookId || detail.metadata?.publicationId) || option.available === false} busy={acquire.isPending} onClick={() => acquireEntry(detail, option.id)}>{acquired[detail.ref] || detail.shelfBookId || detail.metadata?.publicationId ? '已加入书架' : option.label}</Button>)}
+      {local && admin && <div className="book-detail-manage">
+        <Button onClick={() => { setEditing(detail.ref); setDetail(null); }}>编辑信息</Button>
+        <Button onClick={() => void changeCover(detail.ref)}>更换封面</Button>
+      </div>}
     </div></Sheet>}
+    {editing && <BookMetadataSheet bookId={editing} onClose={() => setEditing(null)} onSaved={changed} />}
+    {covering && <ChangeCoverSheet book={covering} onClose={() => setCovering(null)} onChanged={changed} />}
   </>;
 }

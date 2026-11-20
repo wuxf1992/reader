@@ -351,6 +351,21 @@ export interface UploadResult {
   } | null;
 }
 
+/** The fields 编辑信息 may set: the server's allowlist for `PATCH /books/:id/metadata`. */
+export type BookMetadataField = 'title' | 'author' | 'publisher' | 'language' | 'isbn' | 'description' | 'series' | 'seriesIndex' | 'pubdate' | 'tags';
+
+/** What one library scan found. Mirrors the server's `ScanResult`. */
+export interface LibraryScanResult {
+  scanned: number;
+  added: number;
+  updated: number;
+  unchanged: number;
+  removed: number;
+  failed: number;
+  lastError: string | null;
+  durationMs: number;
+}
+
 /** Outcome of a batch operation. Mirrors the server's `BatchResult`. */
 export interface BatchResult {
   /** Rows changed; a folder counts once per book inside it. */

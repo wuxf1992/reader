@@ -9,7 +9,9 @@
  * does focus go" slightly differently. The rule is now one rule (docs/ui.md §3.7):
  *
  *  - Phones (≤700px): a bottom sheet with a grip, as tall as its content and never
- *    taller than the screen allows.
+ *    taller than the screen allows. The grip and title bar drag it: down closes it
+ *    (a fourth exit, refused while `busy`), up expands a regular sheet to nearly the
+ *    whole screen (`sheet-drag.ts`).
  *  - Wider windows: a drawer on the right edge; `size="wide"` gives forms that need
  *    it more width. `size="compact"` (confirmations, prompts, short pick lists) opens
  *    next to the tap or control that asked the question instead: a two-button
@@ -28,6 +30,7 @@
 import { type JSX, type ReactNode, type PointerEvent as ReactPointerEvent, useLayoutEffect, useRef } from 'react';
 import { Button, IconButton } from './toolkit.tsx';
 import { placeNotifications } from './notifications.ts';
+import { startSheetDrag } from './sheet-drag.ts';
 import '../styles/sheet.css';
 
 export type SheetSize = 'regular' | 'compact' | 'wide';
@@ -70,7 +73,7 @@ export function Sheet({
   const native = useRef(false);
   /** A backdrop tap is a press *and* a release outside, so a drag out of a field is not a close. */
   const pressedOutside = useRef(false);
-  const drag = useRef<{ id: number; y: number; at: number; distance: number } | null>(null);
+  const cancelDrag = useRef<(() => void) | undefined>(undefined);
   const state = useRef({ busy, onClose });
   state.current = { busy, onClose };
   const closing = useRef(false);
@@ -108,6 +111,7 @@ export function Sheet({
     place();
     if (anchor) addEventListener('resize', place);
     return () => {
+      cancelDrag.current?.();
       cancelExit();
       releaseScroll();
       if (anchor) removeEventListener('resize', place);
@@ -117,7 +121,12 @@ export function Sheet({
     };
   }, []);
 
-  useLayoutEffect(() => { if (busy && closing.current) cancelExit(); }, [busy]);
+  useLayoutEffect(() => {
+    if (!busy) return;
+    cancelDrag.current?.();
+    cancelDrag.current = undefined;
+    if (closing.current) cancelExit();
+  }, [busy]);
 
   const requestClose: SheetCloseRequest = (afterClose) => {
     if (state.current.busy || closing.current) return;
@@ -151,38 +160,17 @@ export function Sheet({
       });
     }, duration);
   };
-  const resetDrag = () => {
-    drag.current = null;
-    ref.current?.removeAttribute('data-dragging');
-    ref.current?.style.removeProperty('--sheet-drag-y');
-  };
-  useLayoutEffect(() => { if (busy) resetDrag(); }, [busy]);
-  const startDrag = (event: ReactPointerEvent<HTMLDialogElement>) => {
-    if (state.current.busy || closing.current || matchMedia(WIDE).matches || !event.isPrimary || event.button !== 0) return;
-    const target = event.target as HTMLElement;
-    // Only the grip/title owns a dismiss gesture; fields and body scrolling keep theirs.
-    if (target.closest('dialog') !== event.currentTarget || !target.closest('.sheet-grip, .sheet-header') || target.closest('button, input, select, textarea, a')) return;
-    event.currentTarget.getAnimations?.().forEach(animation => animation.cancel());
-    drag.current = { id: event.pointerId, y: event.clientY, at: performance.now(), distance: 0 };
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-  };
-  const moveDrag = (event: ReactPointerEvent<HTMLDialogElement>) => {
-    const active = drag.current;
-    if (!active || active.id !== event.pointerId) return;
-    active.distance = Math.max(0, event.clientY - active.y);
-    if (active.distance < 6) return;
-    event.preventDefault();
-    event.currentTarget.setAttribute('data-dragging', '');
-    event.currentTarget.style.setProperty('--sheet-drag-y', `${active.distance}px`);
-  };
-  const finishDrag = (event: ReactPointerEvent<HTMLDialogElement>) => {
-    const active = drag.current;
-    if (!active || active.id !== event.pointerId) return;
-    const dismiss = active.distance >= Math.min(100, event.currentTarget.getBoundingClientRect().height * .3)
-      || active.distance >= 40 && performance.now() - active.at < 300;
-    if (dismiss && !matchMedia(WIDE).matches) requestClose();
-    resetDrag();
-    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  // On a phone the grip and title bar drag the sheet: down to close, up to expand.
+  const drag = (event: ReactPointerEvent) => {
+    const dialog = ref.current;
+    if (!dialog || state.current.busy || closing.current || typeof matchMedia !== 'function' || matchMedia(WIDE).matches) return;
+    if ((event.target as Element).closest('dialog') !== dialog || !event.isPrimary || event.button !== 0) return;
+    cancelDrag.current?.();
+    cancelDrag.current = startSheetDrag(event.nativeEvent, dialog, {
+      expandable: size !== 'compact',
+      busy: () => state.current.busy || closing.current || matchMedia(WIDE).matches,
+      close: requestClose,
+    });
   };
   const outside = (event: { clientX: number; clientY: number; target: EventTarget; currentTarget: HTMLDialogElement }) => {
     if (event.target !== event.currentTarget) return false;
@@ -200,11 +188,7 @@ export function Sheet({
       aria-label={title}
       aria-busy={busy}
       onCancel={(event) => { event.preventDefault(); event.stopPropagation(); requestClose(); }}
-      onPointerDown={(event) => { pressedOutside.current = outside(event); startDrag(event); }}
-      onPointerMove={moveDrag}
-      onPointerUp={finishDrag}
-      onPointerCancel={resetDrag}
-      onLostPointerCapture={resetDrag}
+      onPointerDown={(event) => { pressedOutside.current = outside(event); }}
       onClick={(event) => {
         if (pressedOutside.current && outside(event)) requestClose();
         pressedOutside.current = false;
@@ -221,8 +205,8 @@ export function Sheet({
         if (event.key === 'Tab') trapTab(event.currentTarget, event);
       }}
     >
-      <div className="sheet-grip" aria-hidden="true" />
-      <header className="sheet-header">
+      <div className="sheet-grip" aria-hidden="true" onPointerDown={drag} />
+      <header className="sheet-header" onPointerDown={drag}>
         <h2>{title}</h2>
         {subtitle ? <span className="sheet-subtitle">{subtitle}</span> : null}
         {actions}
