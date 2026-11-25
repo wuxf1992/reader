@@ -48,8 +48,18 @@ try {
         try {
           await context.route('https://wuxf.top/**', (route) => route.abort());
           const page = await context.newPage();
-          const errors = [];
-          page.on('pageerror', (error) => errors.push(error.message));
+          const errors = [],
+            navigationAbortWarnings = [];
+          let reloading = false;
+          page.on('pageerror', (error) => {
+            const cancelledShelf =
+              engine === 'webkit' &&
+              reloading &&
+              error.message.startsWith(`/${new URL(origin).host}/api/v1/books?scope=shelf&`) &&
+              error.message.endsWith(' due to access control checks.');
+            if (cancelledShelf) navigationAbortWarnings.push(error.message);
+            else errors.push(error.message);
+          });
           await page.goto(origin + '/#/shelf');
           await page.getByText('更换服务地址', { exact: true }).click();
           await page.locator('input[type=url]').fill(origin);
@@ -76,8 +86,10 @@ try {
           mode = cached ? 'hanging-all' : 'hanging';
           const start = Date.now();
           // Reload clears Query's memory cache and exercises startup from durable storage.
+          reloading = true;
           await page.reload({ waitUntil: 'domcontentloaded' });
           await page.locator('.app-shell').waitFor({ timeout: 5000 });
+          reloading = false;
           const card = page.locator('.home-resume[data-channel=read]');
           let visibleMs;
           if (cached) {
@@ -148,7 +160,7 @@ try {
           assert.equal(await page.locator('#app-startup').count(), 0);
           assert.equal(await page.locator('[role=progressbar]').count(), 0);
           assert.deepEqual(errors, []);
-          const result = { engine, cached, visibleMs, status: 'passed' };
+          const result = { engine, cached, visibleMs, navigationAbortWarnings, status: 'passed' };
           results.push(result);
           console.log('PASS', JSON.stringify(result));
         } finally {
