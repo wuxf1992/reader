@@ -28,6 +28,7 @@ export function SectionTitle({ children }: { children: ReactNode }): JSX.Element
 export interface IconButtonProps {
   /** Accessible name. Required: an icon button has no text to fall back on. */
   label: string;
+  title?: string;
   /**
    * The glyph, by name.
    *
@@ -58,7 +59,17 @@ export interface IconButtonProps {
  * The glyph is passed as a *name*, so it is always `.icon` — which is what makes the
  * control's own alignment guaranteed rather than inherited from a caller's layout.
  */
-export function IconButton({ label, icon, onClick, disabled, busy = false, hidden, className, pressed }: IconButtonProps): JSX.Element {
+export function IconButton({
+  label,
+  title,
+  icon,
+  onClick,
+  disabled,
+  busy = false,
+  hidden,
+  className,
+  pressed,
+}: IconButtonProps): JSX.Element {
   const visible = useDelayedBusy(busy);
   return (
     <button
@@ -66,6 +77,7 @@ export function IconButton({ label, icon, onClick, disabled, busy = false, hidde
       className={`icon-button ${className ?? ''}${visible ? ' button-busy' : ''}`}
       aria-label={label}
       aria-busy={busy}
+      title={title}
       aria-pressed={pressed}
       disabled={disabled || busy}
       hidden={hidden ?? false}
@@ -116,7 +128,15 @@ export interface PrimaryButtonProps extends Omit<ButtonHTMLAttributes<HTMLButton
   type?: 'button' | 'submit';
 }
 
-export function Button({ children, onClick, disabled, busy = false, type, className, ...rest }: PrimaryButtonProps): JSX.Element {
+export function Button({
+  children,
+  onClick,
+  disabled,
+  busy = false,
+  type,
+  className,
+  ...rest
+}: PrimaryButtonProps): JSX.Element {
   const visible = useDelayedBusy(busy);
   return (
     <button
@@ -217,10 +237,17 @@ export function SwitchRow({ label, hint, checked, onChange }: SwitchRowProps): J
   // The whole row is the hit target, as the note above promises: a press on the
   // words toggles too. The button keeps the semantics and takes its name from them.
   return (
-    <div className="field switch-field" onClick={event => { if (!(event.target as Element).closest('.switch')) onChange(!checked); }}>
+    <div
+      className="field switch-field"
+      onClick={(event) => {
+        if (!(event.target as Element).closest('.switch')) onChange(!checked);
+      }}
+    >
       <div className="switch-text">
         <div id={`${id}-label`}>{label}</div>
-        <div className="muted" id={`${id}-hint`}>{hint}</div>
+        <div className="muted" id={`${id}-hint`}>
+          {hint}
+        </div>
       </div>
       <button
         type="button"

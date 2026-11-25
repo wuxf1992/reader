@@ -2,7 +2,12 @@ import { ReaderApi, type SessionStore } from '../api/client.ts';
 import { ApiError } from '../api/errors.ts';
 import type { Book, Session } from '../api/types.ts';
 import { createWebPlatform } from '../core/web-platform.ts';
-import { androidPageHost, androidSpeechBridge, createAndroidPlatform, detectAndroidBridge } from '../core/android-platform.ts';
+import {
+  androidPageHost,
+  androidSpeechBridge,
+  createAndroidPlatform,
+  detectAndroidBridge,
+} from '../core/android-platform.ts';
 import { SyncEngine } from '../core/sync.ts';
 import { OfflineDownloads } from '../core/offline-downloads.ts';
 import { OfflineStore } from '../store/offline.ts';
@@ -23,13 +28,21 @@ export function validServerUrl(value?: string): string {
   if (!value?.trim()) return '';
   try {
     const url = new URL(value.trim());
-    return ['http:', 'https:'].includes(url.protocol) && url.hostname !== 'appassets.androidplatform.net' ? value.trim() : '';
-  } catch { return ''; }
+    return ['http:', 'https:'].includes(url.protocol) && url.hostname !== 'appassets.androidplatform.net'
+      ? value.trim()
+      : '';
+  } catch {
+    return '';
+  }
 }
 export function inferDefaultUrl(): string {
   if (typeof location === 'undefined' || location.protocol === 'file:') return '';
   if (location.hostname === 'appassets.androidplatform.net') {
-    try { return validServerUrl(window.ReaderAndroid?.configuredServerUrl?.()); } catch { return ''; }
+    try {
+      return validServerUrl(window.ReaderAndroid?.configuredServerUrl?.());
+    } catch {
+      return '';
+    }
   }
   return location.origin;
 }
@@ -43,19 +56,21 @@ export async function createAppRuntime(defaultServerUrl = '') {
   const sessions: SessionStore = {
     async load() {
       try {
-        const value = JSON.parse(await platform.kv.get('reader.session.v1') ?? 'null') as Session | null;
+        const value = JSON.parse((await platform.kv.get('reader.session.v1')) ?? 'null') as Session | null;
         return value?.accessToken && value.refreshToken ? value : null;
-      } catch { return null; }
+      } catch {
+        return null;
+      }
     },
-    save: session => platform.kv.set('reader.session.v1', JSON.stringify(session)),
+    save: (session) => platform.kv.set('reader.session.v1', JSON.stringify(session)),
     clear: () => platform.kv.remove('reader.session.v1'),
   };
   api = new ReaderApi(platform, sessions);
   const mediaApi = new MediaApi(api);
-  let player:MediaPlayer|undefined;
-  let playback:PlaybackService|undefined;
-  const getPlayer=()=>player??=new MediaPlayer(mediaApi);
-  const getPlayback=()=>playback??=new PlaybackService(getPlayer(),mediaApi);
+  let player: MediaPlayer | undefined;
+  let playback: PlaybackService | undefined;
+  const getPlayer = () => (player ??= new MediaPlayer(mediaApi));
+  const getPlayback = () => (playback ??= new PlaybackService(getPlayer(), mediaApi));
   const settings = new SettingsStore(platform.kv);
   const offline = new OfflineStore(platform.kv);
   const sync = new SyncEngine(api, offline, platform);
@@ -72,31 +87,40 @@ export async function createAppRuntime(defaultServerUrl = '') {
   }
   let currentBook: Book | null = null;
   let readerFlush: (() => Promise<void>) | null = null;
-  let capabilityRevision=0;
-  let mediaAllowed=mediaEnabled(useAuthStore.getState().verifiedUser??useAuthStore.getState().session?.user);
-  let refreshing:{scope:string;promise:Promise<void>}|undefined;
-  function refreshCapabilities():Promise<void>{
-    const scope=JSON.stringify([api.baseUrl,api.currentSession()?.user.id]);
-    if(refreshing?.scope===scope)return refreshing.promise;
-    const promise=readCapabilities().finally(()=>{if(refreshing?.promise===promise)refreshing=undefined;});
-    refreshing={scope,promise};
+  let capabilityRevision = 0;
+  let mediaAllowed = mediaEnabled(useAuthStore.getState().verifiedUser ?? useAuthStore.getState().session?.user);
+  let refreshing: { scope: string; promise: Promise<void> } | undefined;
+  function refreshCapabilities(): Promise<void> {
+    const scope = JSON.stringify([api.baseUrl, api.currentSession()?.user.id]);
+    if (refreshing?.scope === scope) return refreshing.promise;
+    const promise = readCapabilities().finally(() => {
+      if (refreshing?.promise === promise) refreshing = undefined;
+    });
+    refreshing = { scope, promise };
     return promise;
   }
   let capabilityRequest: AbortController | null = null;
   async function readCapabilities() {
-    const session = api.currentSession(), server = api.baseUrl;
+    const session = api.currentSession(),
+      server = api.baseUrl;
     if (!session) return;
     const revision = ++capabilityRevision;
     const validation = new AbortController();
     capabilityRequest = validation;
-    const current = () => !validation.signal.aborted && revision === capabilityRevision
-      && api.baseUrl === server && api.currentSession()?.user.id === session.user.id
-      && useAuthStore.getState().session?.user.id === session.user.id;
+    const current = () =>
+      !validation.signal.aborted &&
+      revision === capabilityRevision &&
+      api.baseUrl === server &&
+      api.currentSession()?.user.id === session.user.id &&
+      useAuthStore.getState().session?.user.id === session.user.id;
     try {
-      if (await platform.connectivity() === 'offline' || !current()) return;
+      if ((await platform.connectivity()) === 'offline' || !current()) return;
       const user = await withOfflineTimeout(api.me({ signal: validation.signal }), true);
       if (!current()) return;
-      if (user.id !== session.user.id) { await api.discardSession(); return; }
+      if (user.id !== session.user.id) {
+        await api.discardSession();
+        return;
+      }
       useAuthStore.getState().verify(user);
       if (!mediaEnabled(user)) {
         playback?.stop();
@@ -107,7 +131,8 @@ export async function createAppRuntime(defaultServerUrl = '') {
       }
       mediaAllowed = mediaEnabled(user);
     } catch (error) {
-      if (current() && (!(error instanceof ApiError) || !['offline', 'server', 'aborted'].includes(error.kind))) await api.discardSession();
+      if (current() && (!(error instanceof ApiError) || !['offline', 'server', 'aborted'].includes(error.kind)))
+        await api.discardSession();
       throw error;
     } finally {
       validation.abort();
@@ -115,46 +140,79 @@ export async function createAppRuntime(defaultServerUrl = '') {
     }
   }
   return {
-    api, mediaApi, get player(){return getPlayer();}, get playback(){return getPlayback();}, settings, offline, sync, downloads, queryClient, platform,
+    api,
+    mediaApi,
+    get player() {
+      return getPlayer();
+    },
+    get playback() {
+      return getPlayback();
+    },
+    settings,
+    offline,
+    sync,
+    downloads,
+    queryClient,
+    platform,
     refreshCapabilities,
     pageHost: bridge ? androidPageHost(bridge) : null,
     speechBridge: bridge ? androidSpeechBridge(bridge) : null,
     async authenticated() {
       const session = api.currentSession();
-      if (!session) { useAuthStore.getState().setSession(null); return; }
+      if (!session) {
+        useAuthStore.getState().setSession(null);
+        return;
+      }
       await offline.setScope(publicationScope(api.baseUrl, session.user.id));
       migrateAppearance(mediaApi.preferenceScope(), await settings.load());
       queryClient.clear();
       useAuthStore.getState().setSession({ ...session, user: { ...session.user, features: { media: false } } });
       await refreshCapabilities();
       sync.start();
-      if(mediaEnabled(useAuthStore.getState().verifiedUser))getPlayer().reconnectNative();
+      if (mediaEnabled(useAuthStore.getState().verifiedUser)) getPlayer().reconnectNative();
     },
     async updateSettings(patch: Partial<AppSettings>) {
       useSettingsStore.getState().replace(await settings.update(patch));
     },
     registerReader(book: Book, flush: () => Promise<void>) {
-      currentBook = book; readerFlush = flush;
-      return () => { if (readerFlush === flush) { currentBook = null; readerFlush = null; } };
+      currentBook = book;
+      readerFlush = flush;
+      return () => {
+        if (readerFlush === flush) {
+          currentBook = null;
+          readerFlush = null;
+        }
+      };
     },
     currentBook: () => currentBook,
     syncStatus: () => sync.status(),
     settingsSnapshot: () => settings.load(),
     async saveBeforeUpdate() {
-      await readerFlush?.(); await offline.flush(); await player?.flush();
+      await readerFlush?.();
+      await offline.flush();
+      await player?.flush();
     },
     async flush() {
-      await Promise.allSettled([player?.flush(), (async () => { await readerFlush?.(); await offline.flush(); await sync.flush(); })()]);
+      await Promise.allSettled([
+        player?.flush(),
+        (async () => {
+          await readerFlush?.();
+          await offline.flush();
+          await sync.flush();
+        })(),
+      ]);
     },
     connect() {
       let scope = JSON.stringify([api.baseUrl, api.currentSession()?.user.id]);
-      const stopSession = api.onSessionChange(session => {
+      const stopSession = api.onSessionChange((session) => {
         refreshing = undefined;
         const nextScope = JSON.stringify([api.baseUrl, session?.user.id]);
         const verified = scope === nextScope ? useAuthStore.getState().verifiedUser : null;
         if (scope !== nextScope) {
-          capabilityRevision++; capabilityRequest?.abort();
-          mediaAllowed = false; playback?.stop();
+          capabilityRevision++;
+          capabilityRequest?.abort();
+          mediaAllowed = false;
+          playback?.stop();
           void player?.stop().catch(() => undefined);
           void downloads.clear();
           queryClient.clear();
@@ -167,7 +225,9 @@ export async function createAppRuntime(defaultServerUrl = '') {
         }
         if (!session) sync.stop();
       });
-      const refresh = () => { void refreshCapabilities().catch(() => undefined); };
+      const refresh = () => {
+        void refreshCapabilities().catch(() => undefined);
+      };
       const timer = setInterval(refresh, 15000);
       window.addEventListener('focus', refresh);
       window.addEventListener('online', refresh);
@@ -178,9 +238,15 @@ export async function createAppRuntime(defaultServerUrl = '') {
         if (!useAuthStore.getState().verifiedUser) refresh();
       }
       return () => {
-        capabilityRevision++; capabilityRequest?.abort();
-        clearInterval(timer); window.removeEventListener('focus', refresh); window.removeEventListener('online', refresh);
-        stopSession(); stopSync(); sync.stop(); void downloads.clear();
+        capabilityRevision++;
+        capabilityRequest?.abort();
+        clearInterval(timer);
+        window.removeEventListener('focus', refresh);
+        window.removeEventListener('online', refresh);
+        stopSession();
+        stopSync();
+        sync.stop();
+        void downloads.clear();
       };
     },
   };

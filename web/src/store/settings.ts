@@ -2,7 +2,13 @@ import { PALETTES, clampBrightness, type ThemeMode } from '../render/theme.ts';
 import type { KeyValueStore } from '../core/platform.ts';
 import type { ViewSettings } from '../ui/reader-view.ts';
 import { CHINESE_VARIANTS } from '../shared/chinese-variant.ts';
-import { readingThemeForPaper, validReadingTheme, validReaderPaper, type ReadingTheme, type ReaderPaper } from '../shared/theme/theme.ts';
+import {
+  readingThemeForPaper,
+  validReadingTheme,
+  validReaderPaper,
+  type ReadingTheme,
+  type ReaderPaper,
+} from '../shared/theme/theme.ts';
 import { normalizeTapZones, tapZonePreset, type TapZoneGrid } from '../ui/tap-zones.ts';
 
 /**
@@ -49,7 +55,6 @@ export const READOUT_OPTIONS: Array<{ value: ReadoutMode; label: string }> = [
 ];
 
 export interface AppSettings extends ViewSettings {
-  liquidGlass: boolean;
   /** One complete reading theme; absent until an existing scoped choice is read. */
   readingTheme?: ReadingTheme;
   pageInsets: Record<'top' | 'bottom' | 'left' | 'right', number>;
@@ -119,7 +124,6 @@ export interface AppSettings extends ViewSettings {
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
-  liquidGlass: false,
   pageInsets: { top: 0, bottom: 0, left: 0, right: 0 },
   readoutTopLeft: 'chapter',
   readoutTopRight: 'none',
@@ -175,33 +179,46 @@ export class SettingsStore {
     const raw = await this.kv.get(KEY);
     if (raw) {
       try {
-        const parsed = JSON.parse(raw) as Partial<AppSettings> & { shelfSort?: string };
+        const parsed = JSON.parse(raw) as Partial<AppSettings> & { shelfSort?: string; liquidGlass?: unknown };
+        delete parsed.liquidGlass;
         this.settings = { ...DEFAULT_APP_SETTINGS, ...parsed };
         this.settings.pageInsets = normalizePageInsets(parsed.pageInsets);
         this.settings.brightness = clampBrightness(this.settings.brightness);
-        this.settings.liquidGlass = parsed.liquidGlass === true;
-        if (!CHINESE_VARIANTS.some(option => option.value === this.settings.chineseVariant)) this.settings.chineseVariant = 'original';
-        if (typeof this.settings.theme !== 'string' || !Object.prototype.hasOwnProperty.call(PALETTES, this.settings.theme)) {
+        if (!CHINESE_VARIANTS.some((option) => option.value === this.settings.chineseVariant))
+          this.settings.chineseVariant = 'original';
+        if (
+          typeof this.settings.theme !== 'string' ||
+          !Object.prototype.hasOwnProperty.call(PALETTES, this.settings.theme)
+        ) {
           this.settings.theme = DEFAULT_APP_SETTINGS.theme;
         }
         for (const key of ['lastDayTheme', 'lastNightTheme'] as const) {
           const scheme = key === 'lastDayTheme' ? 'light' : 'dark';
           const theme = this.settings[key];
-          if (typeof theme !== 'string' || !Object.prototype.hasOwnProperty.call(PALETTES, theme) || PALETTES[theme].scheme !== scheme) {
+          if (
+            typeof theme !== 'string' ||
+            !Object.prototype.hasOwnProperty.call(PALETTES, theme) ||
+            PALETTES[theme].scheme !== scheme
+          ) {
             this.settings[key] = DEFAULT_APP_SETTINGS[key];
           }
           if (!parsed[key] && PALETTES[this.settings.theme].scheme === scheme) this.settings[key] = this.settings.theme;
         }
         this.settings.readerSections = { ...DEFAULT_APP_SETTINGS.readerSections };
         for (const key of Object.keys(this.settings.readerSections) as Array<keyof AppSettings['readerSections']>) {
-          if (typeof parsed.readerSections?.[key] === 'boolean') this.settings.readerSections[key] = parsed.readerSections[key];
+          if (typeof parsed.readerSections?.[key] === 'boolean')
+            this.settings.readerSections[key] = parsed.readerSections[key];
         }
         if (typeof this.settings.autoCache !== 'boolean') this.settings.autoCache = DEFAULT_APP_SETTINGS.autoCache;
-        if (!Number.isInteger(this.settings.autoCacheChapters) || this.settings.autoCacheChapters < 1 || this.settings.autoCacheChapters > 50) {
+        if (
+          !Number.isInteger(this.settings.autoCacheChapters) ||
+          this.settings.autoCacheChapters < 1 ||
+          this.settings.autoCacheChapters > 50
+        ) {
           this.settings.autoCacheChapters = DEFAULT_APP_SETTINGS.autoCacheChapters;
         }
         for (const { key } of READOUT_FIELDS) {
-          if (!READOUT_OPTIONS.some(option => option.value === this.settings[key])) {
+          if (!READOUT_OPTIONS.some((option) => option.value === this.settings[key])) {
             this.settings[key] = DEFAULT_APP_SETTINGS[key];
           }
         }
@@ -224,17 +241,22 @@ export class SettingsStore {
          * matching paper the first time, instead of silently losing it.
          */
         if (parsed.paper === undefined) {
-          this.settings.paper = typeof parsed.theme === 'string' && Object.hasOwn(PALETTES, parsed.theme) ? `local-${this.settings.theme}` : 'theme';
+          this.settings.paper =
+            typeof parsed.theme === 'string' && Object.hasOwn(PALETTES, parsed.theme)
+              ? `local-${this.settings.theme}`
+              : 'theme';
           if (this.settings.paper !== 'theme') this.settings.paperFollowsDark = false;
         }
         this.settings.paper = validReaderPaper(this.settings.paper);
         this.settings.tapZones = normalizeTapZones(parsed.tapZones, parsed.tapZone);
         if (typeof this.settings.paperFollowsDark !== 'boolean') this.settings.paperFollowsDark = true;
         if (parsed.readingTheme !== undefined) this.settings.readingTheme = validReadingTheme(parsed.readingTheme);
-        else if (this.settings.paper !== 'theme') this.settings.readingTheme = readingThemeForPaper(this.settings.paper);
+        else if (this.settings.paper !== 'theme')
+          this.settings.readingTheme = readingThemeForPaper(this.settings.paper);
         if (this.settings.readingTheme !== undefined) this.settings.paper = 'theme';
         if (typeof this.settings.focus !== 'boolean') this.settings.focus = false;
-        if (!['list', 'grid'].includes(this.settings.exploreLayout)) this.settings.exploreLayout = DEFAULT_APP_SETTINGS.exploreLayout;
+        if (!['list', 'grid'].includes(this.settings.exploreLayout))
+          this.settings.exploreLayout = DEFAULT_APP_SETTINGS.exploreLayout;
         if (!['recent', 'added', 'title', 'author'].includes(this.settings.shelfSort)) {
           this.settings.shelfSort = DEFAULT_APP_SETTINGS.shelfSort;
         }
@@ -272,13 +294,21 @@ function normalizePageInsets(value: AppSettings['pageInsets'] | undefined): AppS
   const insets = { ...DEFAULT_APP_SETTINGS.pageInsets };
   for (const edge of Object.keys(insets) as Array<keyof typeof insets>) {
     const number = value?.[edge];
-    if (typeof number === 'number' && Number.isFinite(number)) insets[edge] = Math.max(0, Math.min(80, Math.round(number)));
+    if (typeof number === 'number' && Number.isFinite(number))
+      insets[edge] = Math.max(0, Math.min(80, Math.round(number)));
   }
   return insets;
 }
 
 export function withThemeMemory(settings: AppSettings, patch: Partial<AppSettings>): Partial<AppSettings> {
   if (!patch.theme) return patch;
-  const memoryKey = (theme: ThemeMode) => PALETTES[theme].scheme === 'dark' ? 'lastNightTheme' : 'lastDayTheme';
-  return { [memoryKey(settings.theme)]: settings.theme, readingTheme: `local-${patch.theme}`, paper: 'theme', paperFollowsDark: false, ...patch, [memoryKey(patch.theme)]: patch.theme };
+  const memoryKey = (theme: ThemeMode) => (PALETTES[theme].scheme === 'dark' ? 'lastNightTheme' : 'lastDayTheme');
+  return {
+    [memoryKey(settings.theme)]: settings.theme,
+    readingTheme: `local-${patch.theme}`,
+    paper: 'theme',
+    paperFollowsDark: false,
+    ...patch,
+    [memoryKey(patch.theme)]: patch.theme,
+  };
 }

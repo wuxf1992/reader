@@ -11,20 +11,28 @@ import type { Book } from '../src/api/types.ts';
 import { FakeTransport, makePlatform } from './helpers/env.ts';
 
 let client: QueryClient | undefined;
-afterEach(() => { client?.clear(); apiOnlineManager.setOnline(true); appOnlineManager.setOnline(true); });
+afterEach(() => {
+  client?.clear();
+  apiOnlineManager.setOnline(true);
+  appOnlineManager.setOnline(true);
+});
 
 it('reaches the local shelf fallback after a browser offline event, through both query layers', async () => {
   const transport = new FakeTransport();
   transport.failWith(new ApiError('offline', 'no network'));
-  const api = new ReaderApi(makePlatform(transport), { load: async () => null, save: async () => {}, clear: async () => {} });
+  const api = new ReaderApi(makePlatform(transport), {
+    load: async () => null,
+    save: async () => {},
+    clear: async () => {},
+  });
   const books = [{ id: 'cached', title: '离线书籍', author: '作者' }] as Book[];
   const runtime = { api, offline: { books: () => books, progressFor: () => null } } as unknown as AppRuntime;
-  const queryClient = client = createAppQueryClient();
+  const queryClient = (client = createAppQueryClient());
   apiOnlineManager.setOnline(false);
   appOnlineManager.setOnline(false);
   const result = await Promise.race([
     queryClient.fetchQuery(shelfQuery(runtime)),
-    new Promise(resolve => setTimeout(() => resolve('query paused instead of reading local books'), 1000)),
+    new Promise((resolve) => setTimeout(() => resolve('query paused instead of reading local books'), 1000)),
   ]);
   expect(result).toMatchObject({ items: books, total: 1 });
   expect(transport.requests).toHaveLength(1);

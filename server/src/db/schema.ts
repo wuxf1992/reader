@@ -39,9 +39,19 @@ INSERT OR IGNORE INTO sync_clock(id, revision) VALUES(1, 0);
 CREATE INDEX IF NOT EXISTS idx_progress_sync ON reading_progress(user_id, sync_revision);
 CREATE INDEX IF NOT EXISTS idx_notes_sync ON notes(user_id, sync_revision);
 ${[
-  { table: 'reading_progress', key: 'user_id = NEW.user_id AND book_id = NEW.book_id', fields: ['locator', 'percentage', 'chapter_title', 'device', 'updated_at'] },
-  { table: 'notes', key: 'id = NEW.id', fields: ['type', 'locator', 'text', 'comment', 'color', 'updated_at', 'deleted'] },
-].map(({ table, key, fields }) => `
+  {
+    table: 'reading_progress',
+    key: 'user_id = NEW.user_id AND book_id = NEW.book_id',
+    fields: ['locator', 'percentage', 'chapter_title', 'device', 'updated_at'],
+  },
+  {
+    table: 'notes',
+    key: 'id = NEW.id',
+    fields: ['type', 'locator', 'text', 'comment', 'color', 'updated_at', 'deleted'],
+  },
+]
+  .map(
+    ({ table, key, fields }) => `
 CREATE TRIGGER IF NOT EXISTS ${table}_sync_insert AFTER INSERT ON ${table}
 BEGIN
   UPDATE sync_clock SET revision = MAX(revision + 1, CAST(unixepoch('subsec') * 1000 AS INTEGER)) WHERE id = 1;
@@ -53,7 +63,9 @@ BEGIN
   UPDATE ${table} SET sync_revision = (SELECT revision FROM sync_clock WHERE id = 1) WHERE ${key};
 END;
 UPDATE ${table} SET updated_at = updated_at WHERE sync_revision = 0;
-`).join('\n')}
+`,
+  )
+  .join('\n')}
 `;
 
 export const SCHEMA_SQL = `
@@ -328,6 +340,16 @@ CREATE TABLE IF NOT EXISTS book_reviews (
   user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   book_id    TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
   body       TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, book_id)
+);
+
+-- How one reader asked to see one book, when a format can be read more than one
+-- way (today: a PDF as its pages or as extracted text). No row: the site default.
+CREATE TABLE IF NOT EXISTS book_view_modes (
+  user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  book_id    TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+  pdf_mode   TEXT NOT NULL,
   updated_at INTEGER NOT NULL,
   PRIMARY KEY (user_id, book_id)
 );

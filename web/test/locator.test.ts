@@ -31,7 +31,8 @@ describe('locator format', () => {
   });
 
   it.each(['-1', '1.5', 'nope', '9007199254740992', '', '1@2'])(
-    'ignores an invalid character position %s and keeps the saved fraction', value => {
+    'ignores an invalid character position %s and keeps the saved fraction',
+    (value) => {
       const parsed = parseLocator(`r1:0.4200@${value}:chapter:test`, doc([{ id: 'chapter:test' }]));
       expect(parsed?.offset).toBe(0.42);
       expect(parsed?.textOffset).toBeUndefined();
@@ -122,12 +123,7 @@ describe('book percentage', () => {
     // Three short chapters and one enormous one. At the start of the big chapter
     // a naive index/count calculation would claim two thirds done.
     const short = { html: '<p>' + 'x'.repeat(400) + '</p>' };
-    const book = doc([
-      short,
-      short,
-      short,
-      { html: '<p>' + 'x'.repeat(40_000) + '</p>' },
-    ]);
+    const book = doc([short, short, short, { html: '<p>' + 'x'.repeat(40_000) + '</p>' }]);
     const atStartOfBig = bookPercentage(book, 3, 0);
     const naive = 3 / 4;
     expect(atStartOfBig).toBeLessThan(naive);

@@ -5,8 +5,14 @@ import { extname } from 'node:path';
 import { chromium } from 'playwright';
 
 const dist = new URL('../../dist/', import.meta.url);
-const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css',
-  '.png': 'image/png', '.webmanifest': 'application/manifest+json', '.ttf': 'font/ttf' };
+const mime = {
+  '.html': 'text/html',
+  '.js': 'text/javascript',
+  '.css': 'text/css',
+  '.png': 'image/png',
+  '.webmanifest': 'application/manifest+json',
+  '.ttf': 'font/ttf',
+};
 let updated = false;
 const server = createServer(async (req, res) => {
   const pathname = new URL(req.url, 'http://localhost').pathname;
@@ -19,7 +25,10 @@ const server = createServer(async (req, res) => {
   try {
     let bytes = await readFile(new URL(path, dist));
     if (path === 'sw.js' && updated) bytes = Buffer.from(bytes.toString().replace(/[a-f0-9]{20}/, 'updated'));
-    res.writeHead(200, { 'content-type': mime[extname(path)] ?? 'application/octet-stream', 'cache-control': 'no-cache' });
+    res.writeHead(200, {
+      'content-type': mime[extname(path)] ?? 'application/octet-stream',
+      'cache-control': 'no-cache',
+    });
     res.end(bytes);
   } catch {
     res.writeHead(404).end();
@@ -33,13 +42,15 @@ try {
   for (const base of ['/', '/nested/']) {
     updated = false;
     const context = await browser.newContext();
-    await context.route('https://wuxf.top/**', route => route.abort());
+    await context.route('https://wuxf.top/**', (route) => route.abort());
     let page = await context.newPage();
     await page.goto(`${origin}${base}`);
     await page.evaluate(async () => {
       await navigator.serviceWorker.ready;
-      if (!navigator.serviceWorker.controller) await new Promise((resolve) =>
-        navigator.serviceWorker.addEventListener('controllerchange', resolve, { once: true }));
+      if (!navigator.serviceWorker.controller)
+        await new Promise((resolve) =>
+          navigator.serviceWorker.addEventListener('controllerchange', resolve, { once: true }),
+        );
     });
     await page.waitForFunction(() => document.querySelector('#app')?.children.length > 0);
     const manifest = await page.evaluate(async () => {
@@ -49,7 +60,9 @@ try {
     assert.equal(manifest.display, 'standalone');
     for (const icon of manifest.icons) {
       const dimensions = await page.evaluate(async (src) => {
-        const img = new Image(); img.src = src; await img.decode();
+        const img = new Image();
+        img.src = src;
+        await img.decode();
         return `${img.naturalWidth}x${img.naturalHeight}`;
       }, icon.src);
       assert.equal(dimensions, icon.sizes);
@@ -60,21 +73,38 @@ try {
     await page.evaluate(() => fetch('./api/private?token=test'));
     const cached = await page.evaluate(async () => {
       const names = await caches.keys();
-      return (await Promise.all(names.map(async (name) =>
-        (await (await caches.open(name)).keys()).map((req) => req.url)))).flat();
+      return (
+        await Promise.all(names.map(async (name) => (await (await caches.open(name)).keys()).map((req) => req.url)))
+      ).flat();
     });
     assert(cached.some((url) => /\/assets\/client-[\w-]+\.js$/.test(new URL(url).pathname)));
-    const styles = await page.locator('link[rel=stylesheet]').evaluateAll(links => links.map(link => link.href));
-    assert(styles.some(url => /\/assets\/index-[\w-]+\.css$/.test(new URL(url).pathname)));
-    assert(styles.every(url => cached.includes(url)), 'loaded CSS must use its exact offline cache URL');
+    const styles = await page.locator('link[rel=stylesheet]').evaluateAll((links) => links.map((link) => link.href));
+    assert(styles.some((url) => /\/assets\/index-[\w-]+\.css$/.test(new URL(url).pathname)));
+    assert(
+      styles.every((url) => cached.includes(url)),
+      'loaded CSS must use its exact offline cache URL',
+    );
     assert(!cached.some((url) => url.includes('/api/')));
     await context.setOffline(true);
     await page.close();
     page = await context.newPage();
     await page.goto(`${origin}${base}#/shelf`);
     await page.waitForFunction(() => document.querySelector('#app')?.children.length > 0);
-    assert(!await page.locator('#app').textContent().then((text) => text.includes('客户端启动失败')));
-    assert.equal(await page.evaluate(() => fetch('./api/private').then(() => true, () => false)), false);
+    assert(
+      !(await page
+        .locator('#app')
+        .textContent()
+        .then((text) => text.includes('客户端启动失败'))),
+    );
+    assert.equal(
+      await page.evaluate(() =>
+        fetch('./api/private').then(
+          () => true,
+          () => false,
+        ),
+      ),
+      false,
+    );
     await context.setOffline(false);
     updated = true;
     await page.evaluate(async () => {
@@ -91,7 +121,9 @@ try {
     await updateButton.waitFor();
     if (process.env.PWA_SCREENSHOT_DIR) {
       for (const theme of ['light', 'dark']) {
-        await page.evaluate((value) => { document.documentElement.dataset.theme = value; }, theme);
+        await page.evaluate((value) => {
+          document.documentElement.dataset.theme = value;
+        }, theme);
         await page.locator('.pwa-update').screenshot({
           path: `${process.env.PWA_SCREENSHOT_DIR}/reader-pwa-${theme}.png`,
           style: '.notyf { visibility: hidden !important; }',
@@ -108,10 +140,7 @@ try {
         sessionStorage.setItem('pwa-saved', 'yes');
       };
     });
-    await Promise.all([
-      page.waitForEvent('load'),
-      page.getByRole('button', { name: '立即更新', exact: true }).click(),
-    ]);
+    await Promise.all([page.waitForEvent('load'), page.getByRole('button', { name: '立即更新', exact: true }).click()]);
     assert.equal(await page.evaluate(() => sessionStorage.getItem('pwa-saved')), 'yes');
     assert.equal(other.isClosed(), false);
     await page.waitForFunction(async () => {
@@ -122,7 +151,9 @@ try {
     await page.reload();
     await page.waitForFunction(() => document.querySelector('#app')?.children.length > 0);
     await context.close();
-    console.log(`PASS ${base}: manifest, icons, installability, offline restart, API isolation, immediate update with multiple tabs and cache cleanup`);
+    console.log(
+      `PASS ${base}: manifest, icons, installability, offline restart, API isolation, immediate update with multiple tabs and cache cleanup`,
+    );
   }
 } finally {
   await browser?.close();

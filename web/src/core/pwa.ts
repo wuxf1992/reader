@@ -4,17 +4,26 @@ const activatedUpdates = new WeakSet<ServiceWorkerRegistration>();
 
 /** Native shells and development builds keep their existing loading lifecycle. */
 export function registerPwa(): void {
-  if (!import.meta.env.PROD || window.ReaderAndroid || !window.isSecureContext
-    || !['http:', 'https:'].includes(location.protocol) || !('serviceWorker' in navigator)) return;
+  if (
+    !import.meta.env.PROD ||
+    window.ReaderAndroid ||
+    !window.isSecureContext ||
+    !['http:', 'https:'].includes(location.protocol) ||
+    !('serviceWorker' in navigator)
+  )
+    return;
 
   const base = new URL(import.meta.env.BASE_URL, document.baseURI);
-  void navigator.serviceWorker.register(new URL('sw.js', base), {
-    scope: base.pathname,
-    updateViaCache: 'none',
-  }).then((registration) => watchPwaUpdates(registration)).catch((error: unknown) => {
-    // PWA availability must not prevent ordinary online reading.
-    console.warn('离线应用缓存注册失败', error);
-  });
+  void navigator.serviceWorker
+    .register(new URL('sw.js', base), {
+      scope: base.pathname,
+      updateViaCache: 'none',
+    })
+    .then((registration) => watchPwaUpdates(registration))
+    .catch((error: unknown) => {
+      // PWA availability must not prevent ordinary online reading.
+      console.warn('离线应用缓存注册失败', error);
+    });
 }
 
 async function saveBeforeUpdate(): Promise<void> {
@@ -32,11 +41,21 @@ async function activatePwaUpdate(registration: ServiceWorkerRegistration, save: 
       clearTimeout(timeout);
       navigator.serviceWorker.removeEventListener('controllerchange', changed);
     };
-    const changed = () => { cleanup(); resolve(); };
-    const timeout = setTimeout(() => { cleanup(); reject(new Error('更新未完成，请重试')); }, 15_000);
+    const changed = () => {
+      cleanup();
+      resolve();
+    };
+    const timeout = setTimeout(() => {
+      cleanup();
+      reject(new Error('更新未完成，请重试'));
+    }, 15_000);
     navigator.serviceWorker.addEventListener('controllerchange', changed);
-    try { worker.postMessage({ type: 'SKIP_WAITING' }); }
-    catch (error) { cleanup(); reject(error); }
+    try {
+      worker.postMessage({ type: 'SKIP_WAITING' });
+    } catch (error) {
+      cleanup();
+      reject(error);
+    }
   });
 }
 
@@ -50,19 +69,40 @@ export async function updatePwa(): Promise<string> {
     if (!navigator.onLine) return '请联网后重试';
     await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => reject(new Error('检查更新超时，请稍后重试')), 60_000);
-      void registration.update().then(() => { clearTimeout(timeout); resolve(); }, error => { clearTimeout(timeout); reject(error); });
+      void registration.update().then(
+        () => {
+          clearTimeout(timeout);
+          resolve();
+        },
+        (error) => {
+          clearTimeout(timeout);
+          reject(error);
+        },
+      );
     });
     const worker = registration.installing;
-    if (worker) await new Promise<void>((resolve, reject) => {
-      const cleanup = () => { clearTimeout(timeout); worker.removeEventListener('statechange', changed); };
-      const changed = () => {
-        if (worker.state === 'installed' || worker.state === 'activated') { cleanup(); resolve(); }
-        else if (worker.state === 'redundant') { cleanup(); reject(new Error('新版下载失败，请重试')); }
-      };
-      const timeout = setTimeout(() => { cleanup(); reject(new Error('新版下载未完成，请稍后重试')); }, 60_000);
-      worker.addEventListener('statechange', changed);
-      changed();
-    });
+    if (worker)
+      await new Promise<void>((resolve, reject) => {
+        const cleanup = () => {
+          clearTimeout(timeout);
+          worker.removeEventListener('statechange', changed);
+        };
+        const changed = () => {
+          if (worker.state === 'installed' || worker.state === 'activated') {
+            cleanup();
+            resolve();
+          } else if (worker.state === 'redundant') {
+            cleanup();
+            reject(new Error('新版下载失败，请重试'));
+          }
+        };
+        const timeout = setTimeout(() => {
+          cleanup();
+          reject(new Error('新版下载未完成，请稍后重试'));
+        }, 60_000);
+        worker.addEventListener('statechange', changed);
+        changed();
+      });
   }
   if (!registration.waiting && !activatedUpdates.has(registration)) return '已是最新版本';
   await activatePwaUpdate(registration, saveBeforeUpdate);
@@ -129,7 +169,9 @@ export function watchPwaUpdates(
   const check = () => {
     if (document.visibilityState !== 'visible') return;
     show();
-    void registration.update().catch(() => { /* Offline: try again on return. */ });
+    void registration.update().catch(() => {
+      /* Offline: try again on return. */
+    });
   };
   // Only changes after initial control represent upgrades of an existing page.
   let controlled = !!navigator.serviceWorker.controller;

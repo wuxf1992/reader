@@ -108,7 +108,11 @@ function stagedBook(count: number, total: number, from: number): BookDoc {
       depth: 0,
     })),
     content: windowOf(from, total, count),
-    loader: { async read(item) { return { html: `<p>${item.title}</p>` }; } },
+    loader: {
+      async read(item) {
+        return { html: `<p>${item.title}</p>` };
+      },
+    },
   });
   // The same hand-off the reader screen performs: a staged document answers to
   // `setWindow`, and the view finds it through this property.
@@ -142,22 +146,29 @@ describe('ReaderView navigation', () => {
       await view.open(0, 0);
       const root = view.elementHost.shadow.querySelector<HTMLElement>('.book-flow')!;
       expect(root.textContent).toBe('頭髮發展，皇后後來。');
-      const range = document.createRange(); range.selectNodeContents(root.querySelector('p')!);
-      Object.defineProperty(view.elementHost.shadow, 'getSelection', { configurable: true,
-        value: () => ({ rangeCount: 1, getRangeAt: () => range }) });
+      const range = document.createRange();
+      range.selectNodeContents(root.querySelector('p')!);
+      Object.defineProperty(view.elementHost.shadow, 'getSelection', {
+        configurable: true,
+        value: () => ({ rangeCount: 1, getRangeAt: () => range }),
+      });
       const anchor = view.selectionAnchor()!;
       expect(anchor.quote).toBe('头发发展，皇后后来。');
       expect(view.displayedQuote(anchor)).toBe('頭髮發展，皇后後來。');
       expect(view.showTextAnchor(anchor)).toBe(true);
-      expect(view.speechChunks.map(chunk => chunk.text).join('')).toContain('頭髮發展');
+      expect(view.speechChunks.map((chunk) => chunk.text).join('')).toContain('頭髮發展');
       const position = view.position();
-      view.applySettings({ chineseVariant: 'simplified' }); await view.openLocator(position.locator);
+      view.applySettings({ chineseVariant: 'simplified' });
+      await view.openLocator(position.locator);
       expect(root.textContent).toBe('头发发展，皇后后来。');
       expect(view.showTextAnchor(anchor)).toBe(true);
-      view.applySettings({ chineseVariant: 'original' }); await view.openLocator(position.locator);
+      view.applySettings({ chineseVariant: 'original' });
+      await view.openLocator(position.locator);
       expect(root.textContent).toBe('头发发展，皇后后来。');
       expect(doc.sections[0]!.html).toBe(original);
-    } finally { view.dispose(); }
+    } finally {
+      view.dispose();
+    }
   });
 
   it('reports a locator that round-trips back to the same section', async () => {
@@ -238,20 +249,34 @@ describe('ReaderView navigation', () => {
   });
 
   it('keeps a pending chapter jump on the same reference when the directory inserts a chapter', async () => {
-    const old = windowOf(0, 2, 2), fresh = windowOf(0, 3, 3);
+    const old = windowOf(0, 2, 2),
+      fresh = windowOf(0, 3, 3);
     fresh.items = [old.items[0]!, fresh.items[2]!, old.items[1]!].map((item, seq) => ({ ...item, seq }));
     let finish!: () => void;
-    const doc = createStagedDoc({ kind: 'reflowable', content: old, toc: [], loader: { async read(item) {
-      if (item.href === old.items[1]!.href) await new Promise<void>(resolve => { finish = resolve; });
-      return { html: `<p>${item.title}</p>` };
-    } } });
+    const doc = createStagedDoc({
+      kind: 'reflowable',
+      content: old,
+      toc: [],
+      loader: {
+        async read(item) {
+          if (item.href === old.items[1]!.href)
+            await new Promise<void>((resolve) => {
+              finish = resolve;
+            });
+          return { html: `<p>${item.title}</p>` };
+        },
+      },
+    });
     (doc as BookDoc & { staged?: unknown }).staged = doc;
-    const view = make(container, doc); await view.open(0);
-    const pending = view.open(1); await vi.waitFor(() => expect(finish).toBeDefined());
+    const view = make(container, doc);
+    await view.open(0);
+    const pending = view.open(1);
+    await vi.waitFor(() => expect(finish).toBeDefined());
     const page = view.elementHost.shadow.querySelector('.book-flow')!.firstChild;
     expect(view.updateWindow(fresh)).toBe(true);
     expect(view.elementHost.shadow.querySelector('.book-flow')!.firstChild).toBe(page);
-    finish(); await pending;
+    finish();
+    await pending;
     expect(view.position().sectionId).toBe(old.items[1]!.href);
     expect(view.currentChapterPosition).toBe(2);
   });
@@ -443,12 +468,20 @@ describe('ReaderView appearance settings', () => {
     expect(settings.lineHeight).toBe('inherit');
   });
 
-  it.each([[0, 0.5], [-1, 0.5], [0.35, 0.5], [0.6, 0.6], [0.75, 0.75], [2, 1], [NaN, 1], [Infinity, 1]])(
-    'keeps brightness %s within a visible range', (brightness, expected) => {
-      const view = make(container, reflowableDoc(1));
-      view.applySettings({ brightness });
-      expect(view.settingsSnapshot.brightness).toBe(expected);
-    });
+  it.each([
+    [0, 0.5],
+    [-1, 0.5],
+    [0.35, 0.5],
+    [0.6, 0.6],
+    [0.75, 0.75],
+    [2, 1],
+    [NaN, 1],
+    [Infinity, 1],
+  ])('keeps brightness %s within a visible range', (brightness, expected) => {
+    const view = make(container, reflowableDoc(1));
+    view.applySettings({ brightness });
+    expect(view.settingsSnapshot.brightness).toBe(expected);
+  });
 
   it('sets a page-turn animation on the host and clears it again', () => {
     vi.useFakeTimers();
@@ -659,7 +692,6 @@ describe('plain-text chapters are typeset by the reader', () => {
   });
 });
 
-
 /**
  * A link *inside* a chapter that points at another chapter.
  *
@@ -701,10 +733,7 @@ describe('ReaderView chapter links', () => {
     // the pair (marker + same origin). `document.baseURI` is jsdom's about:blank,
     // so the URL is built against it rather than against a made-up origin.
     const origin = document.baseURI;
-    const href = new URL(
-      `/api/v1/books/b1/assets?__reader-book-resource__=1&ref=OEBPS/ch3.xhtml`,
-      origin,
-    ).href;
+    const href = new URL(`/api/v1/books/b1/assets?__reader-book-resource__=1&ref=OEBPS/ch3.xhtml`, origin).href;
     const seen: string[] = [];
     const view = new ReaderView({
       container,
@@ -749,9 +778,19 @@ describe('ReaderView chapter links', () => {
   });
 
   it('keeps the fragment of a link into another chapter', async () => {
-    const href = new URL('/api/v1/books/b1/assets?__reader-book-resource__=1&ref=OEBPS/notes.xhtml#n12', document.baseURI).href;
+    const href = new URL(
+      '/api/v1/books/b1/assets?__reader-book-resource__=1&ref=OEBPS/notes.xhtml#n12',
+      document.baseURI,
+    ).href;
     const seen: string[] = [];
-    const view = new ReaderView({ container, doc: docWithLink(href), onChapterLink: (ref) => { seen.push(ref); return true; } });
+    const view = new ReaderView({
+      container,
+      doc: docWithLink(href),
+      onChapterLink: (ref) => {
+        seen.push(ref);
+        return true;
+      },
+    });
     await view.open(0, 0);
     expect(clickLink(view)).toBe(false);
     expect(seen).toEqual(['xhtml:OEBPS/notes.xhtml#n12']);
@@ -761,15 +800,26 @@ describe('ReaderView chapter links', () => {
   /** A chapter with one reference mark and the note it points at. */
   function docWithNote(link: string, note: string): BookDoc {
     const doc = reflowableDoc(1);
-    return { ...doc, sections: [{ id: 'ch1.xhtml', label: '第一章', html: `<p>正文里的一句话${link}，后面还有正文。</p>${note}`, depth: 0 }] };
+    return {
+      ...doc,
+      sections: [
+        { id: 'ch1.xhtml', label: '第一章', html: `<p>正文里的一句话${link}，后面还有正文。</p>${note}`, depth: 0 },
+      ],
+    };
   }
 
   it('offers a note reference to the screen, with the note readable from the chapter', async () => {
     const seen: Array<{ ref: string | null; fragment: string }> = [];
     const view = new ReaderView({
       container,
-      doc: docWithNote('<sup><a id="r1" href="#n1">[1]</a></sup>', '<p><a id="n1" href="#r1">[1]</a> 这是注释的内容。</p>'),
-      onNoteLink: (link) => { seen.push(link); return true; },
+      doc: docWithNote(
+        '<sup><a id="r1" href="#n1">[1]</a></sup>',
+        '<p><a id="n1" href="#r1">[1]</a> 这是注释的内容。</p>',
+      ),
+      onNoteLink: (link) => {
+        seen.push(link);
+        return true;
+      },
     });
     await view.open(0, 0);
     expect(clickLink(view)).toBe(false);
@@ -785,7 +835,10 @@ describe('ReaderView chapter links', () => {
     const view = new ReaderView({
       container,
       doc: docWithNote('<a href="#n1">参见第三节的讨论</a>', '<p id="n1">第三节</p>'),
-      onNoteLink: (link) => { seen.push(link); return true; },
+      onNoteLink: (link) => {
+        seen.push(link);
+        return true;
+      },
     });
     await view.open(0, 0);
     expect(clickLink(view)).toBe(false);
@@ -794,13 +847,15 @@ describe('ReaderView chapter links', () => {
   });
 });
 
-
 describe('plain-text paged navigation without CSS columns', () => {
   async function pagedText() {
     const container = document.createElement('div');
     document.body.append(container);
     const doc = reflowableDoc(2);
-    doc.sections.forEach(section => { section.plainText = true; section.html = '正文\n下一段'; });
+    doc.sections.forEach((section) => {
+      section.plainText = true;
+      section.html = '正文\n下一段';
+    });
     const view = make(container, doc);
     const host = view.elementHost;
     // A four-screen chapter even if the browser reports no horizontal overflow.
@@ -833,7 +888,10 @@ describe('plain-text paged navigation without CSS columns', () => {
         expect(view.position().sectionIndex).toBe(0);
         expect(view.position().pageInChapter).toBe(page);
       }
-    } finally { view.dispose(); container.remove(); }
+    } finally {
+      view.dispose();
+      container.remove();
+    }
   });
 
   it('restores a saved locator and seeks using the same page boundaries', async () => {
@@ -848,7 +906,10 @@ describe('plain-text paged navigation without CSS columns', () => {
       await view.next();
       expect(view.position().pageInChapter).toBe(4);
       expect(view.position().sectionIndex).toBe(0);
-    } finally { view.dispose(); container.remove(); }
+    } finally {
+      view.dispose();
+      container.remove();
+    }
   });
 
   it('keeps reading progress when switching between scroll and paged modes', async () => {
@@ -862,76 +923,105 @@ describe('plain-text paged navigation without CSS columns', () => {
       expect(host.flow.scrollWidth).toBe(0);
       await view.next();
       expect(view.position().pageInChapter).toBe(4);
-    } finally { view.dispose(); container.remove(); }
+    } finally {
+      view.dispose();
+      container.remove();
+    }
   });
 });
 
 it('does not let an older chapter fetch overwrite a newer explicit jump', async () => {
-  const container=document.createElement('div');document.body.append(container);
-  const doc=reflowableDoc(3);let finish!:()=>void;
-  Object.assign(doc,{staged:{loadSection:async(index:number)=>{
-    if(index===1)await new Promise<void>(resolve=>{finish=resolve;});
-  }}});
-  const view=make(container,doc);
+  const container = document.createElement('div');
+  document.body.append(container);
+  const doc = reflowableDoc(3);
+  let finish!: () => void;
+  Object.assign(doc, {
+    staged: {
+      loadSection: async (index: number) => {
+        if (index === 1)
+          await new Promise<void>((resolve) => {
+            finish = resolve;
+          });
+      },
+    },
+  });
+  const view = make(container, doc);
   try {
-    await view.open(0);const slow=view.open(1);
-    await vi.waitFor(()=>expect(finish).toBeDefined());
-    await view.open(2);finish();await slow;
+    await view.open(0);
+    const slow = view.open(1);
+    await vi.waitFor(() => expect(finish).toBeDefined());
+    await view.open(2);
+    finish();
+    await slow;
     expect(view.position().sectionId).toBe('ch2.xhtml');
-  } finally {view.dispose();container.remove();}
+  } finally {
+    view.dispose();
+    container.remove();
+  }
 });
-
 
 describe('paged drag previews', () => {
   afterEach(() => document.body.replaceChildren());
 
   async function dragView(format: 'epub' | 'txt') {
-    const container = document.createElement('div'); document.body.append(container);
-    const doc = reflowableDoc(2); doc.format = format;
+    const container = document.createElement('div');
+    document.body.append(container);
+    const doc = reflowableDoc(2);
+    doc.format = format;
     const position = vi.fn();
     const view = new ReaderView({ container, doc, onPositionChange: position });
     view.applySettings({ mode: 'paged', pageAnimation: 'slide' });
     await view.open(0);
-    for (const [element, sizes] of [[view.elementHost, {clientWidth: 300, clientHeight: 600, scrollHeight: 1800}],
-      [view.elementHost.flow, {clientWidth: 300, clientHeight: 600, scrollWidth: 900}]] as const) {
-      for (const [key, value] of Object.entries(sizes)) Object.defineProperty(element, key, { value, configurable: true });
+    for (const [element, sizes] of [
+      [view.elementHost, { clientWidth: 300, clientHeight: 600, scrollHeight: 1800 }],
+      [view.elementHost.flow, { clientWidth: 300, clientHeight: 600, scrollWidth: 900 }],
+    ] as const) {
+      for (const [key, value] of Object.entries(sizes))
+        Object.defineProperty(element, key, { value, configurable: true });
     }
     position.mockClear();
     return { view, container, position };
   }
 
-  it.each(['epub', 'txt'] as const)('previews %s without writing a tentative position, and restores on cancel', async format => {
-    const {view, container, position} = await dragView(format);
-    const initial = view.position().locator;
-    expect(view.beginDrag()).toBe(true);
-    view.dragTo(-100);
-    expect(container.querySelectorAll('.reader-page-snapshot')).toHaveLength(2);
-    expect(container.querySelector<HTMLElement>('.reader-page-snapshot')!.style.transform).toContain('200px');
-    expect(view.position().locator).toBe(initial);
-    expect(position).not.toHaveBeenCalled();
-    expect(await view.endDrag(null)).toBe(false);
-    expect(container.querySelector('.reader-page-drag')).toBeNull();
-    expect(view.position().locator).toBe(initial);
-    view.dispose();
-  });
+  it.each(['epub', 'txt'] as const)(
+    'previews %s without writing a tentative position, and restores on cancel',
+    async (format) => {
+      const { view, container, position } = await dragView(format);
+      const initial = view.position().locator;
+      expect(view.beginDrag()).toBe(true);
+      view.dragTo(-100);
+      expect(container.querySelectorAll('.reader-page-snapshot')).toHaveLength(2);
+      expect(container.querySelector<HTMLElement>('.reader-page-snapshot')!.style.transform).toContain('200px');
+      expect(view.position().locator).toBe(initial);
+      expect(position).not.toHaveBeenCalled();
+      expect(await view.endDrag(null)).toBe(false);
+      expect(container.querySelector('.reader-page-drag')).toBeNull();
+      expect(view.position().locator).toBe(initial);
+      view.dispose();
+    },
+  );
 
   it('keeps the preview until the queued page turn commits and removes it on dispose', async () => {
-    const {view, container, position} = await dragView('epub');
-    expect(view.beginDrag()).toBe(true); view.dragTo(-100);
+    const { view, container, position } = await dragView('epub');
+    expect(view.beginDrag()).toBe(true);
+    view.dragTo(-100);
     expect(await view.endDrag('next')).toBe(true);
     expect(position).not.toHaveBeenCalled();
-    await view.next(); view.cancelDrag();
+    await view.next();
+    view.cancelDrag();
     expect(view.position().pageInChapter).toBe(2);
     expect(position).toHaveBeenCalledOnce();
     expect(container.querySelector('.reader-page-drag')).toBeNull();
-    expect(view.beginDrag()).toBe(true); view.dragTo(50);
+    expect(view.beginDrag()).toBe(true);
+    view.dragTo(50);
     view.dispose();
     expect(container.querySelector('.reader-page-drag')).toBeNull();
   });
 
   it('drops tentative preview on a reflow without turning a page', async () => {
-    const {view, container} = await dragView('txt');
-    expect(view.beginDrag()).toBe(true); view.dragTo(-100);
+    const { view, container } = await dragView('txt');
+    expect(view.beginDrag()).toBe(true);
+    view.dragTo(-100);
     view.applySettings({ fontScale: 1.2 });
     expect(container.querySelector('.reader-page-drag')).toBeNull();
     expect(await view.endDrag('next')).toBe(false);
@@ -940,18 +1030,22 @@ describe('paged drag previews', () => {
   });
 
   it('honours disabled animation and keeps fixed layouts on their existing swipe path', async () => {
-    const {view} = await dragView('txt');
+    const { view } = await dragView('txt');
     view.applySettings({ pageAnimation: 'none' });
-    expect(view.beginDrag()).toBe(false); view.dispose();
-    const container = document.createElement('div'); document.body.append(container);
-    const fixed = make(container, fixedDoc(2)); await fixed.open(0);
-    expect(fixed.beginDrag()).toBe(false); fixed.dispose();
+    expect(view.beginDrag()).toBe(false);
+    view.dispose();
+    const container = document.createElement('div');
+    document.body.append(container);
+    const fixed = make(container, fixedDoc(2));
+    await fixed.open(0);
+    expect(fixed.beginDrag()).toBe(false);
+    fixed.dispose();
   });
 });
 
-
 it('restores EPUB columns at whole-page boundaries and repairs browser focus scrolling', async () => {
-  const container = document.createElement('div'); document.body.append(container);
+  const container = document.createElement('div');
+  document.body.append(container);
   const view = make(container, reflowableDoc(2));
   try {
     const flow = view.elementHost.flow;
@@ -963,17 +1057,23 @@ it('restores EPUB columns at whole-page boundaries and repairs browser focus scr
     flow.dispatchEvent(new Event('scroll'));
     expect(flow.scrollLeft).toBe(300);
     expect(view.position().pageInChapter).toBe(2);
-  } finally { view.dispose(); container.remove(); }
+  } finally {
+    view.dispose();
+    container.remove();
+  }
 });
 describe('ReaderView settings', () => {
   it('measures the place once per frame while a slider is dragged, and not at all for brightness', async () => {
     const container = document.createElement('div');
     document.body.append(container);
     const frames: FrameRequestCallback[] = [];
-    const raf = vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation(callback => { frames.push(callback); return frames.length; });
+    const raf = vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => {
+      frames.push(callback);
+      return frames.length;
+    });
     const view = make(container, reflowableDoc(2));
     await view.open(0, 0);
-    frames.splice(0).forEach(callback => callback(0));
+    frames.splice(0).forEach((callback) => callback(0));
     const measure = vi.spyOn(view as unknown as { measureWithin(): void }, 'measureWithin');
     view.applySettings({ fontScale: 1.1 });
     view.applySettings({ fontScale: 1.2 });
@@ -981,7 +1081,7 @@ describe('ReaderView settings', () => {
     // One measurement before the first step, one restore after the last.
     expect(measure).toHaveBeenCalledTimes(1);
     expect(frames).toHaveLength(1);
-    frames.splice(0).forEach(callback => callback(0));
+    frames.splice(0).forEach((callback) => callback(0));
     view.applySettings({ brightness: 0.8 });
     expect(measure).toHaveBeenCalledTimes(1);
     expect(frames).toHaveLength(0);
@@ -995,7 +1095,8 @@ describe('ReaderView settings', () => {
  * where the line sits and whether every paragraph can be reached.
  */
 describe('专注模式 focus line', () => {
-  const height = 800, maxScroll = 5000;
+  const height = 800,
+    maxScroll = 5000;
 
   it('rests at a fixed height in the middle of a chapter', () => {
     expect(focusLine(1000, maxScroll, height)).toBe(320);
@@ -1039,8 +1140,14 @@ describe('专注模式 focus line', () => {
 
 describe('ReaderView pictures', () => {
   let container: HTMLDivElement;
-  beforeEach(() => { container = document.createElement('div'); document.body.append(container); });
-  afterEach(() => { container.remove(); vi.restoreAllMocks(); });
+  beforeEach(() => {
+    container = document.createElement('div');
+    document.body.append(container);
+  });
+  afterEach(() => {
+    container.remove();
+    vi.restoreAllMocks();
+  });
 
   /** jsdom lays nothing out, so each image is given the size its `data-size` names. */
   function sized(): void {
@@ -1049,18 +1156,25 @@ describe('ReaderView pictures', () => {
       return new DOMRect(0, 0, size, size);
     });
   }
-  const html = '<p>正文<img id="glyph" data-size="16" src="data:image/png;base64,AA==" alt="注"></p>'
-    + '<div><img id="one" data-size="300" src="data:image/png;base64,AQ==" alt="图一"></div><p>正文</p>'
-    + '<div><img id="two" data-size="300" src="data:image/png;base64,Ag==" alt="图二"></div>';
+  const html =
+    '<p>正文<img id="glyph" data-size="16" src="data:image/png;base64,AA==" alt="注"></p>' +
+    '<div><img id="one" data-size="300" src="data:image/png;base64,AQ==" alt="图一"></div><p>正文</p>' +
+    '<div><img id="two" data-size="300" src="data:image/png;base64,Ag==" alt="图二"></div>';
 
-  it('answers a tap on a picture with the chapter\'s pictures, in order, and leaves glyphs and text alone', async () => {
+  it("answers a tap on a picture with the chapter's pictures, in order, and leaves glyphs and text alone", async () => {
     sized();
     const doc = reflowableDoc(1);
     const view = new ReaderView({ container, doc: { ...doc, sections: [{ id: 'c1', label: '一', html, depth: 0 }] } });
     await view.open(0, 0);
     const flow = view.elementHost.flow;
     const path = (id: string) => [flow.querySelector('#' + id)!, flow];
-    expect(view.picturesAt(path('two'))).toEqual({ index: 1, images: [{ src: 'data:image/png;base64,AQ==', alt: '图一' }, { src: 'data:image/png;base64,Ag==', alt: '图二' }] });
+    expect(view.picturesAt(path('two'))).toEqual({
+      index: 1,
+      images: [
+        { src: 'data:image/png;base64,AQ==', alt: '图一' },
+        { src: 'data:image/png;base64,Ag==', alt: '图二' },
+      ],
+    });
     expect(view.picturesAt(path('one'))?.index).toBe(0);
     expect(view.picturesAt(path('glyph'))).toBeNull();
     expect(view.picturesAt([flow.querySelector('p')!, flow])).toBeNull();

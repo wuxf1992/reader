@@ -17,7 +17,6 @@
  * font stacks, which is the exact failure mode this product exists to avoid.
  */
 
-
 import { BOOK_RESOURCE_MARKER } from '../formats/book-resource.ts';
 
 /**
@@ -435,7 +434,7 @@ const FLOW_STYLESHEET = `
   pointer-events: none;
   z-index: -1;
   border-radius: 3px;
-  background: color-mix(in srgb, var(--reader-accent, #7a5c3e) 34%, transparent);
+  background: color-mix(in srgb, var(--reader-accent, var(--color-brand-text)) 34%, transparent);
   transition: top 120ms linear, left 120ms linear, width 120ms linear, height 120ms linear;
 }
 .fixed-page {
@@ -553,9 +552,14 @@ export class BookShadowHost extends HTMLElement {
    * because a chapter change is not a reason for the column to lose its measure
    * for one frame.
    */
-  setContent(html: string, styles: string[]): void {
-    this.styleEl.textContent = styles.join('\n');
-    this.contentEl.innerHTML = html;
+  setContent(html: string, styles: string[], options: SanitiseOptions = {}): void {
+    const template = document.createElement('template');
+    template.innerHTML = html;
+    sanitiseInjectedContent(template.content, options);
+    this.styleEl.textContent = options.signAssetUrl
+      ? signCssUrls(styles.join('\n'), options.signAssetUrl)
+      : styles.join('\n');
+    this.contentEl.replaceChildren(template.content);
   }
 
   /**
@@ -623,7 +627,7 @@ export interface SanitiseOptions {
    * is absent in every context where there is no session (a test, a local file),
    * and then the URLs are passed through unchanged.
    *
-   * This has to happen *here*, in the pass that walks the live DOM, rather than on
+   * This has to happen *here*, in the pass that walks the parsed DOM, rather than on
    * the raw markup: the server writes absolute URLs for the resources it rewrote,
    * and a document also contains absolute URLs the *book* wrote. Only the DOM walk
    * sees both, and only it can be the one place that decides "this is one of ours,
@@ -633,8 +637,13 @@ export interface SanitiseOptions {
 }
 
 export function sanitiseInjectedContent(root: ParentNode, options: SanitiseOptions = {}): void {
-  for (const element of root.querySelectorAll('script, base, meta[http-equiv="refresh" i]')) {
+  for (const element of root.querySelectorAll(
+    'script, base, meta, iframe, frame, frameset, object, embed, applet, portal, noscript, template',
+  )) {
     element.remove();
+  }
+  for (const form of root.querySelectorAll('form')) {
+    form.replaceWith(...form.childNodes);
   }
 
   for (const element of root.querySelectorAll('a[target], a[download]')) {
@@ -647,13 +656,12 @@ export function sanitiseInjectedContent(root: ParentNode, options: SanitiseOptio
   for (const element of root.querySelectorAll('*')) {
     const attributes = element.getAttributeNames();
     for (const name of attributes) {
-      if (name.toLowerCase().startsWith('on')) {
+      const lower = name.toLowerCase();
+      const value = (element.getAttribute(name) ?? '').replace(/[\u0000-\u0020\u007f]/g, '');
+      if (lower.startsWith('on') || ['srcdoc', 'action', 'formaction'].includes(lower)) {
         element.removeAttribute(name);
-      } else if (name.toLowerCase() === 'href') {
-        const value = element.getAttribute(name) ?? '';
-        if (/^\s*javascript:/i.test(value)) {
-          element.removeAttribute(name);
-        }
+      } else if (/^(?:javascript|vbscript):/i.test(value) || /^data:(?!image\/)/i.test(value)) {
+        element.removeAttribute(name);
       }
     }
   }
@@ -686,8 +694,8 @@ export function sanitiseInjectedContent(root: ParentNode, options: SanitiseOptio
   // a book loaded locally, which never went through the server's rewriter — is
   // resolved against the document rather than dropped. An absolute URL to another
   // host resolves to that host and is therefore dropped, which is the point.
-  for (const element of root.querySelectorAll('[src], [poster], [srcset], [href]')) {
-    for (const name of ['src', 'poster', 'href']) {
+  for (const element of root.querySelectorAll('*')) {
+    for (const name of ['src', 'poster', 'href', 'xlink:href', 'background', 'data']) {
       const value = element.getAttribute(name);
       if (value === null) continue;
       const resolved = resolveBookResource(value);

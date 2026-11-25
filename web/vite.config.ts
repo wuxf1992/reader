@@ -28,7 +28,12 @@ export default defineConfig({
         entryFileNames: 'assets/client-[hash].js',
         chunkFileNames: 'assets/[name]-[hash].js',
         // Hash the single stylesheet too, so HTML, lazy imports and precache share its URL.
-        assetFileNames: asset => asset.names?.some(name => name.endsWith('.css')) ? 'assets/index-[hash].css' : asset.names?.[0]?.startsWith('pdf.worker') ? 'assets/[name]-[hash].js' : 'assets/[name][extname]',
+        assetFileNames: (asset) =>
+          asset.names?.some((name) => name.endsWith('.css'))
+            ? 'assets/index-[hash].css'
+            : asset.names?.[0]?.startsWith('pdf.worker')
+              ? 'assets/[name]-[hash].js'
+              : 'assets/[name][extname]',
       },
     },
     modulePreload: { polyfill: false },
@@ -41,7 +46,7 @@ export default defineConfig({
         changeOrigin: true,
       },
     },
-    allowedHosts: true
+    allowedHosts: true,
   },
   test: {
     environment: 'node',
@@ -51,11 +56,6 @@ export default defineConfig({
     // file from one process, or vice versa, silently produces "no test suite
     // found". Excluding them here keeps each runner to the files it can actually
     // execute, instead of a green-looking run that quietly skipped half the suite.
-    exclude: [
-      'test/api.test.ts',
-      'test/asset-url.test.ts',
-      'test/windowed-toc.test.ts',
-      'node_modules/**',
-    ],
+    exclude: ['test/api.test.ts', 'test/asset-url.test.ts', 'test/windowed-toc.test.ts', 'node_modules/**'],
   },
 });

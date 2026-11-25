@@ -4,22 +4,26 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pwa } from '../tools/pwa/build.ts';
 const directories: string[] = [];
-afterEach(async () => { await Promise.all(directories.splice(0).map(path => rm(path, { recursive: true, force: true }))); });
+afterEach(async () => {
+  await Promise.all(directories.splice(0).map((path) => rm(path, { recursive: true, force: true })));
+});
 it('keeps hashed JS and CSS URLs canonical across HTML, lazy imports and offline cache', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'reader-pwa-build-')); directories.push(dir);
+  const dir = await mkdtemp(join(tmpdir(), 'reader-pwa-build-'));
+  directories.push(dir);
   await mkdir(join(dir, 'assets'));
-  const index = '<script src="./assets/client-oldhash.js"></script><link href="./assets/index-oldhash.css" rel="stylesheet">';
+  const index =
+    '<script src="./assets/client-oldhash.js"></script><link href="./assets/index-oldhash.css" rel="stylesheet">';
   await writeFile(join(dir, 'assets/client-oldhash.js'), 'console.log("old")');
   await writeFile(join(dir, 'assets/index-oldhash.css'), 'body { color: black; }');
   const lazy = 'import { shared } from \"./client-oldhash.js\"; export default shared;';
   await writeFile(join(dir, 'assets/ReaderPage-lazyhash.js'), lazy);
   await writeFile(join(dir, 'index.html'), index);
   const plugin = pwa();
-  const build = plugin.writeBundle as (options: {dir: string}) => Promise<void>;
-  await build({dir});
+  const build = plugin.writeBundle as (options: { dir: string }) => Promise<void>;
+  await build({ dir });
   const html = await readFile(join(dir, 'index.html'), 'utf8');
   const worker = await readFile(join(dir, 'sw.js'), 'utf8');
-  const urls = [...html.matchAll(/(?:src|href)="\.\/([^"]+)"/g)].map(match => match[1]);
+  const urls = [...html.matchAll(/(?:src|href)="\.\/([^"]+)"/g)].map((match) => match[1]);
   expect(urls).toHaveLength(2);
   expect(worker).toContain(JSON.stringify('assets/ReaderPage-lazyhash.js'));
   expect(worker).not.toMatch(/\.(js|css)\?v=/);
@@ -31,7 +35,7 @@ it('keeps hashed JS and CSS URLs canonical across HTML, lazy imports and offline
   await writeFile(join(dir, 'assets/client-newhash.js'), 'console.log("new")');
   await writeFile(join(dir, 'assets/index-newhash.css'), 'body { color: blue; }');
   await writeFile(join(dir, 'index.html'), index.replaceAll('oldhash', 'newhash'));
-  await build({dir});
+  await build({ dir });
   expect(await readFile(join(dir, 'index.html'), 'utf8')).not.toBe(html);
   expect(await readFile(join(dir, 'sw.js'), 'utf8')).not.toBe(worker);
   // The native shell loads the same entry named by HTML.

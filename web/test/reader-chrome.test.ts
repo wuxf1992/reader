@@ -15,8 +15,20 @@ import { render } from '../src/shared/ui/render-root.ts';
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, createElement as h } from 'react';
-import { ReaderChrome, type ChromeState, type ChromeHandlers, type ReaderThemeState } from '../src/ui/reader-chrome.tsx';
-import { defaultThemePreference, resolveReadingTheme, themeOptions, selectTheme, selectThemeMode, type ThemePreference } from '../src/shared/theme/theme.ts';
+import {
+  ReaderChrome,
+  type ChromeState,
+  type ChromeHandlers,
+  type ReaderThemeState,
+} from '../src/ui/reader-chrome.tsx';
+import {
+  defaultThemePreference,
+  resolveReadingTheme,
+  themeOptions,
+  selectTheme,
+  selectThemeMode,
+  type ThemePreference,
+} from '../src/shared/theme/theme.ts';
 
 const themeState = (preference: Partial<ThemePreference> = {}, dark = false): ReaderThemeState => {
   const merged = { ...defaultThemePreference, ...preference };
@@ -79,6 +91,8 @@ function chromeState(overrides: Partial<ChromeState> = {}): ChromeState {
     ttsAutoAdvance: true,
     ttsEngine: 'auto',
     showFitRow: false,
+    pdfMode: 'none',
+    pdfModeBusy: false,
     showDirectionRow: false,
     showEncodingRow: false,
     showTxtRows: false,
@@ -93,7 +107,10 @@ function chromeState(overrides: Partial<ChromeState> = {}): ChromeState {
 }
 
 /** Every handler is a no-op: this file asserts the tree, not the behaviour. */
-function handlers(theme: ReaderThemeState = themeState(), onTheme: ChromeHandlers['onTheme'] = () => undefined): ChromeHandlers {
+function handlers(
+  theme: ReaderThemeState = themeState(),
+  onTheme: ChromeHandlers['onTheme'] = () => undefined,
+): ChromeHandlers {
   const noop = (): void => undefined;
   return {
     onBack: noop,
@@ -129,54 +146,89 @@ describe('ReaderChrome', () => {
   // scheduled update afterwards, which surfaced in CI as an unhandled
   // "Right-hand side of 'instanceof' is not an object" from react-dom.
   afterEach(() => {
-    render(null, container);
+    act(() => render(null, container));
     container.remove();
   });
 
-  afterEach(() => { act(() => render(null, container)); container.remove(); });
-
   function settingsPage(label: string) {
-  const button = [...container.querySelectorAll<HTMLButtonElement>('button')].find(button => button.getAttribute('aria-label') === label || button.textContent?.startsWith(label));
-  expect(button, label).toBeDefined();
-  act(() => button!.click());
-}
+    const button = [...container.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.getAttribute('aria-label') === label || button.textContent?.startsWith(label),
+    );
+    expect(button, label).toBeDefined();
+    act(() => button!.click());
+  }
 
-  function paint(state: Partial<ChromeState>): HTMLElement {
+  function paint(state: Partial<ChromeState>, actions: Partial<ChromeHandlers> = {}): HTMLElement {
     const stage = document.createElement('div');
     stage.className = 'stage';
-    render(h(ReaderChrome, { state: chromeState(state), stage, handlers: handlers() }), container);
+    render(h(ReaderChrome, { state: chromeState(state), stage, handlers: { ...handlers(), ...actions } }), container);
     return container;
   }
 
   it('switches explicitly between primary and backup sources without claiming text is complete', () => {
-    const onPool = vi.fn(), stage = document.createElement('div');
+    const onPool = vi.fn(),
+      stage = document.createElement('div');
     const state = chromeState({ alternatives: { items: [] }, alternativesPool: 'backup' });
-    act(() => render(h(ReaderChrome, { state, stage, handlers: { ...handlers(), onAlternativePool: onPool } }), container));
+    act(() =>
+      render(h(ReaderChrome, { state, stage, handlers: { ...handlers(), onAlternativePool: onPool } }), container),
+    );
     const buttons = [...container.querySelectorAll<HTMLButtonElement>('[aria-label="换源范围"] button')];
-    expect(buttons.map(button => button.textContent)).toEqual(['主力源', '备用源']);
+    expect(buttons.map((button) => button.textContent)).toEqual(['主力源', '备用源']);
     expect(buttons[1]!.getAttribute('aria-pressed')).toBe('true');
-    act(() => buttons[0]!.click()); expect(onPool).toHaveBeenCalledWith('all');
+    act(() => buttons[0]!.click());
+    expect(onPool).toHaveBeenCalledWith('all');
     expect(container.textContent).toContain('备用源可能更新较慢');
-    act(() => paint({ alternatives: { items: [] }, alternativeChapters: [{ id: 'one', title: '第一章' }], alternativeChapter: 'one', alternativeQuality: { chapterId: 'one', title: '第一章', latestChapter: '第一章', characters: 1200, images: 0, bytes: 3600, elapsedMs: 10 } }));
-    expect(container.textContent).toContain('已获取正文'); expect(container.textContent).not.toContain('正文检测通过');
+    act(() =>
+      paint({
+        alternatives: { items: [] },
+        alternativeChapters: [{ id: 'one', title: '第一章' }],
+        alternativeChapter: 'one',
+        alternativeQuality: {
+          chapterId: 'one',
+          title: '第一章',
+          latestChapter: '第一章',
+          characters: 1200,
+          images: 0,
+          bytes: 3600,
+          elapsedMs: 10,
+        },
+      }),
+    );
+    expect(container.textContent).toContain('已获取正文');
+    expect(container.textContent).not.toContain('正文检测通过');
   });
 
   it('shows delayed loading only on the selected chapter and clears it when navigation ends', () => {
     vi.useFakeTimers();
-    const toc = [{ id: 'one', label: '第一章', depth: 0, spine: 0 }, { id: 'two', label: '第二章', depth: 0, spine: 1 }];
+    const toc = [
+      { id: 'one', label: '第一章', depth: 0, spine: 0 },
+      { id: 'two', label: '第二章', depth: 0, spine: 1 },
+    ];
     try {
-      act(() => { paint({ tocOpen: true, toc, navigating: true, pendingChapterRef: 'two' }); });
+      act(() => {
+        paint({ tocOpen: true, toc, navigating: true, pendingChapterRef: 'two' });
+      });
       const first = container.querySelector<HTMLButtonElement>('[data-section=one] button')!;
       const second = container.querySelector<HTMLButtonElement>('[data-section=two] button')!;
-      expect(first.disabled).toBe(true); expect(second.getAttribute('aria-busy')).toBe('true');
+      expect(first.disabled).toBe(true);
+      expect(second.getAttribute('aria-busy')).toBe('true');
       expect(container.querySelector('.busy-spinner')).toBeNull();
-      act(() => { vi.advanceTimersByTime(100); });
+      act(() => {
+        vi.advanceTimersByTime(100);
+      });
       expect(first.querySelector('.busy-spinner')).toBeNull();
       expect(second.querySelector('.busy-spinner')).not.toBeNull();
-      act(() => { paint({ tocOpen: true, toc, navigating: false }); });
+      act(() => {
+        paint({ tocOpen: true, toc, navigating: false });
+      });
       expect(container.querySelector('.busy-spinner')).toBeNull();
       expect(second.disabled).toBe(false);
-    } finally { act(() => { render(null, container); }); vi.useRealTimers(); }
+    } finally {
+      act(() => {
+        render(null, container);
+      });
+      vi.useRealTimers();
+    }
   });
 
   it('centres the current chapter inside the list without scrolling the app', () => {
@@ -192,7 +244,12 @@ describe('ReaderChrome', () => {
       return { top: 1000 + (index ? (Number(index) - 1) * 40 - body!.scrollTop : 0) } as DOMRect;
     });
     try {
-      const toc = Array.from({ length: 50 }, (_, i) => ({ id: 'ch' + i, label: '第 ' + (i + 1) + ' 章', depth: 0, spine: i }));
+      const toc = Array.from({ length: 50 }, (_, i) => ({
+        id: 'ch' + i,
+        label: '第 ' + (i + 1) + ' 章',
+        depth: 0,
+        spine: i,
+      }));
       paint({ tocOpen: false, toc, currentSectionId: 'ch41' });
       let tree = paint({ tocOpen: true, toc, currentSectionId: 'ch41' });
       expect(tree.querySelector('.sheet-body')?.scrollTop).toBe(1500);
@@ -211,10 +268,14 @@ describe('ReaderChrome', () => {
   });
 
   it('marks only cached chapters and keeps the chapter name separate', () => {
-    const tree = paint({ tocOpen: true, currentSectionId: 'one', toc: [
-      { id: 'one', label: '第一章', depth: 0, spine: 0, cached: true },
-      { id: 'two', label: '第二章', depth: 0, spine: 1, cached: false },
-    ] });
+    const tree = paint({
+      tocOpen: true,
+      currentSectionId: 'one',
+      toc: [
+        { id: 'one', label: '第一章', depth: 0, spine: 0, cached: true },
+        { id: 'two', label: '第二章', depth: 0, spine: 1, cached: false },
+      ],
+    });
     expect(tree.querySelector('[data-section="one"] .toc-cached')?.textContent).toBe('已缓存');
     expect(tree.querySelector('[data-section="one"] .toc-label')?.textContent).toBe('第一章');
     expect(tree.querySelector('[data-section="two"] .toc-cached')).toBeNull();
@@ -222,9 +283,10 @@ describe('ReaderChrome', () => {
 
   it('places contents before tools in the bottom toolbar', () => {
     const stage = document.createElement('div');
-    render(h(ReaderChrome, { state: chromeState(), stage,
-      handlers: { ...handlers(), onTools: () => {} } }), container);
-    const labels = [...container.querySelectorAll('.reader-actions button')].map(button => button.textContent?.trim());
+    render(h(ReaderChrome, { state: chromeState(), stage, handlers: { ...handlers(), onTools: () => {} } }), container);
+    const labels = [...container.querySelectorAll('.reader-actions button')].map((button) =>
+      button.textContent?.trim(),
+    );
     expect(labels).toEqual(['目录', '朗读', '夜间', '设置']);
     expect(labels.indexOf('目录')).toBeGreaterThanOrEqual(0);
   });
@@ -232,13 +294,25 @@ describe('ReaderChrome', () => {
   it('pages a comic through the whole book, opening the page only when the thumb is let go', () => {
     const stage = document.createElement('div');
     const onScrubChapter = vi.fn();
-    render(h(ReaderChrome, { state: chromeState({ layout: 'fixed', chapterPages: 1, pageInChapter: 1, chapterIndex: 3, chapterCount: 10 }), stage, handlers: { ...handlers(), onScrubChapter } }), container);
+    render(
+      h(ReaderChrome, {
+        state: chromeState({ layout: 'fixed', chapterPages: 1, pageInChapter: 1, chapterIndex: 3, chapterCount: 10 }),
+        stage,
+        handlers: { ...handlers(), onScrubChapter },
+      }),
+      container,
+    );
     const slider = container.querySelector<HTMLInputElement>('.progress-scrubber')!;
     expect([slider.disabled, slider.max, slider.value]).toEqual([false, '10', '3']);
-    act(() => { slider.value = '7'; slider.dispatchEvent(new Event('input', { bubbles: true })); });
+    act(() => {
+      slider.value = '7';
+      slider.dispatchEvent(new Event('input', { bubbles: true }));
+    });
     expect(container.querySelector('.progress-page')?.textContent).toBe('第 7/10 页');
     expect(onScrubChapter).not.toHaveBeenCalled();
-    act(() => { slider.dispatchEvent(new Event('pointerup', { bubbles: true })); });
+    act(() => {
+      slider.dispatchEvent(new Event('pointerup', { bubbles: true }));
+    });
     expect(onScrubChapter).toHaveBeenCalledWith(7);
   });
 
@@ -252,28 +326,56 @@ describe('ReaderChrome', () => {
     expect(paint({}).querySelector('.reader-rail')).toBeNull();
   });
 
-  it.each(Object.keys(PALETTES) as ThemeMode[])('selects %s as one shared theme', theme => {
-    const callbacks = { ...handlers(themeState(selectTheme(defaultThemePreference, `local-${theme}`))), onTheme: vi.fn() };
-    render(h(ReaderChrome, { state: chromeState({ theme, settingsOpen: true, settingsTab: 'appearance',
-      lastDayTheme: 'rose-pine-dawn-day', lastNightTheme: 'nord-night' }), stage: document.createElement('div'), handlers: callbacks }), container);
+  it.each(Object.keys(PALETTES) as ThemeMode[])('selects %s as one shared theme', (theme) => {
+    const callbacks = {
+      ...handlers(themeState(selectTheme(defaultThemePreference, `local-${theme}`))),
+      onTheme: vi.fn(),
+    };
+    render(
+      h(ReaderChrome, {
+        state: chromeState({
+          theme,
+          settingsOpen: true,
+          settingsTab: 'appearance',
+          lastDayTheme: 'rose-pine-dawn-day',
+          lastNightTheme: 'nord-night',
+        }),
+        stage: document.createElement('div'),
+        handlers: callbacks,
+      }),
+      container,
+    );
     settingsPage('更多配色');
     const palette = PALETTES[theme];
-    const selected = container.querySelector<HTMLButtonElement>(`[aria-label="主题配色"] [aria-label="${palette.label}"]`)!;
+    const selected = container.querySelector<HTMLButtonElement>(
+      `[aria-label="主题配色"] [aria-label="${palette.label}"]`,
+    )!;
     expect(selected.getAttribute('aria-pressed')).toBe('true');
     selected.click();
     expect(callbacks.onTheme).toHaveBeenLastCalledWith(selectTheme(defaultThemePreference, `local-${theme}`));
-    const rail = container.querySelector<HTMLButtonElement>(`.reader-actions [aria-label="${palette.scheme === 'light' ? '夜间' : '日间'}"]`)!;
+    const rail = container.querySelector<HTMLButtonElement>(
+      `.reader-actions [aria-label="${palette.scheme === 'light' ? '夜间' : '日间'}"]`,
+    )!;
     expect(rail.getAttribute('aria-label')).toBe(palette.scheme === 'light' ? '夜间' : '日间');
     rail.click();
-    expect(callbacks.onTheme).toHaveBeenLastCalledWith(selectThemeMode(selectTheme(defaultThemePreference, `local-${theme}`), palette.scheme === 'light' ? 'dark' : 'light'));
+    expect(callbacks.onTheme).toHaveBeenLastCalledWith(
+      selectThemeMode(
+        selectTheme(defaultThemePreference, `local-${theme}`),
+        palette.scheme === 'light' ? 'dark' : 'light',
+      ),
+    );
   });
 
   it('offers refresh only in the chapter publication contents panel and disables it while busy', () => {
     expect(paint({ tocOpen: true }).textContent).not.toContain('刷新目录');
     let tree = paint({ tocOpen: true, canRefresh: true });
-    expect([...tree.querySelectorAll('button')].find((button) => button.getAttribute('aria-label') === '刷新目录')?.disabled).toBe(false);
+    expect(
+      [...tree.querySelectorAll('button')].find((button) => button.getAttribute('aria-label') === '刷新目录')?.disabled,
+    ).toBe(false);
     tree = paint({ tocOpen: true, canRefresh: true, refreshing: true });
-    expect([...tree.querySelectorAll('button')].find((button) => button.getAttribute('aria-label') === '刷新目录')?.disabled).toBe(true);
+    expect(
+      [...tree.querySelectorAll('button')].find((button) => button.getAttribute('aria-label') === '刷新目录')?.disabled,
+    ).toBe(true);
   });
 
   it('uses chapter pages for the slider even when the book has many fixed pages', () => {
@@ -288,9 +390,20 @@ describe('ReaderChrome', () => {
   it('offers independent reading-area insets without changing the other edges', () => {
     const onSetting = vi.fn();
     const stage = document.createElement('div');
-    act(() => render(h(ReaderChrome, { stage,
-      state: chromeState({ settingsOpen: true, settingsTab: 'appearance', pageInsets: { top: 12, bottom: 8, left: 4, right: 6 } }),
-      handlers: { ...handlers(), onSetting } }), container));
+    act(() =>
+      render(
+        h(ReaderChrome, {
+          stage,
+          state: chromeState({
+            settingsOpen: true,
+            settingsTab: 'appearance',
+            pageInsets: { top: 12, bottom: 8, left: 4, right: 6 },
+          }),
+          handlers: { ...handlers(), onSetting },
+        }),
+        container,
+      ),
+    );
     settingsPage('显示设置');
     for (const label of ['上边距', '下边距', '左边距', '右边距']) {
       const slider = container.querySelector(`input[aria-label="${label}"]`);
@@ -298,7 +411,10 @@ describe('ReaderChrome', () => {
     }
     expect(container.querySelector('input[aria-label="基础页边距"]')).not.toBeNull();
     const slider = container.querySelector<HTMLInputElement>('input[aria-label="上边距"]')!;
-    act(() => { slider.value = '24'; slider.dispatchEvent(new Event('input', { bubbles: true })); });
+    act(() => {
+      slider.value = '24';
+      slider.dispatchEvent(new Event('input', { bubbles: true }));
+    });
     expect(onSetting).toHaveBeenCalledWith({ pageInsets: { top: 24, bottom: 8, left: 4, right: 6 } });
   });
 
@@ -319,7 +435,17 @@ describe('ReaderChrome', () => {
     const onSetting = vi.fn();
     const row = () => container.querySelector<HTMLElement>('.segmented[aria-label="专注模式"]');
     const pressed = () => row()!.querySelector('[aria-pressed="true"]')?.textContent;
-    const show = (state: Partial<ChromeState>) => { render(h(ReaderChrome, { state: chromeState({ settingsOpen: true, settingsTab: 'behavior', ...state }), stage: document.createElement('div'), handlers: { ...handlers(), onSetting } }), container); if (container.querySelector('.reader-settings-home')) settingsPage('翻页与点击'); };
+    const show = (state: Partial<ChromeState>) => {
+      render(
+        h(ReaderChrome, {
+          state: chromeState({ settingsOpen: true, settingsTab: 'behavior', ...state }),
+          stage: document.createElement('div'),
+          handlers: { ...handlers(), onSetting },
+        }),
+        container,
+      );
+      if (container.querySelector('.reader-settings-home')) settingsPage('翻页与点击');
+    };
     show({ mode: 'paged' });
     expect(row()).toBeNull();
     show({ mode: 'scroll', layout: 'fixed' });
@@ -327,56 +453,135 @@ describe('ReaderChrome', () => {
     show({ mode: 'scroll' });
     expect(pressed()).toBe('关');
     // The same row as its neighbours, so label and control line up with theirs.
-    expect(row()!.parentElement!.className).toBe(container.querySelector('.segmented[aria-label="翻页方式"]')!.parentElement!.className);
-    act(() => [...row()!.querySelectorAll('button')].find(button => button.textContent === '开')!.click());
+    expect(row()!.parentElement!.className).toBe(
+      container.querySelector('.segmented[aria-label="翻页方式"]')!.parentElement!.className,
+    );
+    act(() => [...row()!.querySelectorAll('button')].find((button) => button.textContent === '开')!.click());
     expect(onSetting).toHaveBeenLastCalledWith({ focus: true });
     show({ mode: 'scroll', focusMode: true });
     expect(pressed()).toBe('开');
-    act(() => [...row()!.querySelectorAll('button')].find(button => button.textContent === '关')!.click());
+    act(() => [...row()!.querySelectorAll('button')].find((button) => button.textContent === '关')!.click());
     expect(onSetting).toHaveBeenLastCalledWith({ focus: false });
+  });
+
+  it('offers 原版页面 and 增强解析 for a PDF only, and holds still while a switch is saved', () => {
+    const onPdfMode = vi.fn();
+    const row = () => container.querySelector<HTMLElement>('.segmented[aria-label="PDF 解析"]');
+    const show = (state: Partial<ChromeState>, withHandler = true) => {
+      render(
+        h(ReaderChrome, {
+          state: chromeState({ settingsOpen: true, settingsTab: 'behavior', ...state }),
+          stage: document.createElement('div'),
+          handlers: { ...handlers(), ...(withHandler ? { onPdfMode } : {}) },
+        }),
+        container,
+      );
+      if (container.querySelector('.reader-settings-home')) settingsPage('翻页与点击');
+    };
+    show({ pdfMode: 'none' });
+    expect(row()).toBeNull();
+    show({ pdfMode: 'pdfjs', layout: 'fixed' });
+    expect(row()!.querySelector('[aria-pressed="true"]')?.textContent).toBe('原版页面');
+    expect(container.textContent).toContain('保留原书版式');
+    act(() => [...row()!.querySelectorAll('button')].find((button) => button.textContent === '增强解析')!.click());
+    expect(onPdfMode).toHaveBeenLastCalledWith('enhanced');
+    show({ pdfMode: 'enhanced', pdfModeBusy: true });
+    expect([...row()!.querySelectorAll('button')].every((button) => button.disabled)).toBe(true);
+    expect(container.textContent).toContain('并显示插图、表格和公式');
+    show({ pdfMode: 'pdfjs' }, false);
+    expect(row()).toBeNull();
   });
 
   it('sets each of the nine tap cells, and keeps the last 菜单 cell a menu', () => {
     const onSetting = vi.fn();
     const stage = document.createElement('div');
     const grid = ['previous', 'menu', 'next', 'previous', 'next', 'next', 'previous', 'next', 'next'];
-    render(h(ReaderChrome, { state: chromeState({ settingsOpen: true, settingsTab: 'behavior', tapZones: grid as NonNullable<ChromeState['tapZones']> }), stage, handlers: { ...handlers(), onSetting } }), container);
+    render(
+      h(ReaderChrome, {
+        state: chromeState({
+          settingsOpen: true,
+          settingsTab: 'behavior',
+          tapZones: grid as NonNullable<ChromeState['tapZones']>,
+        }),
+        stage,
+        handlers: { ...handlers(), onSetting },
+      }),
+      container,
+    );
     settingsPage('翻页与点击');
     const cells = [...container.querySelectorAll<HTMLButtonElement>('.tap-zones-grid .tap-zone-cell')];
-    expect(cells.map(cell => cell.textContent)).toEqual(['上一页', '菜单', '下一页', '上一页', '下一页', '下一页', '上一页', '下一页', '下一页']);
+    expect(cells.map((cell) => cell.textContent)).toEqual([
+      '上一页',
+      '菜单',
+      '下一页',
+      '上一页',
+      '下一页',
+      '下一页',
+      '上一页',
+      '下一页',
+      '下一页',
+    ]);
 
     act(() => cells[8]!.click());
-    const nextChapter = [...document.querySelectorAll<HTMLButtonElement>('.action-menu [role^=menuitem]')].find(item => item.textContent === '下一章')!;
+    const nextChapter = [...document.querySelectorAll<HTMLButtonElement>('.action-menu [role^=menuitem]')].find(
+      (item) => item.textContent === '下一章',
+    )!;
     act(() => nextChapter.click());
     expect(onSetting).toHaveBeenLastCalledWith({ tapZones: [...grid.slice(0, 8), 'next-chapter'] });
 
     act(() => cells[1]!.click());
     const items = [...document.querySelectorAll<HTMLButtonElement>('.action-menu [role^=menuitem]')];
-    expect(items.filter(item => !item.disabled).map(item => item.getAttribute('aria-label') ?? item.textContent)).toEqual(['菜单']);
+    expect(
+      items.filter((item) => !item.disabled).map((item) => item.getAttribute('aria-label') ?? item.textContent),
+    ).toEqual(['菜单']);
   });
 
   it('adjusts size and brightness directly, and exposes tools from the same panel', () => {
     const callbacks = { ...handlers(), onSetting: vi.fn(), onTools: vi.fn() };
-    act(() => render(h(ReaderChrome, { state: chromeState({ settingsOpen: true, settingsTab: 'appearance' }), stage: document.createElement('div'), handlers: callbacks }), container));
+    act(() =>
+      render(
+        h(ReaderChrome, {
+          state: chromeState({ settingsOpen: true, settingsTab: 'appearance' }),
+          stage: document.createElement('div'),
+          handlers: callbacks,
+        }),
+        container,
+      ),
+    );
     expect(container.querySelector('.reader-settings-home input[aria-label="页面亮度"]')).not.toBeNull();
     expect(container.querySelectorAll('[aria-label="常用配色"] button')).toHaveLength(5);
     expect(container.querySelector('output[aria-label="当前字号"]')?.textContent).toBe('20');
-    settingsPage('增大字号'); expect(callbacks.onSetting).toHaveBeenLastCalledWith({ fontScale: 1.05 });
-    settingsPage('减小字号'); expect(callbacks.onSetting).toHaveBeenLastCalledWith({ fontScale: .95 });
-    settingsPage('阅读工具'); expect(callbacks.onTools).toHaveBeenCalledOnce();
+    settingsPage('增大字号');
+    expect(callbacks.onSetting).toHaveBeenLastCalledWith({ fontScale: 1.05 });
+    settingsPage('减小字号');
+    expect(callbacks.onSetting).toHaveBeenLastCalledWith({ fontScale: 0.95 });
+    settingsPage('阅读工具');
+    expect(callbacks.onTools).toHaveBeenCalledOnce();
     settingsPage('显示设置');
     expect(container.querySelector('select[aria-label="顶部左侧"]')).not.toBeNull();
   });
 
   it('uses integer font sizes in both settings entries while keeping stored scale values', () => {
     const callbacks = { ...handlers(), onSetting: vi.fn() };
-    act(() => render(h(ReaderChrome, { state: chromeState({ settingsOpen: true, settingsTab: 'appearance', fontScale: 1.05 }), stage: document.createElement('div'), handlers: callbacks }), container));
+    act(() =>
+      render(
+        h(ReaderChrome, {
+          state: chromeState({ settingsOpen: true, settingsTab: 'appearance', fontScale: 1.05 }),
+          stage: document.createElement('div'),
+          handlers: callbacks,
+        }),
+        container,
+      ),
+    );
     expect(container.querySelector('output[aria-label="当前字号"]')?.textContent).toBe('21');
     settingsPage('字体与间距');
     const slider = container.querySelector<HTMLInputElement>('input[aria-label="字号"]')!;
     expect([slider.value, slider.min, slider.max, slider.step]).toEqual(['21', '16', '44', '1']);
-    act(() => { slider.value = '19'; slider.dispatchEvent(new Event('input', { bubbles: true })); });
-    expect(callbacks.onSetting).toHaveBeenLastCalledWith({ fontScale: .95 });
+    act(() => {
+      slider.value = '19';
+      slider.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(callbacks.onSetting).toHaveBeenLastCalledWith({ fontScale: 0.95 });
     expect(slider.getAttribute('aria-valuetext')).not.toContain('%');
   });
 
@@ -384,10 +589,16 @@ describe('ReaderChrome', () => {
     const tree = paint({ settingsOpen: true, settingsTab: 'appearance' });
     settingsPage('更多配色');
     const swatches = [...tree.querySelectorAll<HTMLButtonElement>('[aria-label="主题配色"] .theme-swatch')];
-    expect(swatches.map((button) => button.querySelector('.theme-swatch-label')?.textContent)).toEqual(themeOptions.map(option => option.label));
-    expect(swatches.filter((button) => button.getAttribute('aria-pressed') === 'true').map((button) => button.querySelector('.theme-swatch-label')?.textContent)).toEqual(['暖陶']);
+    expect(swatches.map((button) => button.querySelector('.theme-swatch-label')?.textContent)).toEqual(
+      themeOptions.map((option) => option.label),
+    );
+    expect(
+      swatches
+        .filter((button) => button.getAttribute('aria-pressed') === 'true')
+        .map((button) => button.querySelector('.theme-swatch-label')?.textContent),
+    ).toEqual(['暖陶']);
     // Each chip is drawn in that theme's own background (light mode here): 黑白灰 #F5F5F5.
-    const chip = swatches[3]!.querySelector<HTMLElement>('.theme-swatch-chip')!;
+    const chip = tree.querySelector<HTMLElement>('[data-reading-theme-option="gray"] .theme-swatch-chip')!;
     expect(chip.style.backgroundColor).toContain('rgb(245, 245, 245)');
     expect(tree.querySelector('[aria-label="明暗"]')).not.toBeNull();
     expect(tree.querySelector('[aria-label="纸色"]')).toBeNull();
@@ -396,22 +607,39 @@ describe('ReaderChrome', () => {
 
   it('keeps each theme preview fixed while the active palette and mode change', () => {
     const preview = (reading: ThemePreference['theme'], dark: boolean) => {
-      render(h(ReaderChrome, { state: chromeState({ settingsOpen: true, settingsTab: 'appearance' }),
-        stage: document.createElement('div'), handlers: handlers(themeState(selectTheme(defaultThemePreference, reading), dark)) }), container);
+      render(
+        h(ReaderChrome, {
+          state: chromeState({ settingsOpen: true, settingsTab: 'appearance' }),
+          stage: document.createElement('div'),
+          handlers: handlers(themeState(selectTheme(defaultThemePreference, reading), dark)),
+        }),
+        container,
+      );
       if (!container.querySelector('[aria-label="主题配色"]')) settingsPage('更多配色');
-      return [...container.querySelectorAll<HTMLElement>('[data-reading-theme-option^="local-"] .theme-swatch-chip')]
-        .map(chip => [chip.style.backgroundColor, chip.style.color]);
+      return [
+        ...container.querySelectorAll<HTMLElement>('[data-reading-theme-option^="local-"] .theme-swatch-chip'),
+      ].map((chip) => [chip.style.backgroundColor, chip.style.color]);
     };
     expect(preview('local-wechat-night', true)).toEqual(preview('local-kraft-day', false));
   });
 
   it('changes the shared theme from the chooser and day/night shortcut', () => {
     const patches: Array<Partial<ThemePreference>> = [];
-    render(h(ReaderChrome, { state: chromeState({ settingsOpen: true, settingsTab: 'appearance' }), stage: document.createElement('div'), handlers: handlers(themeState({}, true), patch => patches.push(patch)) }), container);
+    render(
+      h(ReaderChrome, {
+        state: chromeState({ settingsOpen: true, settingsTab: 'appearance' }),
+        stage: document.createElement('div'),
+        handlers: handlers(themeState({}, true), (patch) => patches.push(patch)),
+      }),
+      container,
+    );
     settingsPage('更多配色');
     container.querySelector<HTMLButtonElement>('[aria-label="主题配色"] [aria-label="黑白灰"]')!.click();
     container.querySelector<HTMLButtonElement>('.reader-actions [aria-label="日间"]')!.click();
-    expect(patches).toEqual([selectTheme(defaultThemePreference, 'gray'), selectThemeMode(defaultThemePreference, 'light')]);
+    expect(patches).toEqual([
+      selectTheme(defaultThemePreference, 'gray'),
+      selectThemeMode(defaultThemePreference, 'light'),
+    ]);
   });
 
   it('keeps brightness, themes and display options available for fixed layouts', () => {
@@ -422,22 +650,37 @@ describe('ReaderChrome', () => {
     expect(tree.querySelector('select[aria-label="顶部左侧"]')).not.toBeNull();
   });
 
-  it('puts the start action first in the read-aloud sheet and folds pitch and volume', () => {
-    const tree = paint({ settingsOpen: true, settingsTab: 'speech', ttsRate: 1.2, showPitchRow: true });
+  it('starts reading from the idle transport and keeps only labeled rate presets', () => {
+    const start = vi.fn(),
+      toggle = vi.fn();
+    const tree = paint(
+      { settingsOpen: true, settingsTab: 'speech', ttsRate: 1.2, showPitchRow: true },
+      { onSpeakFromHere: start, onSpeechToggle: toggle },
+    );
     const body = tree.querySelector('.sheet-body')!;
-    // The action the sheet exists for is not buried under five sliders.
-    expect(body.firstElementChild?.textContent).toBe('从当前位置朗读');
-    expect(body.firstElementChild?.classList.contains('primary')).toBe(true);
-    const presets = [...body.querySelectorAll('[aria-label="常用"] button')];
+    expect(body.firstElementChild?.classList.contains('tts-bar')).toBe(true);
+    expect(body.querySelector('.speech-start')).toBeNull();
+    expect(body.querySelector('.speech-rate input')).toBeNull();
+    const play = body.querySelector<HTMLButtonElement>('.tts-toggle')!;
+    expect(play.getAttribute('aria-label')).toBe('从当前位置朗读');
+    play.click();
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(toggle).not.toHaveBeenCalled();
+    for (const button of body.querySelectorAll<HTMLButtonElement>('.tts-controls button:not(.tts-toggle)'))
+      expect(button.disabled).toBe(true);
+    const presets = [...body.querySelectorAll('[aria-label="语速"] button')];
     expect(presets.map((button) => button.textContent)).toEqual(['0.8×', '1.0×', '1.2×', '1.5×', '2.0×']);
-    expect(presets.filter((button) => button.getAttribute('aria-pressed') === 'true').map((button) => button.textContent)).toEqual(['1.2×']);
+    expect(
+      presets.filter((button) => button.getAttribute('aria-pressed') === 'true').map((button) => button.textContent),
+    ).toEqual(['1.2×']);
     expect(body.querySelector('details.panel-fold input[aria-label="音量"]')).not.toBeNull();
     expect(body.querySelector('details.panel-fold input[aria-label="音调"]')).not.toBeNull();
   });
 
   it('draws every read-aloud control, including stop, in their own row', () => {
     const tree = paint({
-      settingsOpen: true, settingsTab: 'speech',
+      settingsOpen: true,
+      settingsTab: 'speech',
       tts: {
         active: true,
         state: 'playing',
@@ -451,19 +694,22 @@ describe('ReaderChrome', () => {
     });
     const bar = tree.querySelector('.tts-bar');
     expect(bar).not.toBeNull();
-    // The controls are one row of their own, so they divide the width evenly and
-    // none of them is clipped — which is what made 停止 unreachable.
     const controls = bar?.querySelector('.tts-controls');
     expect(controls).not.toBeNull();
-    const labels = [...(controls?.querySelectorAll('button') ?? [])].map((button) =>
-      button.getAttribute('aria-label'),
-    );
-    expect(labels).toContain('停止朗读');
+    const labels = [...(controls?.querySelectorAll('button') ?? [])].map((button) => button.getAttribute('aria-label'));
+    expect(labels).toContain('停止');
     expect(labels).toContain('暂停朗读');
     expect(labels).toContain('上一句');
     expect(labels).toContain('下一句');
-    // The sentence and its scrubber are the second row, so the sentence can never
-    // push a control out of the bar.
+    expect(bar?.querySelector('.tts-heading .tts-position')?.textContent).toBe('第 3 / 10 句');
+    expect(bar?.querySelector('.tts-heading button')).toBeNull();
+    expect(bar?.querySelector('.tts-transport')?.querySelectorAll('button')).toHaveLength(3);
+    expect(bar?.querySelector('.tts-transport .tts-stop')).toBeNull();
+    expect(controls?.firstElementChild?.classList.contains('tts-restart')).toBe(true);
+    expect(controls?.firstElementChild?.getAttribute('aria-label')).toBe('从本页重新朗读');
+    expect(controls?.firstElementChild?.getAttribute('title')).toBe('从本页重新朗读');
+    expect(controls?.lastElementChild?.classList.contains('tts-stop')).toBe(true);
+    expect(tree.querySelector('.speech-start')).toBeNull();
     expect(bar?.querySelector('.tts-progress .tts-range')).not.toBeNull();
   });
 
@@ -471,7 +717,8 @@ describe('ReaderChrome', () => {
     // ✕ read as "close this bar", which is not what stop does: the reader who wanted
     // the voice to stop pressed it, the bar disappeared, and the book kept reading.
     const tree = paint({
-      settingsOpen: true, settingsTab: 'speech',
+      settingsOpen: true,
+      settingsTab: 'speech',
       tts: {
         active: true,
         state: 'playing',
@@ -484,8 +731,67 @@ describe('ReaderChrome', () => {
       },
     });
     const stop = [...tree.querySelectorAll('.tts-controls button')].find(
-      (button) => button.getAttribute('aria-label') === '停止朗读',
+      (button) => button.getAttribute('aria-label') === '停止',
     );
     expect(stop?.getAttribute('class')).toContain('tts-stop');
+    expect(stop?.getAttribute('title')).toBe('停止');
+  });
+
+  it('keeps paused playback actions and restart semantics with passive chapter metadata', () => {
+    const restart = vi.fn(),
+      toggle = vi.fn(),
+      stop = vi.fn();
+    const tree = paint(
+      {
+        settingsOpen: true,
+        settingsTab: 'speech',
+        chapterLabel: '第一章',
+        tts: {
+          active: true,
+          state: 'paused',
+          label: '正文句子',
+          chip: '2/3',
+          index: 1,
+          total: 3,
+          sentenceIndex: 1,
+          sentenceTotal: 3,
+        },
+      },
+      { onSpeakFromHere: restart, onSpeechToggle: toggle, onStopSpeech: stop },
+    );
+    expect(tree.querySelector('.tts-text')?.textContent).toBe('第一章');
+    tree.querySelector<HTMLButtonElement>('.tts-restart')!.click();
+    tree.querySelector<HTMLButtonElement>('[aria-label="继续朗读"]')!.click();
+    tree.querySelector<HTMLButtonElement>('[aria-label="停止"]')!.click();
+    expect(restart).toHaveBeenCalledTimes(1);
+    expect(toggle).toHaveBeenCalledTimes(1);
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders empty speech progress safely and hides tuning when speech is unavailable', () => {
+    const tts = { ...chromeState().tts, active: true, state: 'paused' as const };
+    let tree = paint({ settingsOpen: true, settingsTab: 'speech', tts });
+    expect(tree.querySelector('.tts-position')?.textContent).toBe('第 0 / 0 句');
+    expect(tree.querySelector<HTMLInputElement>('.tts-range')?.max).toBe('0');
+    tree = paint({ settingsOpen: true, settingsTab: 'speech', speechUnavailable: true });
+    expect(tree.querySelector('.speech-start')).toBeNull();
+    expect(tree.querySelector('.speech-rate')).toBeNull();
+    expect(tree.textContent).toContain('当前环境没有可用的朗读引擎');
+    expect(tree.querySelector('.tts-bar')).toBeNull();
+  });
+
+  it('retains exact saved non-preset rates as selected chips without changing stored values', () => {
+    const change = vi.fn();
+    for (const rate of [1.3, 1.21]) {
+      const tree = paint({ settingsOpen: true, settingsTab: 'speech', ttsRate: rate }, { onSpeechSetting: change });
+      const selected = tree.querySelector<HTMLButtonElement>('.speech-rate [aria-pressed="true"]')!;
+      expect(selected.textContent).toBe(`${rate}×`);
+      expect(tree.querySelectorAll('.speech-rate button')).toHaveLength(6);
+      expect(tree.querySelector('.speech-rate label')?.textContent).toBe('语速');
+      expect(change).not.toHaveBeenCalled();
+      selected.click();
+      expect(change).toHaveBeenLastCalledWith({ ttsRate: rate });
+      change.mockClear();
+    }
   });
 });

@@ -10,41 +10,99 @@ const reports = [];
 const descriptor = { id: 'novel', label: '网站与书源', capabilities: ['search', 'browse', 'content.manifest'] };
 await mkdir(output, { recursive: true });
 try {
-  for (const [name, engine] of [['chromium', chromium], ['webkit', webkit]]) {
+  for (const [name, engine] of [
+    ['chromium', chromium],
+    ['webkit', webkit],
+  ]) {
     const browser = await engine.launch({ headless: true });
     try {
       for (const width of [390, 1280]) {
         const page = await browser.newPage({ viewport: { width, height: 844 }, serviceWorkers: 'block' });
-        const errors = []; let catalogs = 0;
+        const errors = [];
+        let catalogs = 0;
         const coverUrl = '/api/v1/books/already-added/cover';
-        const image = Buffer.from(await page.evaluate(() => {
-          const canvas = document.createElement('canvas'); canvas.width = canvas.height = 2;
-          const context = canvas.getContext('2d'); context.fillStyle = 'red'; context.fillRect(0, 0, 2, 2);
-          return canvas.toDataURL('image/png').split(',')[1];
-        }), 'base64');
-        let holdCover = false, coverResponses = 0, releaseCover;
-        const validationGate = new Promise(resolve => { releaseCover = resolve; });
-        await page.route('**/api/v1/books/already-added/cover', async route => {
+        const image = Buffer.from(
+          await page.evaluate(() => {
+            const canvas = document.createElement('canvas');
+            canvas.width = canvas.height = 2;
+            const context = canvas.getContext('2d');
+            context.fillStyle = 'red';
+            context.fillRect(0, 0, 2, 2);
+            return canvas.toDataURL('image/png').split(',')[1];
+          }),
+          'base64',
+        );
+        let holdCover = false,
+          coverResponses = 0,
+          releaseCover;
+        const validationGate = new Promise((resolve) => {
+          releaseCover = resolve;
+        });
+        await page.route('**/api/v1/books/already-added/cover', async (route) => {
           if (holdCover) await validationGate;
           coverResponses++;
           if (holdCover) assert.equal(route.request().headers()['if-none-match'], '"detail-cover"');
-          return route.fulfill({ status: 200, contentType: 'image/png', headers: { etag: '"detail-cover"' }, body: image });
+          return route.fulfill({
+            status: 200,
+            contentType: 'image/png',
+            headers: { etag: '"detail-cover"' },
+            body: image,
+          });
         });
-        page.on('pageerror', error => errors.push(error.message));
-        await page.route('https://wuxf.top/**', route => route.abort());
-        await page.route('**/api/v1/sources', route => route.fulfill({ json: { sources: [{ id: 'demo', name: '网站与书源', enabled: true, isDefault: true, sourceType: 'novel', descriptor }] } }));
-        await page.route('**/api/v1/sources/types', route => route.fulfill({ json: { types: [descriptor] } }));
-        await page.route('**/api/v1/sources/demo/browse*', route => {
+        page.on('pageerror', (error) => errors.push(error.message));
+        await page.route('https://wuxf.top/**', (route) => route.abort());
+        await page.route('**/api/v1/sources', (route) =>
+          route.fulfill({
+            json: {
+              sources: [
+                { id: 'demo', name: '网站与书源', enabled: true, isDefault: true, sourceType: 'novel', descriptor },
+              ],
+            },
+          }),
+        );
+        await page.route('**/api/v1/sources/types', (route) => route.fulfill({ json: { types: [descriptor] } }));
+        await page.route('**/api/v1/sources/demo/browse*', (route) => {
           catalogs++;
-          return route.fulfill({ json: { title: '书海 / 发现', items: [], navigation: Array.from({ length: 200 }, (_, index) => ({ title: '示例书源 ' + (index + 1), ref: 'explore:' + index })) } });
+          return route.fulfill({
+            json: {
+              title: '书海 / 发现',
+              items: [],
+              navigation: Array.from({ length: 200 }, (_, index) => ({
+                title: '示例书源 ' + (index + 1),
+                ref: 'explore:' + index,
+              })),
+            },
+          });
         });
-        const entry = { ref: 'detail-book', title: '目录测试书籍', authors: ['测试作者'], shelfBookId: 'already-added', coverUrl, description: '简介'.repeat(120), options: [{ id: 'read', label: '加入书架' }] };
+        const entry = {
+          ref: 'detail-book',
+          title: '目录测试书籍',
+          authors: ['测试作者'],
+          shelfBookId: 'already-added',
+          coverUrl,
+          description: '简介'.repeat(120),
+          options: [{ id: 'read', label: '加入书架' }],
+        };
         let directoryRequests = 0;
-        await page.route('**/api/v1/sources/demo/search', route => route.fulfill({ contentType: 'text/event-stream', body: 'event: results\ndata: ' + JSON.stringify({ items: [entry] }) + '\n\nevent: done\ndata: {}\n\n' }));
-        await page.route('**/api/v1/sources/demo/entries?*', route => route.fulfill({ json: entry }));
-        await page.route('**/api/v1/sources/demo/publications/detail-book/manifest', route => {
+        await page.route('**/api/v1/sources/demo/search', (route) =>
+          route.fulfill({
+            contentType: 'text/event-stream',
+            body: 'event: results\ndata: ' + JSON.stringify({ items: [entry] }) + '\n\nevent: done\ndata: {}\n\n',
+          }),
+        );
+        await page.route('**/api/v1/sources/demo/entries?*', (route) => route.fulfill({ json: entry }));
+        await page.route('**/api/v1/sources/demo/publications/detail-book/manifest', (route) => {
           directoryRequests++;
-          return route.fulfill({ json: { items: Array.from({ length: 205 }, (_, seq) => ({ id: String(seq), seq, kind: 'chapter', title: `第${seq + 1}章 内容` })) } });
+          return route.fulfill({
+            json: {
+              items: Array.from({ length: 205 }, (_, seq) => ({
+                id: String(seq),
+                seq,
+                kind: 'chapter',
+                title: `第${seq + 1}章 内容`,
+              })),
+            },
+          });
         });
         await page.goto(origin);
         await page.getByText('更换服务地址', { exact: true }).click();
@@ -53,9 +111,12 @@ try {
         await page.locator('input[type=password]').fill('password12');
         await page.locator('button[type=submit]').click();
         await page.locator('.app-shell').waitFor();
-        await page.evaluate(url => window.readerApp.api.coverBytes(url), coverUrl);
+        await page.evaluate((url) => window.readerApp.api.coverBytes(url), coverUrl);
         holdCover = true;
-        await page.evaluate(async () => { await window.readerApp.updateSettings({ theme: 'parchment-day' }); location.hash = '#/sources'; });
+        await page.evaluate(async () => {
+          await window.readerApp.updateSettings({ theme: 'parchment-day' });
+          location.hash = '#/sources';
+        });
         const toggle = page.getByRole('tab', { name: '发现', exact: true });
         await toggle.waitFor();
         assert.equal(catalogs, 0, 'entering the page does not fetch discovery');
@@ -67,8 +128,15 @@ try {
         await page.locator('.explore-links button').last().waitFor();
         assert.equal(catalogs, 1);
         assert.equal(await page.locator('.explore-links button').count(), 200);
-        assert.equal(await page.locator('.catalog-empty, .catalog-summary').count(), 0, 'navigation is not an empty book search');
-        assert.equal(await page.locator('.sources-body').evaluate(element => element.scrollWidth > element.clientWidth), false);
+        assert.equal(
+          await page.locator('.catalog-empty, .catalog-summary').count(),
+          0,
+          'navigation is not an empty book search',
+        );
+        assert.equal(
+          await page.locator('.sources-body').evaluate((element) => element.scrollWidth > element.clientWidth),
+          false,
+        );
         await page.screenshot({ path: `${output}/${name}-${width}-expanded.png` });
         await page.getByRole('tab', { name: '搜书', exact: true }).click();
         await page.locator('.explore-links').waitFor({ state: 'detached' });
@@ -82,13 +150,23 @@ try {
         const detail = page.getByRole('dialog', { name: entry.title, exact: true });
         await detail.getByRole('button', { name: '已加入书架', exact: true }).waitFor();
         assert.equal(await detail.getByRole('button', { name: '已加入书架', exact: true }).isDisabled(), true);
-        await page.waitForFunction(() => document.querySelector('.source-book-detail-cover img')?.naturalWidth > 0, undefined, { timeout: 1000 });
+        await page.waitForFunction(
+          () => document.querySelector('.source-book-detail-cover img')?.naturalWidth > 0,
+          undefined,
+          { timeout: 1000 },
+        );
         assert.equal(coverResponses, 1, 'source detail shows durable cover bytes before validation returns');
         const cachedCover = await detail.locator('.source-book-detail-cover img').getAttribute('src');
-        const coverValidated = page.waitForResponse(response => response.url().endsWith(coverUrl) && response.status() === 200);
+        const coverValidated = page.waitForResponse(
+          (response) => response.url().endsWith(coverUrl) && response.status() === 200,
+        );
         releaseCover();
         await coverValidated;
-        assert.equal(await detail.locator('.source-book-detail-cover img').getAttribute('src'), cachedCover, 'unchanged bytes keep the visible object URL');
+        assert.equal(
+          await detail.locator('.source-book-detail-cover img').getAttribute('src'),
+          cachedCover,
+          'unchanged bytes keep the visible object URL',
+        );
         await detail.getByRole('button', { name: '展开完整简介', exact: true }).click();
         assert.equal(await detail.locator('.book-detail-description').textContent(), entry.description);
         assert.equal(directoryRequests, 0, 'directory loads on demand');
@@ -99,7 +177,7 @@ try {
         assert.equal(await directory.locator('li').first().textContent(), '第205章 内容');
         await directory.getByRole('button', { name: '正序', exact: true }).click();
         assert.equal(await directory.locator('li').first().textContent(), '第1章 内容');
-        assert.equal(await directory.evaluate(node => node.scrollWidth > node.clientWidth), false);
+        assert.equal(await directory.evaluate((node) => node.scrollWidth > node.clientWidth), false);
         await page.screenshot({ path: `${output}/${name}-${width}-directory.png` });
         await page.keyboard.press('Escape');
         await directory.waitFor({ state: 'detached' });
@@ -115,11 +193,24 @@ try {
         assert.equal(await group.isVisible(), true);
         await group.getByRole('button', { name: '关闭', exact: true }).click();
         assert.deepEqual(errors, []);
-        reports.push({ browser: name, width, initialCatalogRequests: 0, explicitCatalogRequests: catalogs, navigationEntries: 200, detailCoverBeforeValidation: true, passed: true });
+        reports.push({
+          browser: name,
+          width,
+          initialCatalogRequests: 0,
+          explicitCatalogRequests: catalogs,
+          navigationEntries: 200,
+          detailCoverBeforeValidation: true,
+          passed: true,
+        });
         await page.close();
       }
-    } finally { await browser.close(); }
+    } finally {
+      await browser.close();
+    }
   }
   await writeFile(`${output}/results.json`, JSON.stringify(reports, null, 2) + '\n');
   console.log(JSON.stringify(reports));
-} finally { server.server.closeAllConnections(); await server.close(); }
+} finally {
+  server.server.closeAllConnections();
+  await server.close();
+}

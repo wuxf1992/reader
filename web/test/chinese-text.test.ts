@@ -17,13 +17,17 @@ describe('Chinese text variants', () => {
   it('changes only text nodes, preserves markup and maps selections to the actual source', () => {
     const root = document.createElement('div');
     root.innerHTML = '<style>.头发{color:red}</style><p id="头发" title="头发">头发<b>发展</b></p><p>頭髮</p>';
-    const source = textNodes(root).map(node => node.data).join('');
+    const source = textNodes(root)
+      .map((node) => node.data)
+      .join('');
     const converted = new ChineseChapterText(root, 'traditional');
     expect(root.querySelector('p')?.textContent).toBe('頭髮發展');
     expect(root.querySelector('style')?.textContent).toContain('.头发');
     expect(root.querySelector('p')?.id).toBe('头发');
     expect(root.querySelector('p')?.title).toBe('头发');
-    const shown = textNodes(root).map(node => node.data).join('');
+    const shown = textNodes(root)
+      .map((node) => node.data)
+      .join('');
     const first = converted.sourceAnchor(anchorFor('s', shown, 0, 4));
     expect(first.quote).toBe('头发发展');
     expect(first).toEqual(anchorFor('s', source, 0, 4));
@@ -33,22 +37,34 @@ describe('Chinese text variants', () => {
     expect(converted.displayAnchor({ ...first, quote: '不存在', prefix: '', suffix: '' })).toBeNull();
   });
 
-  it.each(['simplified', 'traditional'] as ChineseVariant[])('keeps anchors across length-changing Unicode normalization in %s', variant => {
-    const root = document.createElement('div');
-    root.innerHTML = '<p>😀你頭髮</p><p>后续𠮷字</p>';
-    const original = textNodes(root).map(node => node.data).join('');
-    const converted = new ChineseChapterText(root, variant);
-    const displayed = textNodes(root).map(node => node.data).join('');
-    expect(displayed.length).toBe(original.length - 1);
-    for (const [start, end] of [[2, 4], [4, 6], [4, original.length], [6, original.length]]) {
-      const sourceAnchor = anchorFor('s', original, start!, end!);
-      const displayAnchor = converted.displayAnchor(sourceAnchor)!;
-      expect(anchorRange(root, displayAnchor)?.toString()).toBe(displayAnchor.quote);
-      expect(converted.sourceAnchor(displayAnchor)).toEqual(sourceAnchor);
-      expect(converted.displayOffset(start!)).toBe(displayAnchor.start);
-      expect(converted.sourceOffset(displayAnchor.start)).toBe(start);
-    }
-  });
+  it.each(['simplified', 'traditional'] as ChineseVariant[])(
+    'keeps anchors across length-changing Unicode normalization in %s',
+    (variant) => {
+      const root = document.createElement('div');
+      root.innerHTML = '<p>😀你頭髮</p><p>后续𠮷字</p>';
+      const original = textNodes(root)
+        .map((node) => node.data)
+        .join('');
+      const converted = new ChineseChapterText(root, variant);
+      const displayed = textNodes(root)
+        .map((node) => node.data)
+        .join('');
+      expect(displayed.length).toBe(original.length - 1);
+      for (const [start, end] of [
+        [2, 4],
+        [4, 6],
+        [4, original.length],
+        [6, original.length],
+      ]) {
+        const sourceAnchor = anchorFor('s', original, start!, end!);
+        const displayAnchor = converted.displayAnchor(sourceAnchor)!;
+        expect(anchorRange(root, displayAnchor)?.toString()).toBe(displayAnchor.quote);
+        expect(converted.sourceAnchor(displayAnchor)).toEqual(sourceAnchor);
+        expect(converted.displayOffset(start!)).toBe(displayAnchor.start);
+        expect(converted.sourceOffset(displayAnchor.start)).toBe(start);
+      }
+    },
+  );
 
   it('tries both common scripts for converted reading and avoids duplicate searches', () => {
     expect(chineseSearchQueries('头发', 'traditional')).toEqual(['头发', '頭髮']);
@@ -58,7 +74,8 @@ describe('Chinese text variants', () => {
   });
 
   it('persists one device-wide preference and repairs invalid or older preferences', async () => {
-    const kv = new MemoryKv(), store = new SettingsStore(kv);
+    const kv = new MemoryKv(),
+      store = new SettingsStore(kv);
     expect((await store.load()).chineseVariant).toBe('original');
     await store.update({ chineseVariant: 'traditional' });
     expect((await new SettingsStore(kv).load()).chineseVariant).toBe('traditional');

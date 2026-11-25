@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createBookHost, extractBody, extractInlineStyles, sanitiseInjectedContent } from '../src/ui/shadow.ts';
 import { BOOK_RESOURCE_MARKER } from '../src/formats/book-resource.ts';
 
@@ -21,6 +21,79 @@ function parse(html: string): HTMLElement {
 }
 
 describe('sanitiseInjectedContent', () => {
+  it('removes active markup before connecting a chapter', () => {
+    const host = createBookHost();
+    document.body.append(host);
+    const flow = host.shadow.querySelector('.book-flow')!;
+    const replace = flow.replaceChildren.bind(flow);
+    const handler = vi.fn();
+    Object.assign(window, { bookPayload: handler });
+    const boundary = vi.spyOn(flow, 'replaceChildren').mockImplementation((...nodes) => {
+      const fragment = nodes[0] as DocumentFragment;
+      expect(fragment.isConnected).toBe(false);
+      expect(fragment.querySelector('iframe, object, embed, form, script, meta, base, noscript')).toBeNull();
+      expect(fragment.querySelector('[onerror], [srcdoc], [action], [formaction]')).toBeNull();
+      expect(fragment.querySelector('svg a')?.hasAttribute('xlink:href')).toBe(false);
+      fragment.querySelector('img')?.dispatchEvent(new Event('error'));
+      replace(...nodes);
+    });
+    try {
+      host.setContent(
+        `<iframe srcdoc="<script>parent.bookPayload()</script>"></iframe>
+        <iframe src="chapter.xhtml"></iframe><object data="chapter.xhtml"></object><embed src="chapter.xhtml">
+        <meta http-equiv="refresh" content="0;url=chapter.xhtml"><base href="https://evil.example/">
+        <noscript>hidden</noscript><svg><a xlink:href="java&#10;script:bookPayload()">link</a></svg>
+        <form action="javascript:bookPayload()"><button formaction="data:text/html,evil">text</button></form>
+        <img src="x" onerror="window.bookPayload()">`,
+        [],
+      );
+      expect(boundary).toHaveBeenCalledOnce();
+      host.shadow.querySelector('img')?.dispatchEvent(new Event('error'));
+      expect(handler).not.toHaveBeenCalled();
+      expect(flow.textContent).toContain('text');
+    } finally {
+      boundary.mockRestore();
+      host.remove();
+      Reflect.deleteProperty(window, 'bookPayload');
+    }
+  });
+
+  it('rewrites and signs EPUB links and SVG resources before attachment', () => {
+    const host = createBookHost();
+    host.setContent(
+      '<img src="images/p.png"><a href="chapter.xhtml">next</a><svg><image xlink:href="images/p.png"/><use href="icons.svg#mark"/></svg>',
+      [],
+      {
+        signAssetUrl: (url) => `${url}${url.includes('?') ? '&' : '?'}signed=1`,
+      },
+    );
+    for (const [selector, attr] of [
+      ['img', 'src'],
+      ['a', 'href'],
+      ['image', 'xlink:href'],
+      ['use', 'href'],
+    ]) {
+      expect(host.shadow.querySelector(selector!)?.getAttribute(attr!)).toContain('signed=1');
+    }
+  });
+
+  it('drops dangerous URL schemes in all attributes while preserving data images', () => {
+    const node = parse(
+      '<p background="vbscript:evil" data="data:text/html,evil"></p><svg><use href="data:application/xhtml+xml,evil"/></svg><img src="data:image/png;base64,AA">',
+    );
+    sanitiseInjectedContent(node);
+    expect(node.querySelector('p')?.hasAttribute('background')).toBe(false);
+    expect(node.querySelector('p')?.hasAttribute('data')).toBe(false);
+    expect(node.querySelector('use')?.hasAttribute('href')).toBe(false);
+    expect(node.querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,AA');
+  });
+
+  it('accepts empty chapter content', () => {
+    const host = createBookHost();
+    host.setContent('', []);
+    expect(host.shadow.querySelector('.book-flow')?.childNodes.length).toBe(0);
+  });
+
   it('removes script elements', () => {
     const node = parse('<p>text</p><script>window.pwned = true</script>');
     sanitiseInjectedContent(node);
@@ -51,9 +124,7 @@ describe('sanitiseInjectedContent', () => {
   });
 
   it('keeps the internal resource scheme and blob/data URLs', () => {
-    const node = parse(
-      '<img src="reader-res:OEBPS/a.png"/><img src="data:image/png;base64,AA"/><img src="blob:xyz"/>',
-    );
+    const node = parse('<img src="reader-res:OEBPS/a.png"/><img src="data:image/png;base64,AA"/><img src="blob:xyz"/>');
     sanitiseInjectedContent(node);
     const sources = [...node.querySelectorAll('img')].map((img) => img.getAttribute('src'));
     expect(sources).toEqual(['reader-res:OEBPS/a.png', 'data:image/png;base64,AA', 'blob:xyz']);
@@ -79,9 +150,7 @@ describe('sanitiseInjectedContent', () => {
     // origin, not the API's — so every rewritten `src` was dropped. The check has
     // to be "is this the book's resource", which is what the marker says, rather
     // than "does this look like our origin", which is a guess that was wrong.
-    const node = parse(
-      `<img src="/api/v1/books/abc/assets?${BOOK_RESOURCE_MARKER}=1&ref=OEBPS%2Fimages%2Fpic.png"/>`,
-    );
+    const node = parse(`<img src="/api/v1/books/abc/assets?${BOOK_RESOURCE_MARKER}=1&ref=OEBPS%2Fimages%2Fpic.png"/>`);
     sanitiseInjectedContent(node);
     const src = node.querySelector('img')?.getAttribute('src') ?? '';
     expect(src).toContain('ref=OEBPS%2Fimages%2Fpic.png');
@@ -112,9 +181,7 @@ describe('sanitiseInjectedContent', () => {
   });
 
   it('drops a remote srcset and keeps the local candidates', () => {
-    const node = parse(
-      '<img srcset="images/a.png 1x, https://tracker.example/b.png 2x, images/c.png 3x"/>',
-    );
+    const node = parse('<img srcset="images/a.png 1x, https://tracker.example/b.png 2x, images/c.png 3x"/>');
     sanitiseInjectedContent(node);
     const srcset = node.querySelector('img')?.getAttribute('srcset') ?? '';
     expect(srcset).not.toContain('tracker.example');
@@ -133,9 +200,7 @@ describe('sanitiseInjectedContent', () => {
     // browser, not by the client, so "did the client ask correctly" has nothing to do
     // with it. What can be asserted is that the address the browser is *handed* is
     // self-authenticating.
-    const node = parse(
-      `<img src="/api/v1/books/abc/assets?${BOOK_RESOURCE_MARKER}=1&ref=OEBPS%2Fimages%2Fpic.png"/>`,
-    );
+    const node = parse(`<img src="/api/v1/books/abc/assets?${BOOK_RESOURCE_MARKER}=1&ref=OEBPS%2Fimages%2Fpic.png"/>`);
     sanitiseInjectedContent(node, {
       signAssetUrl: (url) => `${url}&access_token=tok`,
     });
@@ -183,9 +248,7 @@ describe('sanitiseInjectedContent', () => {
     // No signer means no session (a test, a local file, a signed-out shell), and the
     // chapter must still render: the function returns null and the address is passed
     // through exactly as the allow-list left it.
-    const node = parse(
-      `<img src="/api/v1/books/abc/assets?${BOOK_RESOURCE_MARKER}=1&ref=a.png"/>`,
-    );
+    const node = parse(`<img src="/api/v1/books/abc/assets?${BOOK_RESOURCE_MARKER}=1&ref=a.png"/>`);
     sanitiseInjectedContent(node, { signAssetUrl: () => null });
     expect(node.querySelector('img')?.getAttribute('src')).toBe(
       `/api/v1/books/abc/assets?${BOOK_RESOURCE_MARKER}=1&ref=a.png`,
@@ -193,7 +256,9 @@ describe('sanitiseInjectedContent', () => {
   });
 
   it('removes a base element and a meta refresh, which would navigate away', () => {
-    const node = parse('<base href="https://evil.example/"/><meta http-equiv="refresh" content="0;url=https://evil.example"/>');
+    const node = parse(
+      '<base href="https://evil.example/"/><meta http-equiv="refresh" content="0;url=https://evil.example"/>',
+    );
     sanitiseInjectedContent(node);
     expect(node.querySelector('base')).toBeNull();
     expect(node.querySelector('meta')).toBeNull();
@@ -287,10 +352,21 @@ describe('BookShadowHost', () => {
     const sheet = host.shadow.querySelector('style')?.textContent ?? '';
     const fixedSelector = ":host([data-layout='fixed']) .book-flow";
     const fixed = /:host\(\[data-layout='fixed'\]\) \.book-flow \{[^}]*\}/.exec(sheet)?.[0] ?? '';
-    for (const declaration of ['width: 100%', 'height: 100%', 'min-width: 0', 'min-height: 0', 'max-inline-size: none', 'margin: 0', 'padding: 0', 'columns: auto']) {
+    for (const declaration of [
+      'width: 100%',
+      'height: 100%',
+      'min-width: 0',
+      'min-height: 0',
+      'max-inline-size: none',
+      'margin: 0',
+      'padding: 0',
+      'columns: auto',
+    ]) {
       expect(fixed).toContain(declaration);
     }
-    expect(sheet.indexOf(fixedSelector)).toBeGreaterThan(sheet.indexOf(":host([data-paginated='true']) .book-flow > *"));
+    expect(sheet.indexOf(fixedSelector)).toBeGreaterThan(
+      sheet.indexOf(":host([data-paginated='true']) .book-flow > *"),
+    );
   });
 
   it('injects the reading column rules into the shadow root', () => {
@@ -308,7 +384,8 @@ describe('BookShadowHost', () => {
     // bars inset it, and the reader's page margin is a property of the column. A
     // column wider than its page makes the stride arithmetic walk positions that are
     // not page boundaries, and the last column of every chapter becomes unreachable.
-    const pagedRule = /:host\(\[data-paginated='true'\]\[data-page-layout='columns'\]\) .book-flow \{[^}]*\}/.exec(sheet)?.[0] ?? '';
+    const pagedRule =
+      /:host\(\[data-paginated='true'\]\[data-page-layout='columns'\]\) .book-flow \{[^}]*\}/.exec(sheet)?.[0] ?? '';
     expect(pagedRule).toContain('column-width: 100%');
     expect(pagedRule).not.toContain('100vw');
   });
@@ -321,7 +398,8 @@ describe('BookShadowHost', () => {
     // either: the text is *there*, it is simply in the wrong place.
     const host = createBookHost();
     const sheet = host.shadow.querySelector('style')?.textContent ?? '';
-    const paged = /:host\(\[data-paginated='true'\]\[data-page-layout='columns'\]\) .book-flow \{[^}]*\}/.exec(sheet)?.[0] ?? '';
+    const paged =
+      /:host\(\[data-paginated='true'\]\[data-page-layout='columns'\]\) .book-flow \{[^}]*\}/.exec(sheet)?.[0] ?? '';
     expect(paged).toContain('padding-block: 0');
     expect(paged).not.toMatch(/padding:\s*0/);
   });
@@ -356,8 +434,11 @@ describe('BookShadowHost', () => {
     // selector for both would be the bug, whichever one it named.
     const host = createBookHost();
     const sheet = host.shadow.querySelector('style')?.textContent ?? '';
-    const paged = /:host\(\[data-animating\]\[data-paginated='true'\]\[data-page-layout='columns'\]\) \{[^}]*\}/.exec(sheet)?.[0] ?? '';
-    const scroll = /:host\(\[data-animating\]:not\(\[data-paginated='true'\]\)\) \.book-flow,[^{]*\{[^}]*\}/.exec(sheet)?.[0] ?? '';
+    const paged =
+      /:host\(\[data-animating\]\[data-paginated='true'\]\[data-page-layout='columns'\]\) \{[^}]*\}/.exec(sheet)?.[0] ??
+      '';
+    const scroll =
+      /:host\(\[data-animating\]:not\(\[data-paginated='true'\]\)\) \.book-flow,[^{]*\{[^}]*\}/.exec(sheet)?.[0] ?? '';
     expect(paged).toContain('overflow: clip');
     expect(scroll).toContain('overflow: clip');
     // And the old form — the clip unconditionally on the flow, which is the scroller in

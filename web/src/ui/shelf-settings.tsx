@@ -61,12 +61,19 @@ export interface ShelfSettingsOptions {
  * in a sheet, and 我的 › 偏好设置 shows them as its 书架 section. One component, so
  * the two can never offer different choices.
  */
-export function ShelfSettingsFields({ settings, onPatch }: Pick<ShelfSettingsOptions, 'settings' | 'onPatch'>): JSX.Element {
+export function ShelfSettingsFields({
+  settings,
+  onPatch,
+}: Pick<ShelfSettingsOptions, 'settings' | 'onPatch'>): JSX.Element {
   return (
     <>
       <SectionTitle>正文</SectionTitle>
-      <Segmented label="繁简转换（全局）" options={[...CHINESE_VARIANTS]} value={settings.chineseVariant}
-        onChange={value => onPatch({ chineseVariant: value })} />
+      <Segmented
+        label="繁简转换（全局）"
+        options={[...CHINESE_VARIANTS]}
+        value={settings.chineseVariant}
+        onChange={(value) => onPatch({ chineseVariant: value })}
+      />
       <div className="notice">应用于此设备上的所有书籍，保留原始正文。</div>
       <SectionTitle>封面大小</SectionTitle>
       <Segmented

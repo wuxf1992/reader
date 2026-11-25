@@ -74,15 +74,25 @@ export function DialogView({
   destructive: string;
 }): JSX.Element {
   if (dialog.kind === 'confirm') {
-    return <ConfirmSheet title={dialog.title} text={dialog.body} confirmText={destructive} danger
-      onConfirm={() => onClose(true)} onCancel={() => onClose(false)} />;
+    return (
+      <ConfirmSheet
+        title={dialog.title}
+        text={dialog.body}
+        confirmText={destructive}
+        danger
+        onConfirm={() => onClose(true)}
+        onCancel={() => onClose(false)}
+      />
+    );
   }
   if (dialog.kind === 'prompt') return <PromptDialog title={dialog.title} value={dialog.value} onClose={onClose} />;
   // A pick is a menu whose answer is the option picked.
   return (
-    <ActionSheet title={dialog.title}
+    <ActionSheet
+      title={dialog.title}
       items={dialog.options.map((option) => ({ label: option.label, onSelect: () => onClose(option.value) }))}
-      onDismiss={() => onClose(null)} />
+      onDismiss={() => onClose(null)}
+    />
   );
 }
 
@@ -97,22 +107,33 @@ function PromptDialog({
 }): JSX.Element {
   const input = useRef<HTMLInputElement | null>(null);
   // Runs after the sheet has opened and focused the field, so the selection sticks.
-  useLayoutEffect(() => { input.current?.select(); }, []);
+  useLayoutEffect(() => {
+    input.current?.select();
+  }, []);
   return (
-    <Sheet title={title} size="compact" onClose={() => onClose(null)} initialFocus=".sheet-prompt-input"
-      footer={requestClose => <>
-        <Button onClick={() => requestClose(() => onClose(null))}>取消</Button>
-        <Button className="primary" onClick={() => onClose(input.current?.value ?? '')}>确定</Button>
-      </>}>
-      <form className="sheet-form" onSubmit={(event) => { event.preventDefault(); onClose(input.current?.value ?? ''); }}>
+    <Sheet
+      title={title}
+      size="compact"
+      onClose={() => onClose(null)}
+      initialFocus=".sheet-prompt-input"
+      footer={(requestClose) => (
+        <>
+          <Button onClick={() => requestClose(() => onClose(null))}>取消</Button>
+          <Button className="primary" onClick={() => onClose(input.current?.value ?? '')}>
+            确定
+          </Button>
+        </>
+      )}
+    >
+      <form
+        className="sheet-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onClose(input.current?.value ?? '');
+        }}
+      >
         <label className="sheet-field">
-          <input
-            ref={input}
-            aria-label={title}
-            className="sheet-prompt-input"
-            type="text"
-            defaultValue={value}
-          />
+          <input ref={input} aria-label={title} className="sheet-prompt-input" type="text" defaultValue={value} />
         </label>
       </form>
     </Sheet>

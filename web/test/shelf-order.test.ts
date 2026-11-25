@@ -46,11 +46,7 @@ describe('shelfOrder', () => {
 
 describe('sortByRecency', () => {
   it('puts the most recently read first and never-opened books last', () => {
-    const books = [
-      book({ id: 'never' }),
-      book({ id: 'yesterday' }),
-      book({ id: 'today' }),
-    ];
+    const books = [book({ id: 'never' }), book({ id: 'yesterday' }), book({ id: 'today' })];
     const times = new Map([
       ['today', 900],
       ['yesterday', 500],
@@ -61,8 +57,12 @@ describe('sortByRecency', () => {
   });
 
   it('matches the mainline added-time and title ties for unread cached books', () => {
-    const books = [book({ id: 'old', addedAt: 1 }), book({ id: 'z', title: '乙', addedAt: 2 }), book({ id: 'a', title: '甲', addedAt: 2 })];
-    expect(sortByRecency(books, new Map()).map(entry => entry.id)).toEqual(['z', 'a', 'old']);
+    const books = [
+      book({ id: 'old', addedAt: 1 }),
+      book({ id: 'z', title: '乙', addedAt: 2 }),
+      book({ id: 'a', title: '甲', addedAt: 2 }),
+    ];
+    expect(sortByRecency(books, new Map()).map((entry) => entry.id)).toEqual(['z', 'a', 'old']);
   });
 
   it('is stable for two books read in the same second', () => {
@@ -125,10 +125,7 @@ describe('sortBooks', () => {
   });
 
   it('is stable for books that tie, so the grid does not shuffle between renders', () => {
-    const books = [
-      book({ id: 'z', title: 'Same', updatedAt: 100 }),
-      book({ id: 'a', title: 'Same', updatedAt: 100 }),
-    ];
+    const books = [book({ id: 'z', title: 'Same', updatedAt: 100 }), book({ id: 'a', title: 'Same', updatedAt: 100 })];
     const first = sortBooks(books, 'title').map((entry) => entry.id);
     const second = sortBooks([...books].reverse(), 'title').map((entry) => entry.id);
     expect(first).toEqual(second);

@@ -38,7 +38,11 @@ export interface SheetDragOptions {
 /** Controls a press on the handle must not steal: they keep their own taps. */
 const INTERACTIVE = 'button, a[href], input, select, textarea, [role="button"]';
 
-export function startSheetDrag(event: PointerEvent, dialog: HTMLDialogElement, options: SheetDragOptions): (() => void) | undefined {
+export function startSheetDrag(
+  event: PointerEvent,
+  dialog: HTMLDialogElement,
+  options: SheetDragOptions,
+): (() => void) | undefined {
   if (!event.isPrimary || event.button !== 0) return;
   if ((event.target as Element).closest?.(INTERACTIVE)) return;
   const pointer = event.pointerId;
@@ -77,7 +81,11 @@ export function startSheetDrag(event: PointerEvent, dialog: HTMLDialogElement, o
       if (Math.abs(next.clientY - startY) < SLOP) return;
       dragging = true;
       dialog.setAttribute('data-dragging', '');
-      try { dialog.setPointerCapture(pointer); } catch { /* the pointer already went away */ }
+      try {
+        dialog.setPointerCapture(pointer);
+      } catch {
+        /* the pointer already went away */
+      }
     }
     next.preventDefault();
     samples.push({ y: next.clientY, t: next.timeStamp });
@@ -112,7 +120,8 @@ export function startSheetDrag(event: PointerEvent, dialog: HTMLDialogElement, o
     // A cancelled pointer (the system took the gesture) is no decision: go back.
     const cancelled = last.type === 'pointercancel';
     const { visible, base } = shape(cancelled ? startY : last.clientY);
-    const first = samples[0]!, recent = samples.at(-1)!;
+    const first = samples[0]!,
+      recent = samples.at(-1)!;
     const velocity = recent.t > first.t ? (recent.y - first.y) / (recent.t - first.t) : 0;
 
     // From expanded, a flick down means "smaller", not "gone": only a real pull
@@ -146,8 +155,16 @@ export function startSheetDrag(event: PointerEvent, dialog: HTMLDialogElement, o
 /** The expanded height CSS gives this sheet, measured without showing it. */
 function expandedHeight(dialog: HTMLDialogElement): number {
   const had = dialog.hasAttribute('data-expanded');
-  const saved = { top: dialog.style.top, height: dialog.style.height, transform: dialog.style.transform, maxHeight: dialog.style.maxHeight };
-  dialog.style.top = ''; dialog.style.height = ''; dialog.style.transform = ''; dialog.style.maxHeight = '';
+  const saved = {
+    top: dialog.style.top,
+    height: dialog.style.height,
+    transform: dialog.style.transform,
+    maxHeight: dialog.style.maxHeight,
+  };
+  dialog.style.top = '';
+  dialog.style.height = '';
+  dialog.style.transform = '';
+  dialog.style.maxHeight = '';
   dialog.setAttribute('data-expanded', '');
   const height = dialog.getBoundingClientRect().height;
   if (!had) dialog.removeAttribute('data-expanded');
@@ -178,19 +195,33 @@ function settle(dialog: HTMLDialogElement, grow: boolean, normal: number): (() =
   dialog.setAttribute('data-settling', '');
   dialog.style.height = `${to}px`;
   dialog.style.transform = '';
-  return finish(dialog, () => { dialog.removeAttribute('data-settling'); reset(dialog); });
+  return finish(dialog, () => {
+    dialog.removeAttribute('data-settling');
+    reset(dialog);
+  });
 }
 
 /** Hands every dimension back to CSS. */
 function reset(dialog: HTMLDialogElement): void {
-  dialog.style.top = ''; dialog.style.height = ''; dialog.style.maxHeight = ''; dialog.style.transform = '';
+  dialog.style.top = '';
+  dialog.style.height = '';
+  dialog.style.maxHeight = '';
+  dialog.style.transform = '';
 }
 
 /** Runs once the transition ends, or after its duration if no event comes (hidden tab). */
 function finish(dialog: HTMLDialogElement, then: () => void): () => void {
-  const cancel = () => { dialog.removeEventListener('transitionend', onEnd); clearTimeout(timer); };
-  const run = () => { cancel(); then(); };
-  const onEnd = (event: TransitionEvent) => { if (event.target === dialog) run(); };
+  const cancel = () => {
+    dialog.removeEventListener('transitionend', onEnd);
+    clearTimeout(timer);
+  };
+  const run = () => {
+    cancel();
+    then();
+  };
+  const onEnd = (event: TransitionEvent) => {
+    if (event.target === dialog) run();
+  };
   dialog.addEventListener('transitionend', onEnd);
   const timer = setTimeout(run, 400);
   return cancel;

@@ -105,7 +105,8 @@ function resolve(sectionId: string, offset: number, doc: BookDoc): Locator | nul
 export function formatLocator(sectionId: string, offset: number, textOffset?: number): string {
   const clamped = Math.min(1, Math.max(0, Number.isFinite(offset) ? offset : 0));
   // Older readers parseFloat the coordinate and retain the fractional fallback.
-  const anchor = textOffset !== undefined && Number.isSafeInteger(textOffset) && textOffset >= 0 ? `@${textOffset}` : '';
+  const anchor =
+    textOffset !== undefined && Number.isSafeInteger(textOffset) && textOffset >= 0 ? `@${textOffset}` : '';
   return `${LOCATOR_PREFIX}:${clamped.toFixed(4)}${anchor}:${sectionId}`;
 }
 

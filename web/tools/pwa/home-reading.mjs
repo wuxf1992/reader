@@ -39,12 +39,14 @@ try {
     try {
       for (const cached of [true, false]) {
         mode = 'online';
-        const context = await browser.newContext({ viewport: cached ? { width: 390, height: 844 } : { width: 1280, height: 900 } });
+        const context = await browser.newContext({
+          viewport: cached ? { width: 390, height: 844 } : { width: 1280, height: 900 },
+        });
         try {
-          await context.route('https://wuxf.top/**', route => route.abort());
+          await context.route('https://wuxf.top/**', (route) => route.abort());
           const page = await context.newPage();
           const errors = [];
-          page.on('pageerror', error => errors.push(error.message));
+          page.on('pageerror', (error) => errors.push(error.message));
           await page.goto(origin + '/#/shelf');
           await page.getByText('更换服务地址', { exact: true }).click();
           await page.locator('input[type=url]').fill(origin);
@@ -52,11 +54,17 @@ try {
           await page.locator('input[type=password]').fill('password12');
           await page.locator('button[type=submit]').click();
           await page.locator('.app-shell').waitFor();
-          await page.waitForFunction(book => window.readerApp.offline.books().some(item => item.id === book), BOOK_ID);
+          await page.waitForFunction(
+            (book) => window.readerApp.offline.books().some((item) => item.id === book),
+            BOOK_ID,
+          );
           if (cached) {
             await page.goto(origin + '/#/');
             await page.waitForFunction(() => window.readerApp.offline.current.continueReading?.length > 0);
-            assert.equal(await page.evaluate(book => window.readerApp.offline.progressFor(book) === undefined, BOOK_ID), true);
+            assert.equal(
+              await page.evaluate((book) => window.readerApp.offline.progressFor(book) === undefined, BOOK_ID),
+              true,
+            );
             await page.evaluate(() => window.readerApp.offline.flush());
           }
           mode = cached ? 'hanging-all' : 'hanging';
@@ -73,20 +81,49 @@ try {
             assert(visibleMs < 2000, `cached continuation should appear immediately, took ${visibleMs}ms`);
             assert((await card.innerText()).includes('已读 18%'));
             assert.equal(await page.locator('.home-shelf .book-card').count(), 8);
-            assert.equal(await page.evaluate(() => performance.getEntriesByType('resource').some(entry => entry.initiatorType === 'script' && /\/(MinePage|SettingsPage|AccountPages|MediaCatalogPage)-/.test(entry.name))), false);
+            assert.equal(
+              await page.evaluate(() =>
+                performance
+                  .getEntriesByType('resource')
+                  .some(
+                    (entry) =>
+                      entry.initiatorType === 'script' &&
+                      /\/(MinePage|SettingsPage|AccountPages|MediaCatalogPage)-/.test(entry.name),
+                  ),
+              ),
+              false,
+            );
             assert.equal(await page.getByText('正在读取在读的书…', { exact: true }).count(), 0);
-            await page.waitForFunction(() => window.readerApp.queryClient.getQueryState(['home', 'reading', window.readerApp.api.baseUrl, 'u1'])?.fetchStatus === 'idle', null, { timeout: 10_000 });
+            await page.waitForFunction(
+              () =>
+                window.readerApp.queryClient.getQueryState(['home', 'reading', window.readerApp.api.baseUrl, 'u1'])
+                  ?.fetchStatus === 'idle',
+              null,
+              { timeout: 10_000 },
+            );
             assert.equal(await card.count(), 1);
             if (output) await page.screenshot({ path: `${output}/${engine}-cached.png` });
             mode = 'empty';
             // Reconnect closes stalled HTTP/1.1 sockets so queued requests can run.
             for (const response of pending) response.destroy();
-            await page.evaluate(() => window.readerApp.queryClient.invalidateQueries({ queryKey: ['home', 'reading'] }));
+            await page.evaluate(() =>
+              window.readerApp.queryClient.invalidateQueries({ queryKey: ['home', 'reading'] }),
+            );
             await card.waitFor({ state: 'hidden' });
-            assert.deepEqual(await page.evaluate(() => window.readerApp.queryClient.getQueryData(['home', 'reading', window.readerApp.api.baseUrl, 'u1'])), []);
+            assert.deepEqual(
+              await page.evaluate(() =>
+                window.readerApp.queryClient.getQueryData(['home', 'reading', window.readerApp.api.baseUrl, 'u1']),
+              ),
+              [],
+            );
             assert.equal(await card.count(), 0);
             await page.evaluate(() => window.readerApp.queryClient.invalidateQueries({ queryKey: ['shelf'] }));
-            assert.equal(await page.evaluate(() => window.readerApp.queryClient.getQueriesData({ queryKey: ['shelf'] })[0][1].items.length), 60);
+            assert.equal(
+              await page.evaluate(
+                () => window.readerApp.queryClient.getQueriesData({ queryKey: ['shelf'] })[0][1].items.length,
+              ),
+              60,
+            );
             await page.goto(origin + '/#/me');
             await page.getByRole('heading', { name: '我的', exact: true }).waitFor();
             await page.goto(origin + '/#/me/settings');
@@ -112,7 +149,9 @@ try {
           for (const response of pending) response.destroy();
         }
       }
-    } finally { await browser.close(); }
+    } finally {
+      await browser.close();
+    }
   }
   if (output) await writeFile(`${output}/results.json`, JSON.stringify(results, null, 2) + '\n');
 } finally {

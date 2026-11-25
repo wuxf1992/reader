@@ -16,7 +16,14 @@ const SESSION = {
 it('reports a failed local progress write and permits retry without losing the outbox', async () => {
   const kv = new MemoryKv();
   const offline = new OfflineStore(kv);
-  const progress = { bookId: 'b', locator: 'chapter:12', percentage: 0.5, chapterTitle: '12', device: 'phone', updatedAt: 20 };
+  const progress = {
+    bookId: 'b',
+    locator: 'chapter:12',
+    percentage: 0.5,
+    chapterTitle: '12',
+    device: 'phone',
+    updatedAt: 20,
+  };
   vi.spyOn(kv, 'set').mockRejectedValueOnce(new Error('disk full'));
   await expect(offline.setProgress(progress)).rejects.toThrow('disk full');
   expect(offline.outbox().progress).toEqual([progress]);
@@ -58,11 +65,17 @@ function build() {
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => { resolve = done; });
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
   return { promise, resolve };
 }
 
-const SECOND_SESSION = { ...SESSION, user: { ...SESSION.user, id: 'u2', username: 'other' }, accessToken: 'access-other' };
+const SECOND_SESSION = {
+  ...SESSION,
+  user: { ...SESSION.user, id: 'u2', username: 'other' },
+  accessToken: 'access-other',
+};
 
 describe('ReaderApi', () => {
   it('attaches the bearer token once a session exists', async () => {
@@ -190,12 +203,20 @@ describe('OfflineStore', () => {
   it('accepts a newer rereading position from another device without uploading the old position', async () => {
     const kv = new MemoryKv();
     const store = new OfflineStore(kv);
-    const local = { bookId: 'b1', locator: 'r1:0.6000:c1', percentage: 0.6, chapterTitle: 'c1', device: 'a', updatedAt: 1000 };
+    const local = {
+      bookId: 'b1',
+      locator: 'r1:0.6000:c1',
+      percentage: 0.6,
+      chapterTitle: 'c1',
+      device: 'a',
+      updatedAt: 1000,
+    };
     await store.setProgress(local);
     await store.markDelivered(store.outbox(), 10);
     const remote = { ...local, locator: 'r1:0.2000:c1', percentage: 0.2, device: 'b', updatedAt: 2000 };
     await store.applyPulled({ serverTime: 20, progress: [remote], notes: [] });
-    const restored = new OfflineStore(kv); await restored.load();
+    const restored = new OfflineStore(kv);
+    await restored.load();
     expect(restored.progressFor('b1')).toEqual(remote);
     expect(restored.outbox().progress).toEqual([]);
     expect(restored.current.serverTime).toBe(20);
@@ -203,9 +224,20 @@ describe('OfflineStore', () => {
 
   it('accepts a farther newer server position while still allowing the reader to move backward locally', async () => {
     const store = new OfflineStore(new MemoryKv());
-    const progress = { bookId: 'b1', locator: 'r1:0.4000:c1', percentage: 0.4, chapterTitle: 'c1', device: 'a', updatedAt: 1000 };
+    const progress = {
+      bookId: 'b1',
+      locator: 'r1:0.4000:c1',
+      percentage: 0.4,
+      chapterTitle: 'c1',
+      device: 'a',
+      updatedAt: 1000,
+    };
     await store.setProgress(progress);
-    await store.applyPulled({ serverTime: 20, progress: [{ ...progress, locator: 'r1:0.6000:c1', percentage: 0.6, updatedAt: 2000 }], notes: [] });
+    await store.applyPulled({
+      serverTime: 20,
+      progress: [{ ...progress, locator: 'r1:0.6000:c1', percentage: 0.6, updatedAt: 2000 }],
+      notes: [],
+    });
     expect(store.progressFor('b1')!.percentage).toBe(0.6);
     await store.setProgress({ ...progress, updatedAt: 3000 });
     expect(store.progressFor('b1')!.percentage).toBe(0.4);
@@ -213,17 +245,40 @@ describe('OfflineStore', () => {
 
   it('keeps the newer progress and discards a stale write', async () => {
     const store = new OfflineStore(new MemoryKv());
-    await store.setProgress({ bookId: 'b1', locator: 'r1:0.5:c1', percentage: 0.5, chapterTitle: 'c1', device: 'a', updatedAt: 2000 });
-    await store.setProgress({ bookId: 'b1', locator: 'r1:0.1:c1', percentage: 0.1, chapterTitle: 'c1', device: 'a', updatedAt: 1000 });
+    await store.setProgress({
+      bookId: 'b1',
+      locator: 'r1:0.5:c1',
+      percentage: 0.5,
+      chapterTitle: 'c1',
+      device: 'a',
+      updatedAt: 2000,
+    });
+    await store.setProgress({
+      bookId: 'b1',
+      locator: 'r1:0.1:c1',
+      percentage: 0.1,
+      chapterTitle: 'c1',
+      device: 'a',
+      updatedAt: 1000,
+    });
     expect(store.current.progress['b1']!.percentage).toBe(0.5);
   });
 
   it('does not let a stale pull overwrite newer local progress', async () => {
     const store = new OfflineStore(new MemoryKv());
-    await store.setProgress({ bookId: 'b1', locator: 'r1:0.9:c1', percentage: 0.9, chapterTitle: 'c1', device: 'a', updatedAt: 5000 });
+    await store.setProgress({
+      bookId: 'b1',
+      locator: 'r1:0.9:c1',
+      percentage: 0.9,
+      chapterTitle: 'c1',
+      device: 'a',
+      updatedAt: 5000,
+    });
     await store.applyPulled({
       serverTime: 100,
-      progress: [{ bookId: 'b1', locator: 'r1:0.2:c1', percentage: 0.2, chapterTitle: 'c1', device: 'b', updatedAt: 1000 }],
+      progress: [
+        { bookId: 'b1', locator: 'r1:0.2:c1', percentage: 0.2, chapterTitle: 'c1', device: 'b', updatedAt: 1000 },
+      ],
       notes: [],
     });
     expect(store.current.progress['b1']!.percentage).toBe(0.9);
@@ -265,7 +320,14 @@ describe('OfflineStore', () => {
     // is silently never sent. A dirty-set plus a timestamp check on the way back
     // is what makes the window not exist.
     const store = new OfflineStore(new MemoryKv());
-    const first = { bookId: 'b1', locator: 'r1:0.10:c1', percentage: 0.1, chapterTitle: 'c1', device: 'a', updatedAt: 1000 };
+    const first = {
+      bookId: 'b1',
+      locator: 'r1:0.10:c1',
+      percentage: 0.1,
+      chapterTitle: 'c1',
+      device: 'a',
+      updatedAt: 1000,
+    };
     await store.setProgress(first);
 
     // The batch that the engine is about to send.
@@ -284,7 +346,14 @@ describe('OfflineStore', () => {
 
   it('clears a position that was not touched while in flight', async () => {
     const store = new OfflineStore(new MemoryKv());
-    await store.setProgress({ bookId: 'b1', locator: 'r1:0.5:c1', percentage: 0.5, chapterTitle: 'c1', device: 'a', updatedAt: 1000 });
+    await store.setProgress({
+      bookId: 'b1',
+      locator: 'r1:0.5:c1',
+      percentage: 0.5,
+      chapterTitle: 'c1',
+      device: 'a',
+      updatedAt: 1000,
+    });
     await store.markDelivered(store.outbox(), 1);
     expect(store.current.dirtyProgress).toEqual([]);
     expect(isOutboxEmpty(store.current)).toBe(true);
@@ -294,9 +363,23 @@ describe('OfflineStore', () => {
     // Clearing by "the batch's ids" rather than by timestamps would still be
     // wrong here if the ids were taken from the wrong side of the call.
     const store = new OfflineStore(new MemoryKv());
-    await store.setProgress({ bookId: 'b1', locator: 'x', percentage: 0.1, chapterTitle: 'c', device: 'a', updatedAt: 1000 });
+    await store.setProgress({
+      bookId: 'b1',
+      locator: 'x',
+      percentage: 0.1,
+      chapterTitle: 'c',
+      device: 'a',
+      updatedAt: 1000,
+    });
     const batch = store.outbox();
-    await store.setProgress({ bookId: 'b2', locator: 'x', percentage: 0.2, chapterTitle: 'c', device: 'a', updatedAt: 1000 });
+    await store.setProgress({
+      bookId: 'b2',
+      locator: 'x',
+      percentage: 0.2,
+      chapterTitle: 'c',
+      device: 'a',
+      updatedAt: 1000,
+    });
     await store.markDelivered(batch, 1);
     expect(store.current.dirtyProgress).toEqual(['b2']);
   });
@@ -344,14 +427,34 @@ describe('SyncEngine', () => {
     transport.json(SECOND_SESSION);
     await api.login('other', 'password12');
     await offline.setScope('account-b');
-    transport.respondWith(() => { newStarted.resolve(); return newResponse.promise; });
+    transport.respondWith(() => {
+      newStarted.resolve();
+      return newResponse.promise;
+    });
     engine.start();
     await newStarted.promise;
-    oldResponse.resolve({ status: 200, headers: {}, json: {
-      serverTime: 900,
-      progress: [{ bookId: 'private-a', locator: 'private', percentage: 0, chapterTitle: '', device: 'a', updatedAt: 1 }],
-      notes: [{ id: 'private-note', bookId: 'private-a', type: 'note', locator: '', text: 'account A secret', comment: '', color: '', updatedAt: 1 }],
-    } });
+    oldResponse.resolve({
+      status: 200,
+      headers: {},
+      json: {
+        serverTime: 900,
+        progress: [
+          { bookId: 'private-a', locator: 'private', percentage: 0, chapterTitle: '', device: 'a', updatedAt: 1 },
+        ],
+        notes: [
+          {
+            id: 'private-note',
+            bookId: 'private-a',
+            type: 'note',
+            locator: '',
+            text: 'account A secret',
+            comment: '',
+            color: '',
+            updatedAt: 1,
+          },
+        ],
+      },
+    });
     await oldRun;
     expect(offline.current.progress).toEqual({});
     expect(offline.current.notes).toEqual({});
@@ -368,34 +471,51 @@ describe('SyncEngine', () => {
     expect(offline.current.notes).toEqual({});
   });
 
-  it.each(['syncNow', 'flush'] as const)('does not acknowledge an old %s push against the new account outbox', async (method) => {
-    const { api, transport, offline, engine, platform } = build();
-    transport.json(SESSION);
-    await api.login('me', 'password12');
-    await offline.setScope('account-a');
-    const progress = { bookId: 'shared-id', locator: 'account A position', percentage: 0.5, chapterTitle: '', device: 'a', updatedAt: 1 };
-    await offline.setProgress(progress);
-    const started = deferred<void>();
-    const response = deferred<{ status: number; headers: {}; json: unknown }>();
-    transport.respondWith(() => { started.resolve(); return response.promise; });
-    const oldRun = engine[method]();
-    await started.promise;
-    engine.stop();
-    transport.json(SECOND_SESSION);
-    await api.login('other', 'password12');
-    await offline.setScope('account-b');
-    await offline.setProgress({ ...progress, locator: 'account B position' });
-    platform.setOnline(false);
-    engine.start();
-    response.resolve({ status: 200, headers: {}, json: { accepted: 1, rejected: 3, serverTime: 900, progress: [], notes: [] } });
-    await oldRun;
-    await vi.waitFor(() => expect(engine.status().state).toBe('offline'));
-    expect(offline.current.dirtyProgress).toEqual(['shared-id']);
-    expect(offline.current.progress['shared-id']!.locator).toBe('account B position');
-    expect(offline.current.serverTime).toBe(0);
-    expect(engine.rejected()).toBe(0);
-    engine.stop();
-  });
+  it.each(['syncNow', 'flush'] as const)(
+    'does not acknowledge an old %s push against the new account outbox',
+    async (method) => {
+      const { api, transport, offline, engine, platform } = build();
+      transport.json(SESSION);
+      await api.login('me', 'password12');
+      await offline.setScope('account-a');
+      const progress = {
+        bookId: 'shared-id',
+        locator: 'account A position',
+        percentage: 0.5,
+        chapterTitle: '',
+        device: 'a',
+        updatedAt: 1,
+      };
+      await offline.setProgress(progress);
+      const started = deferred<void>();
+      const response = deferred<{ status: number; headers: {}; json: unknown }>();
+      transport.respondWith(() => {
+        started.resolve();
+        return response.promise;
+      });
+      const oldRun = engine[method]();
+      await started.promise;
+      engine.stop();
+      transport.json(SECOND_SESSION);
+      await api.login('other', 'password12');
+      await offline.setScope('account-b');
+      await offline.setProgress({ ...progress, locator: 'account B position' });
+      platform.setOnline(false);
+      engine.start();
+      response.resolve({
+        status: 200,
+        headers: {},
+        json: { accepted: 1, rejected: 3, serverTime: 900, progress: [], notes: [] },
+      });
+      await oldRun;
+      await vi.waitFor(() => expect(engine.status().state).toBe('offline'));
+      expect(offline.current.dirtyProgress).toEqual(['shared-id']);
+      expect(offline.current.progress['shared-id']!.locator).toBe('account B position');
+      expect(offline.current.serverTime).toBe(0);
+      expect(engine.rejected()).toBe(0);
+      engine.stop();
+    },
+  );
 
   it('stops the remaining chunks of the old account batch after switching accounts', async () => {
     const { api, transport, offline, engine } = build();
@@ -403,11 +523,21 @@ describe('SyncEngine', () => {
     await api.login('me', 'password12');
     await offline.setScope('account-a');
     for (let index = 0; index < 1001; index += 1) {
-      await offline.setProgress({ bookId: `a-${index}`, locator: 'private', percentage: 0, chapterTitle: '', device: 'a', updatedAt: 1 });
+      await offline.setProgress({
+        bookId: `a-${index}`,
+        locator: 'private',
+        percentage: 0,
+        chapterTitle: '',
+        device: 'a',
+        updatedAt: 1,
+      });
     }
     const started = deferred<void>();
     const response = deferred<{ status: number; headers: {}; json: unknown }>();
-    transport.respondWith(() => { started.resolve(); return response.promise; });
+    transport.respondWith(() => {
+      started.resolve();
+      return response.promise;
+    });
     const oldRun = engine.syncNow();
     await started.promise;
     engine.stop();
@@ -415,7 +545,11 @@ describe('SyncEngine', () => {
     await api.login('other', 'password12');
     await offline.setScope('account-b');
     transport.json({ accepted: 1, rejected: 0, serverTime: 2, progress: [], notes: [] });
-    response.resolve({ status: 200, headers: {}, json: { accepted: 1000, rejected: 0, serverTime: 1, progress: [], notes: [] } });
+    response.resolve({
+      status: 200,
+      headers: {},
+      json: { accepted: 1000, rejected: 0, serverTime: 1, progress: [], notes: [] },
+    });
     await oldRun;
     expect(transport.countMatching((request) => request.url === '/api/v1/sync')).toBe(1);
     expect(offline.current.serverTime).toBe(0);
@@ -429,9 +563,22 @@ describe('SyncEngine', () => {
     transport.json(SESSION);
     await api.login('me', 'password12');
     await offline.setScope('account-a');
-    transport.json({ serverTime: 1, progress: [], notes: [
-      { id: 'n1', bookId: 'private-a', type: 'note', locator: '', text: 'private', comment: '', color: '', updatedAt: 1 },
-    ] });
+    transport.json({
+      serverTime: 1,
+      progress: [],
+      notes: [
+        {
+          id: 'n1',
+          bookId: 'private-a',
+          type: 'note',
+          locator: '',
+          text: 'private',
+          comment: '',
+          color: '',
+          updatedAt: 1,
+        },
+      ],
+    });
     await engine.syncNow();
     engine.stop();
     transport.json(SECOND_SESSION);
@@ -454,13 +601,24 @@ describe('SyncEngine', () => {
     transport.json(SESSION);
     await api.login('me', 'password12');
     await offline.load();
-    await offline.setProgress({ bookId: 'b1', locator: 'r1:0.5:c1', percentage: 0.5, chapterTitle: 'c1', device: platform.deviceLabel, updatedAt: 1000 });
+    await offline.setProgress({
+      bookId: 'b1',
+      locator: 'r1:0.5:c1',
+      percentage: 0.5,
+      chapterTitle: 'c1',
+      device: platform.deviceLabel,
+      updatedAt: 1000,
+    });
 
     const seen: string[] = [];
     transport.respondWith((request) => {
       seen.push(`${request.method} ${request.url}`);
       if (request.method === 'POST' && request.url.endsWith('/api/v1/sync')) {
-        return { status: 200, headers: {}, json: { accepted: 1, rejected: 0, serverTime: 5000, progress: [], notes: [] } };
+        return {
+          status: 200,
+          headers: {},
+          json: { accepted: 1, rejected: 0, serverTime: 5000, progress: [], notes: [] },
+        };
       }
       return { status: 200, headers: {}, json: { serverTime: 5000, progress: [], notes: [] } };
     });
@@ -543,8 +701,12 @@ describe('SyncEngine', () => {
 
       for (let page = 0; page < 20; page += 1) {
         await offline.setProgress({
-          bookId: 'b1', locator: `r1:${page / 20}:c1`, percentage: page / 20,
-          chapterTitle: 'c1', device: platform.deviceLabel, updatedAt: 1000 + page,
+          bookId: 'b1',
+          locator: `r1:${page / 20}:c1`,
+          percentage: page / 20,
+          chapterTitle: 'c1',
+          device: platform.deviceLabel,
+          updatedAt: 1000 + page,
         });
         engine.schedule();
         // A page turn every 700ms, well inside the coalescing window.
@@ -579,8 +741,12 @@ describe('SyncEngine', () => {
       transport.json({ serverTime: 42, progress: [], notes: [] });
 
       await offline.setProgress({
-        bookId: 'b1', locator: 'r1:0.99:c9', percentage: 0.99,
-        chapterTitle: 'c9', device: platform.deviceLabel, updatedAt: 9000,
+        bookId: 'b1',
+        locator: 'r1:0.99:c9',
+        percentage: 0.99,
+        chapterTitle: 'c9',
+        device: platform.deviceLabel,
+        updatedAt: 9000,
       });
       engine.schedule();
       expect(engine.pendingRequest).toBe(true);
@@ -597,11 +763,21 @@ describe('SyncEngine', () => {
     vi.useFakeTimers();
     const { api, transport, offline, engine } = build();
     try {
-      transport.json(SESSION); await api.login('me', 'password12'); await offline.load();
-      const local = { bookId: 'b1', locator: 'r1:0.6000:c1', percentage: 0.6, chapterTitle: 'c1', device: 'a', updatedAt: 1000 };
-      await offline.setProgress(local); await offline.markDelivered(offline.outbox(), 1);
+      transport.json(SESSION);
+      await api.login('me', 'password12');
+      await offline.load();
+      const local = {
+        bookId: 'b1',
+        locator: 'r1:0.6000:c1',
+        percentage: 0.6,
+        chapterTitle: 'c1',
+        device: 'a',
+        updatedAt: 1000,
+      };
+      await offline.setProgress(local);
+      await offline.markDelivered(offline.outbox(), 1);
       const remote = { ...local, locator: 'r1:0.2000:c1', percentage: 0.2, device: 'b', updatedAt: 2000 };
-      transport.respondWith(request => {
+      transport.respondWith((request) => {
         expect(request.method).toBe('GET');
         return { status: 200, headers: {}, json: { serverTime: 2, progress: [remote], notes: [] } };
       });
@@ -612,8 +788,13 @@ describe('SyncEngine', () => {
       expect(offline.outbox().progress).toEqual([]);
       expect(engine.pendingRequest).toBe(false);
       await vi.advanceTimersByTimeAsync(5000);
-      expect(transport.countMatching(request => request.method === 'POST' && request.url.endsWith('/api/v1/sync'))).toBe(0);
-    } finally { engine.stop(); vi.useRealTimers(); }
+      expect(
+        transport.countMatching((request) => request.method === 'POST' && request.url.endsWith('/api/v1/sync')),
+      ).toBe(0);
+    } finally {
+      engine.stop();
+      vi.useRealTimers();
+    }
   });
 
   it('sends nothing at all when there is no session', async () => {
@@ -683,15 +864,50 @@ describe('SyncEngine', () => {
     transport.json(SESSION);
     await api.login('me', 'password12');
     await offline.load();
-    transport.respondWith(request => ({ status: 200, headers: {}, json: request.url.includes('since=0')
-      ? { serverTime: 10, hasMore: true, progress: [], notes: [{ id: 'first', bookId: 'b', type: 'note', locator: '', text: 'one', comment: '', color: '', updatedAt: 1 }] }
-      : { serverTime: 20, hasMore: false, progress: [], notes: [{ id: 'second', bookId: 'b', type: 'note', locator: '', text: 'two', comment: '', color: '', updatedAt: 1 }] },
+    transport.respondWith((request) => ({
+      status: 200,
+      headers: {},
+      json: request.url.includes('since=0')
+        ? {
+            serverTime: 10,
+            hasMore: true,
+            progress: [],
+            notes: [
+              {
+                id: 'first',
+                bookId: 'b',
+                type: 'note',
+                locator: '',
+                text: 'one',
+                comment: '',
+                color: '',
+                updatedAt: 1,
+              },
+            ],
+          }
+        : {
+            serverTime: 20,
+            hasMore: false,
+            progress: [],
+            notes: [
+              {
+                id: 'second',
+                bookId: 'b',
+                type: 'note',
+                locator: '',
+                text: 'two',
+                comment: '',
+                color: '',
+                updatedAt: 1,
+              },
+            ],
+          },
     }));
     await engine.syncNow();
     expect(offline.current.serverTime).toBe(20);
     expect(Object.keys(offline.current.notes).sort()).toEqual(['first', 'second']);
-    const pulls = transport.requests.filter(request => request.url.includes('/sync?'));
-    expect(pulls.map(request => request.url.split('?')[1])).toEqual(['since=0', 'since=10']);
+    const pulls = transport.requests.filter((request) => request.url.includes('/sync?'));
+    expect(pulls.map((request) => request.url.split('?')[1])).toEqual(['since=0', 'since=10']);
     expect(engine.status().state).toBe('idle');
   });
 
@@ -701,13 +917,40 @@ describe('SyncEngine', () => {
     await api.login('me', 'password12');
     await offline.load();
     await offline.applyPulled({ serverTime: 5, progress: [], notes: [] });
-    await offline.setProgress({ bookId: 'b', locator: 'new', percentage: 0.5, chapterTitle: '', device: platform.deviceLabel, updatedAt: 1 });
-    transport.respondWith(request => ({ status: 200, headers: {}, json: request.method === 'POST'
-      ? { accepted: 1, rejected: 0, serverTime: 10, hasMore: true, progress: [], notes: [] }
-      : { serverTime: 20, hasMore: false, progress: [], notes: [{ id: 'last', bookId: 'b', type: 'note', locator: '', text: 'last', comment: '', color: '', updatedAt: 1 }] },
+    await offline.setProgress({
+      bookId: 'b',
+      locator: 'new',
+      percentage: 0.5,
+      chapterTitle: '',
+      device: platform.deviceLabel,
+      updatedAt: 1,
+    });
+    transport.respondWith((request) => ({
+      status: 200,
+      headers: {},
+      json:
+        request.method === 'POST'
+          ? { accepted: 1, rejected: 0, serverTime: 10, hasMore: true, progress: [], notes: [] }
+          : {
+              serverTime: 20,
+              hasMore: false,
+              progress: [],
+              notes: [
+                {
+                  id: 'last',
+                  bookId: 'b',
+                  type: 'note',
+                  locator: '',
+                  text: 'last',
+                  comment: '',
+                  color: '',
+                  updatedAt: 1,
+                },
+              ],
+            },
     }));
     await engine.syncNow();
-    const push = transport.requests.find(request => request.url.endsWith('/sync') && request.method === 'POST')!;
+    const push = transport.requests.find((request) => request.url.endsWith('/sync') && request.method === 'POST')!;
     expect(JSON.parse(bodyText(push)).since).toBe(5);
     expect(offline.current.serverTime).toBe(20);
     expect(offline.current.notes['last']?.text).toBe('last');
@@ -722,7 +965,7 @@ describe('SyncEngine', () => {
     transport.json({ serverTime: 10, hasMore: true, progress: [], notes: [] });
     await engine.syncNow();
     expect(engine.status().state).toBe('error');
-    expect(transport.requests.filter(request => request.url.includes('/sync?'))).toHaveLength(2);
+    expect(transport.requests.filter((request) => request.url.includes('/sync?'))).toHaveLength(2);
   });
 
   it('retries a failed page from the last persisted cursor', async () => {
@@ -730,8 +973,9 @@ describe('SyncEngine', () => {
     transport.json(SESSION);
     await api.login('me', 'password12');
     await offline.load();
-    transport.respondWith(request => {
-      if (request.url.includes('since=0')) return { status: 200, headers: {}, json: { serverTime: 10, hasMore: true, progress: [], notes: [] } };
+    transport.respondWith((request) => {
+      if (request.url.includes('since=0'))
+        return { status: 200, headers: {}, json: { serverTime: 10, hasMore: true, progress: [], notes: [] } };
       throw new Error('offline');
     });
     await engine.syncNow();
@@ -760,15 +1004,22 @@ describe('SyncEngine', () => {
       transport.json(SESSION);
       await api.login('me', 'password12');
       await offline.load();
-      const progress = { bookId: 'b1', locator: 'r1:0.5:c1', percentage: 0.5, chapterTitle: 'c1', device: platform.deviceLabel, updatedAt: 1000 };
+      const progress = {
+        bookId: 'b1',
+        locator: 'r1:0.5:c1',
+        percentage: 0.5,
+        chapterTitle: 'c1',
+        device: platform.deviceLabel,
+        updatedAt: 1000,
+      };
       await offline.setProgress(progress);
       const states: string[] = [];
-      engine.onStatus(status => states.push(status.state));
+      engine.onStatus((status) => states.push(status.state));
       platform.setOnline(false);
       engine.start();
       await vi.advanceTimersByTimeAsync(90_000);
       expect(states).toEqual(['offline']);
-      expect(transport.countMatching(request => request.url.includes('/sync'))).toBe(0);
+      expect(transport.countMatching((request) => request.url.includes('/sync'))).toBe(0);
       const restored = new OfflineStore(platform.kv);
       await restored.load();
       expect(restored.outbox().progress).toEqual([progress]);
@@ -790,7 +1041,14 @@ describe('SyncEngine', () => {
     transport.json(SESSION);
     await api.login('me', 'password12');
     await offline.load();
-    await offline.setProgress({ bookId: 'b1', locator: 'r1:0.5:c1', percentage: 0.5, chapterTitle: 'c1', device: platform.deviceLabel, updatedAt: 1000 });
+    await offline.setProgress({
+      bookId: 'b1',
+      locator: 'r1:0.5:c1',
+      percentage: 0.5,
+      chapterTitle: 'c1',
+      device: platform.deviceLabel,
+      updatedAt: 1000,
+    });
     transport.failWith(new Error('boom'));
     await engine.syncNow();
     // The position must still be there to send on the next attempt.
@@ -833,7 +1091,14 @@ describe('SyncEngine', () => {
     transport.json(SESSION);
     await api.login('me', 'password12');
     await offline.load();
-    await offline.setProgress({ bookId: 'gone', locator: 'x', percentage: 0, chapterTitle: '', device: platform.deviceLabel, updatedAt: 1 });
+    await offline.setProgress({
+      bookId: 'gone',
+      locator: 'x',
+      percentage: 0,
+      chapterTitle: '',
+      device: platform.deviceLabel,
+      updatedAt: 1,
+    });
     transport.respondWith((request) =>
       request.method === 'POST'
         ? { status: 200, headers: {}, json: { accepted: 0, rejected: 1, serverTime: 2, progress: [], notes: [] } }
@@ -873,13 +1138,32 @@ describe('SyncEngine', () => {
 
 it('background flush saves remote records before adopting the response cursor', async () => {
   const { api, transport, offline, engine, platform } = build();
-  transport.json(SESSION); await api.login('me', 'password12'); await offline.load();
+  transport.json(SESSION);
+  await api.login('me', 'password12');
+  await offline.load();
   await offline.applyPulled({ serverTime: 5, progress: [], notes: [] });
-  await offline.setProgress({ bookId: 'local', locator: 'page:2', percentage: .2, chapterTitle: '', device: 'web', updatedAt: 1 });
-  const remote = { id: 'remote-note', bookId: 'other', type: 'note' as const, locator: '', text: 'from another device', comment: '', color: '', updatedAt: 1 };
+  await offline.setProgress({
+    bookId: 'local',
+    locator: 'page:2',
+    percentage: 0.2,
+    chapterTitle: '',
+    device: 'web',
+    updatedAt: 1,
+  });
+  const remote = {
+    id: 'remote-note',
+    bookId: 'other',
+    type: 'note' as const,
+    locator: '',
+    text: 'from another device',
+    comment: '',
+    color: '',
+    updatedAt: 1,
+  };
   transport.json({ accepted: 1, rejected: 0, serverTime: 10, hasMore: true, progress: [], notes: [remote] });
   await engine.flush();
-  const restored = new OfflineStore(platform.kv); await restored.load();
+  const restored = new OfflineStore(platform.kv);
+  await restored.load();
   expect(restored.current.notes[remote.id]).toEqual(remote);
   expect(restored.current.serverTime).toBe(10);
   expect(isOutboxEmpty(restored.current)).toBe(true);
@@ -888,18 +1172,48 @@ it('background flush saves remote records before adopting the response cursor', 
 
 it('retries remote changes from the old cursor if storing a push response fails', async () => {
   const { api, transport, offline, engine, platform } = build();
-  transport.json(SESSION); await api.login('me', 'password12'); await offline.load();
+  transport.json(SESSION);
+  await api.login('me', 'password12');
+  await offline.load();
   await offline.applyPulled({ serverTime: 5, progress: [], notes: [] });
-  await offline.setProgress({ bookId: 'local', locator: 'page:2', percentage: .2, chapterTitle: '', device: 'web', updatedAt: 1 });
-  const remote = { id: 'remote-note', bookId: 'other', type: 'note' as const, locator: '', text: 'from another device', comment: '', color: '', updatedAt: 1 };
-  transport.respondWith(request => ({ status: 200, headers: {}, json: { accepted: 1, rejected: 0, serverTime: 10, progress: [], notes: request.method === 'POST' || request.url.includes('since=5') ? [remote] : [] } }));
+  await offline.setProgress({
+    bookId: 'local',
+    locator: 'page:2',
+    percentage: 0.2,
+    chapterTitle: '',
+    device: 'web',
+    updatedAt: 1,
+  });
+  const remote = {
+    id: 'remote-note',
+    bookId: 'other',
+    type: 'note' as const,
+    locator: '',
+    text: 'from another device',
+    comment: '',
+    color: '',
+    updatedAt: 1,
+  };
+  transport.respondWith((request) => ({
+    status: 200,
+    headers: {},
+    json: {
+      accepted: 1,
+      rejected: 0,
+      serverTime: 10,
+      progress: [],
+      notes: request.method === 'POST' || request.url.includes('since=5') ? [remote] : [],
+    },
+  }));
   vi.spyOn(offline, 'applyPulled').mockRejectedValueOnce(new Error('storage unavailable'));
   await engine.flush();
-  const restored = new OfflineStore(platform.kv); await restored.load();
+  const restored = new OfflineStore(platform.kv);
+  await restored.load();
   expect(restored.current.serverTime).toBe(5);
   const resumed = new SyncEngine(api, restored, platform);
   await resumed.syncNow();
   expect(restored.current.notes[remote.id]).toEqual(remote);
   expect(transport.requests.at(-1)!.url).toContain('since=5');
-  engine.stop(); resumed.stop();
+  engine.stop();
+  resumed.stop();
 });

@@ -48,7 +48,7 @@
 
 ### `GET /books/:id/search?q=关键词&cursor=上一页游标`
 
-仅允许搜索当前用户书架中的书籍，支持 TXT 和 EPUB。关键词去除首尾空白后搜索，原始长度限 1–200 个字符。响应不缓存。
+仅允许搜索当前用户书架中的书籍，支持 TXT、EPUB、Kindle 和按增强解析阅读的 PDF。按原版页面阅读的 PDF 返回 `400 SEARCH_LOCAL_PDF`，由阅读器逐页搜索文本层。关键词去除首尾空白后搜索，原始长度限 1–200 个字符。响应不缓存。
 
 ```json
 {
@@ -196,6 +196,16 @@
 
 → `{ "book": {...}, "progress": {...} | null }`
 
+### `GET /books/:id/view-mode`、`PUT /books/:id/view-mode`
+
+当前用户怎样阅读这本书（目前只有 PDF 有两种方式，见 [PDF](pdf.md)）。
+
+→ `{ "pdfMode": "pdfjs" | "enhanced", "chosen": "pdfjs" | "enhanced" | null, "defaultPdfMode": "pdfjs" | "enhanced" }`
+
+`pdfMode` 是生效的模式，`chosen` 是读者为这本书的选择（`null` 表示跟随全站默认），`defaultPdfMode` 是管理员在服务配置里设的默认。
+`PUT { "pdfMode": "enhanced" }` 保存选择，`{ "pdfMode": null }` 或空对象清除；非 PDF 返回 `400 UNSUPPORTED_FORMAT`，其他值返回 `400 BAD_MODE`。
+清单、目录和书内搜索按生效的模式回答；客户端切换后重新打开书。
+
 ### `GET /books/:id/manifest`
 
 渲染器布局前需要的清单。**打开一本书就是这一次请求**，可寻址结构也在里面，
@@ -210,6 +220,9 @@
   "content": { "kind": "reflowable", "total": 42, "groups": [...], "items": [...] },
   "kind": "reflowable", "total": 42, "groups": [...], "items": [...] }
 ```
+
+`content.notice`（可选）是要告诉读者的话，例如按增强解析打开的 PDF 没有文字层、已按原版页面显示。
+增强解析的 PDF 章节项另有 `page`：这一章的文字从第几页开始（从 1 起）。
 
 `kind` / `total` / `groups` / `items` 与 `content` 的内容相同，同时放在顶层是**冗余的
 兼容层**：它们先于 `content` 存在，且 `kind` 是外壳判断「谁来渲染」的唯一开关
@@ -502,7 +515,7 @@ pdf / 单图没有独立目录，回落到 items。来源章节出版物（`chap
 也可以以可写方式挂载以启用上传和管理员文件管理。改名、移动、删除和新建目录等端点同样会修改
 可写书库中的目录项；只读挂载时所有这些写操作统一返回 `403 READ_ONLY_MOUNT`。
 
-**书库和书架是两回事。** 扫描到的新书只进入书库；上传成功的书加入上传者自己的书架。业务设置 `library.autoShelf`（「书库 → 新书自动加入所有账号的书架」，默认关闭）开启后，新书会加到每个账号的书架，新建的账号也带上书库里的全部书。
+**书库和书架是两回事。** 扫描到的新书和上传的书都只进入书库，不加入任何人的书架（上传者自己的也不加）；读者在书库或发现里自行「加入书架」。业务设置 `library.autoShelf`（「书库 → 新书自动加入所有账号的书架」，默认关闭）开启后，新书会加到每个账号的书架，新建的账号也带上书库里的全部书。
 
 **成员只能新增书籍。** 管理员的上传不受限制。成员能否上传由业务设置 `library.memberUpload`
 （「我的 → 服务配置 → 书库 → 允许成员上传书籍」，默认开启）决定；关闭时成员的
@@ -936,6 +949,46 @@ manifest 的每个条目还带 `ref`，即这个文件对应的**资源引用**�
 
 ---
 
+## 时长统计
+
+阅读时长存于 reader.db，影音时长由播放进度推算、存于 media.db（见[影音](#影音)的 `/stats/*`）。两边查询参数相同：
+
+| 参数 | 说明 |
+| --- | --- |
+| `from`、`to` | 必填，epoch 毫秒，左闭右开，`to > from` |
+| `tz` | 观看者相对 UTC 的分钟偏移（东八区为 `480`），默认 `0`，绝对值 ≤ 840 |
+| `group` | `day`（默认）、`month` 或 `year`，按 `tz` 换算后的本地日期分组 |
+
+参数非法返回 `400 BAD_RANGE`。
+
+### `POST /stats/reading-time`
+
+客户端上报有效阅读时长（页面可见且近几分钟内有翻页、滚动或朗读）。每台设备用自己的随机 `clientId`，按书和 15 分钟 UTC 时段累计：
+
+```json
+{ "clientId": "a1b2c3d4e5", "entries": [{ "bookId": "…", "slot": 1763625600000, "seconds": 420 }] }
+```
+
+- `clientId` 为 8–64 位 `[A-Za-z0-9_-]`；`entries` 最多 2000 条，否则 `400 BAD_PAYLOAD`。
+- `slot` 是时段起点（epoch 毫秒，能被 900000 整除，不晚于当前时间）；`seconds` 是该设备在该时段的**累计值**，上限 900。
+- 服务端对同一账号、书、时段、设备取 `MAX(已存, 上报)`，重试、重复或离线补报都不会重复计时。不存在的书或格式不对的条目计入 `rejected`。
+
+→ `{ "accepted": 3, "rejected": 0 }`
+
+### `GET /stats/reading?from=&to=&tz=&group=`
+
+当前账号的阅读时长。
+
+→ `{ "series": [{ "key": "2026-11-20", "seconds": 1800 }], "works": [{ "id", "title", "author", "coverUrl", "seconds", "lastAt" }], "total": 1800 }`
+
+`works` 按时长降序，最多 200 本；`lastAt` 是最后一个时段的起点。
+
+### `GET /stats/reading/users?from=&to=` — 管理员
+
+全部账号在区间内的阅读总时长 → `{ "users": [{ "userId", "username", "displayName", "seconds" }] }`，按时长降序，没有记录的账号为 `0`。
+
+---
+
 ## 本地与 OPDS 来源
 
 以下接口需账号令牌。内置类型为 reader.local 和 reader.opds，另可安装扩展插件提供的来源类型；管理员配置来源，用户浏览、搜索和获取书籍。
@@ -1042,6 +1095,8 @@ Reader 对外提供的只读 OPDS 服务（`/opds`，Basic 认证；客户端凭
 | GET /items/:id/cover | 作品封面 |
 | GET /items/:id/album-playback、season-playback、series-playback | 专辑 / 季 / 剧集的连续播放列表 |
 | GET /search、GET /favorites、GET /history、GET /queue | 搜索（必填 `query`）及当前账号收藏、历史与队列 |
+| GET /stats/time?from=&to=&tz=&group= | 当前账号的影音时长，参数同[时长统计](#时长统计)：`{series: [{key, channel, seconds}], works: [{id, channel, kind, title, seconds, lastAt}]}`，只计可访问的库；单集、曲目、有声书章节归到剧集、专辑或书 |
+| GET /stats/users?from=&to= | 管理员：各账号按频道的影音时长 `{users: [{userId, channel, seconds}]}` |
 | GET /items/:id/favorite、PUT /items/:id/favorite | 读取 / 设置收藏，body 为 {"favorite":true} 或 {"favorite":false} |
 | POST /queue、DELETE /queue/:id、POST /queue/:id/move | 追加（body `{partIds}`）、移除、上下移动（body `{neighborId, direction: "up" \| "down"}`）队列项 |
 | POST /queue/preview、PUT /queue/snapshot、POST /queue/clear | 预览队列、按 `expectedRevision` 整体替换队列、按频道清除指定条目（body `{channel, entryIds}`） |

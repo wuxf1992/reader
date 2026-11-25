@@ -91,7 +91,7 @@ interface BookRow {
 }
 
 export const READING_STATES = ['reading', 'want', 'finished'] as const;
-export type ReadingState = typeof READING_STATES[number];
+export type ReadingState = (typeof READING_STATES)[number];
 /**
  * A book's reading state on this account's shelf.
  *
@@ -208,9 +208,13 @@ export class ShelfService {
     const library = scope === 'library';
     const where: string[] = library
       ? ['EXISTS (SELECT 1 FROM book_files f WHERE f.book_id = b.id AND f.missing = 0)']
-      : ['ub.user_id = ?', 'ub.hidden = 0', `(EXISTS (SELECT 1 FROM book_files f WHERE f.book_id = b.id AND f.missing = 0)
+      : [
+          'ub.user_id = ?',
+          'ub.hidden = 0',
+          `(EXISTS (SELECT 1 FROM book_files f WHERE f.book_id = b.id AND f.missing = 0)
           OR EXISTS (SELECT 1 FROM acquired_files a WHERE a.book_id = b.id)
-          OR EXISTS (SELECT 1 FROM chapter_publications c WHERE c.book_id = b.id AND c.user_id = ub.user_id))`];
+          OR EXISTS (SELECT 1 FROM chapter_publications c WHERE c.book_id = b.id AND c.user_id = ub.user_id))`,
+        ];
     const params: Array<string | number> = library ? [] : [userId];
     if (options.fileFormats) {
       where.push(`b.format IN (${options.fileFormats.map(() => '?').join(',') || 'NULL'})`);
@@ -268,7 +272,9 @@ export class ShelfService {
         params.push(`${escapeLike(prefix)}/%`, `${escapeLike(prefix)}/%/%`);
       }
     } else if (options.direct) {
-      where.push(`EXISTS (SELECT 1 FROM book_files f WHERE f.book_id = b.id AND f.missing = 0 AND f.rel_path NOT LIKE '%/%')`);
+      where.push(
+        `EXISTS (SELECT 1 FROM book_files f WHERE f.book_id = b.id AND f.missing = 0 AND f.rel_path NOT LIKE '%/%')`,
+      );
     }
 
     // 在读 / 想读 / 已读 reads reading_progress through the shelf join (below).
@@ -278,7 +284,7 @@ export class ShelfService {
       params.push(options.status);
     }
     const order = options.order === 'asc' ? 'ASC' : 'DESC';
-    const sort = options.sort === 'recent' ? 'updated' : options.sort ?? 'added';
+    const sort = options.sort === 'recent' ? 'updated' : (options.sort ?? 'added');
     if (!['title', 'author', 'added', 'updated'].includes(sort)) throw badRequest('invalid sort');
     /*
      * `updated` asks two different questions in the two scopes, and the shelf's is
@@ -317,20 +323,28 @@ export class ShelfService {
      * `hidden = 0` by construction, and a selected constant would become a field the
      * client reads as if it could say something.
      */
-    const shelfColumn = library ? ', ub.hidden AS shelf_hidden' : `, (${READING_STATE}) AS reading_state, COALESCE(json_array_length(cs.pending_chapter_ids),0) AS new_chapters`;
+    const shelfColumn = library
+      ? ', ub.hidden AS shelf_hidden'
+      : `, (${READING_STATE}) AS reading_state, COALESCE(json_array_length(cs.pending_chapter_ids),0) AS new_chapters`;
 
     const totalRow = this.db.get<{ n: number }>(
       `SELECT COUNT(*) AS n FROM books b ${join} WHERE ${whereSql}`,
-      ...joinParams, ...params,
+      ...joinParams,
+      ...params,
     );
 
     const rows = this.db.all<BookRow>(
-      `SELECT ${BOOK_COLUMNS.split(',').map((c) => `b.${c.trim()}`).join(', ')}, ub.added_at${shelfColumn}
+      `SELECT ${BOOK_COLUMNS.split(',')
+        .map((c) => `b.${c.trim()}`)
+        .join(', ')}, ub.added_at${shelfColumn}
        FROM books b ${join}
        WHERE ${whereSql}
        ORDER BY ${orderColumn} ${order}, b.title ASC, b.id ASC
        LIMIT ? OFFSET ?`,
-      ...joinParams, ...params, pageSize, (page - 1) * pageSize,
+      ...joinParams,
+      ...params,
+      pageSize,
+      (page - 1) * pageSize,
     );
 
     return { items: rows.map((row) => this.toDto(row)), total: totalRow?.n ?? 0, page, pageSize };
@@ -338,16 +352,22 @@ export class ShelfService {
 
   get(userId: string, bookId: string, includeLibrary = false): BookDto {
     const row = this.db.get<BookRow>(
-      `SELECT ${BOOK_COLUMNS.split(',').map(c => `b.${c.trim()}`).join(', ')}, COALESCE(json_array_length(cs.pending_chapter_ids),0) AS new_chapters
+      `SELECT ${BOOK_COLUMNS.split(',')
+        .map((c) => `b.${c.trim()}`)
+        .join(', ')}, COALESCE(json_array_length(cs.pending_chapter_ids),0) AS new_chapters
        FROM books b LEFT JOIN chapter_publications cp ON cp.book_id=b.id AND cp.user_id=?
        LEFT JOIN chapter_subscriptions cs ON cs.book_id=cp.book_id WHERE b.id=?`,
-      userId, bookId,
+      userId,
+      bookId,
     );
     if (!row) throw notFound('book not found');
     const visible = this.db.get<{ n: number }>(
       `SELECT (EXISTS (SELECT 1 FROM user_books WHERE user_id = ? AND book_id = ? AND hidden = 0)
             OR (? AND EXISTS (SELECT 1 FROM book_files WHERE book_id = ? AND missing = 0))) AS n`,
-      userId, bookId, Number(includeLibrary && row.format !== 'chapters'), bookId,
+      userId,
+      bookId,
+      Number(includeLibrary && row.format !== 'chapters'),
+      bookId,
     );
     if (!visible?.n) throw notFound('book not found');
     return this.toDto(row);
@@ -403,12 +423,15 @@ export class ShelfService {
     const unique = [...new Set(bookIds)].filter((id) => id !== '');
     if (unique.length === 0) return new Map();
     const rows = this.db.all<BookRow>(
-      `SELECT ${BOOK_COLUMNS.split(',').map((c) => `b.${c.trim()}`).join(', ')}, ub.added_at, COALESCE(json_array_length(cs.pending_chapter_ids),0) AS new_chapters
+      `SELECT ${BOOK_COLUMNS.split(',')
+        .map((c) => `b.${c.trim()}`)
+        .join(', ')}, ub.added_at, COALESCE(json_array_length(cs.pending_chapter_ids),0) AS new_chapters
        FROM books b JOIN user_books ub ON ub.book_id = b.id
        LEFT JOIN chapter_publications cp ON cp.book_id=b.id AND cp.user_id=ub.user_id
        LEFT JOIN chapter_subscriptions cs ON cs.book_id=cp.book_id
        WHERE ub.user_id = ? AND ub.hidden = 0 AND b.id IN (${unique.map(() => '?').join(',')})`,
-      userId, ...unique,
+      userId,
+      ...unique,
     );
     return new Map(rows.map((row) => [row.id, this.toDto(row)]));
   }
@@ -474,19 +497,33 @@ export class ShelfService {
 
   /** The cover file to serve: the manually chosen one, else the scanner's. */
   coverPath(bookId: string): string | null {
-    const manual = this.db.get<{ value: string }>("SELECT value FROM metadata_overrides WHERE book_id = ? AND field = 'cover'", bookId)?.value;
-    return manual || (this.db.get<{ cover_path: string | null }>('SELECT cover_path FROM books WHERE id = ?', bookId)?.cover_path ?? null);
+    const manual = this.db.get<{ value: string }>(
+      "SELECT value FROM metadata_overrides WHERE book_id = ? AND field = 'cover'",
+      bookId,
+    )?.value;
+    return (
+      manual ||
+      (this.db.get<{ cover_path: string | null }>('SELECT cover_path FROM books WHERE id = ?', bookId)?.cover_path ??
+        null)
+    );
   }
 
   /** The folders directly inside a library folder, by name, from the indexed files. */
   folders(path = ''): string[] {
-    const prefix = path.replace(/\/+$/, ''), start = prefix ? prefix.length + 1 : 0;
+    const prefix = path.replace(/\/+$/, ''),
+      start = prefix ? prefix.length + 1 : 0;
     const rows = this.db.all<{ rel_path: string }>(
-      prefix ? "SELECT rel_path FROM book_files WHERE missing = 0 AND rel_path LIKE ? ESCAPE '\\'" : 'SELECT rel_path FROM book_files WHERE missing = 0',
+      prefix
+        ? "SELECT rel_path FROM book_files WHERE missing = 0 AND rel_path LIKE ? ESCAPE '\\'"
+        : 'SELECT rel_path FROM book_files WHERE missing = 0',
       ...(prefix ? [`${escapeLike(prefix)}/%`] : []),
     );
     const names = new Set<string>();
-    for (const { rel_path } of rows) { const rest = rel_path.slice(start), end = rest.indexOf('/'); if (end > 0) names.add(rest.slice(0, end)); }
+    for (const { rel_path } of rows) {
+      const rest = rel_path.slice(start),
+        end = rest.indexOf('/');
+      if (end > 0) names.add(rest.slice(0, end));
+    }
     return [...names].sort((left, right) => left.localeCompare(right, 'zh-Hans-CN', { numeric: true }));
   }
 
@@ -509,7 +546,11 @@ export class ShelfService {
          VALUES (?,?,?,?,?)
          ON CONFLICT(book_id, field) DO UPDATE SET value = excluded.value,
            updated_by = excluded.updated_by, updated_at = excluded.updated_at`,
-        bookId, field, text, userId, now,
+        bookId,
+        field,
+        text,
+        userId,
+        now,
       );
     }
     // Bump the book row so clients syncing by `updatedAt` notice the edit.
@@ -527,7 +568,11 @@ export class ShelfService {
    */
   setReadingStatus(userId: string, bookId: string, status: ReadingState | null): void {
     if (status !== null && !READING_STATES.includes(status)) throw badRequest('invalid reading status');
-    const row = this.db.get<{ n: number }>('SELECT COUNT(*) AS n FROM user_books WHERE user_id = ? AND book_id = ? AND hidden = 0', userId, bookId);
+    const row = this.db.get<{ n: number }>(
+      'SELECT COUNT(*) AS n FROM user_books WHERE user_id = ? AND book_id = ? AND hidden = 0',
+      userId,
+      bookId,
+    );
     if (!row?.n) throw notFound('book not on shelf');
     this.db.run('UPDATE user_books SET reading_status = ? WHERE user_id = ? AND book_id = ?', status, userId, bookId);
   }
@@ -537,7 +582,8 @@ export class ShelfService {
     const rows = this.db.all<{ author: string; series: string; tags: string; format: string }>(
       `SELECT b.author, b.series, b.tags, b.format
        FROM books b JOIN user_books ub ON ub.book_id = b.id
-       WHERE ub.user_id = ? AND ub.hidden = 0`, userId,
+       WHERE ub.user_id = ? AND ub.hidden = 0`,
+      userId,
     );
     const authors = new Set<string>();
     const series = new Set<string>();

@@ -1,12 +1,19 @@
 /** Text geometry in the chapter's vertical coordinate space. */
-export interface TextLine { top: number; bottom: number }
-export interface TextPage { offset: number; visibleHeight: number }
+export interface TextLine {
+  top: number;
+  bottom: number;
+}
+export interface TextPage {
+  offset: number;
+  visibleHeight: number;
+}
 
 /** Split actual lines, allowing paragraph gaps and headings to have different heights. */
 export function paginateLines(boxes: readonly TextLine[], height: number): TextPage[] {
   if (!(height > 0)) return [];
   const lines: TextLine[] = [];
-  for (const box of [...boxes].filter(b => Number.isFinite(b.top) && Number.isFinite(b.bottom) && b.bottom > b.top)
+  for (const box of [...boxes]
+    .filter((b) => Number.isFinite(b.top) && Number.isFinite(b.bottom) && b.bottom > b.top)
     .sort((a, b) => a.top - b.top)) {
     const previous = lines.at(-1);
     // Inline fragments (emphasis, search highlights) share a row. Count it once.

@@ -182,7 +182,10 @@ export function attachGestures(element: HTMLElement, handlers: GestureHandlers):
 
   const onPointerDown = (event: PointerEvent): void => {
     if (event.pointerType === 'mouse' && event.button !== 0) return;
-    if (tracking || event.isPrimary === false) { onPointerCancel(); return; }
+    if (tracking || event.isPrimary === false) {
+      onPointerCancel();
+      return;
+    }
     pointerId = event.pointerId;
     tracking = true;
     suppressClick = false;
@@ -217,7 +220,10 @@ export function attachGestures(element: HTMLElement, handlers: GestureHandlers):
 
   const onPointerMove = (event: PointerEvent): void => {
     if (!tracking || owned || event.pointerId !== pointerId) return;
-    if (handlers.hasSelection()) { onPointerCancel(); return; }
+    if (handlers.hasSelection()) {
+      onPointerCancel();
+      return;
+    }
     const deltaX = event.clientX - startX;
     const deltaY = event.clientY - startY;
     if (Math.hypot(deltaX, deltaY) > TAP_MAX_DISTANCE) clearLongPress();

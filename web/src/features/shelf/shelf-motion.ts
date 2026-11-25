@@ -26,7 +26,8 @@ export function captureShelfPositions(grid: HTMLElement, animations: Map<string,
       delete card.dataset.shelfMotionFrozen;
     }
     const base = card.getBoundingClientRect();
-    const dx = visible.left - base.left, dy = visible.top - base.top;
+    const dx = visible.left - base.left,
+      dy = visible.top - base.top;
     if (typeof card.animate === 'function' && (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5 || opacity < 0.999)) {
       card.style.transform = `translate3d(${dx}px, ${dy}px, 0)`;
       if (opacity < 0.999) card.style.opacity = String(opacity);
@@ -38,7 +39,11 @@ export function captureShelfPositions(grid: HTMLElement, animations: Map<string,
     animation.cancel();
     animations.delete(id);
   }
-  return { positions, scrollLeft: grid.closest<HTMLElement>('.shelf')?.scrollLeft ?? 0, scrollTop: grid.closest<HTMLElement>('.shelf')?.scrollTop ?? 0 };
+  return {
+    positions,
+    scrollLeft: grid.closest<HTMLElement>('.shelf')?.scrollLeft ?? 0,
+    scrollTop: grid.closest<HTMLElement>('.shelf')?.scrollTop ?? 0,
+  };
 }
 
 export function animateShelfPositions(
@@ -57,17 +62,25 @@ export function animateShelfPositions(
     card.style.removeProperty('opacity');
     delete card.dataset.shelfMotionFrozen;
     const target = card.getBoundingClientRect();
-    const start = prior ? { left: prior.left, top: prior.top, opacity: prior.opacity } : { left: target.left, top: target.top, opacity: 0 };
+    const start = prior
+      ? { left: prior.left, top: prior.top, opacity: prior.opacity }
+      : { left: target.left, top: target.top, opacity: 0 };
     const dx = start.left - scrollX - target.left;
     const dy = start.top - scrollY - target.top;
     const moved = Math.abs(dx) > 1 || Math.abs(dy) > 1;
     if (!card.animate) continue;
     if (prior && !moved && start.opacity >= 0.999) continue;
     const duration = reducedMotion ? 90 : 220;
-    const animation = card.animate([
-      { opacity: start.opacity, transform: !reducedMotion && prior && moved ? `translate3d(${dx}px, ${dy}px, 0)` : 'none' },
-      { opacity: 1, transform: 'none' },
-    ], { duration, easing: 'cubic-bezier(0.16, 1, 0.3, 1)', fill: 'both' });
+    const animation = card.animate(
+      [
+        {
+          opacity: start.opacity,
+          transform: !reducedMotion && prior && moved ? `translate3d(${dx}px, ${dy}px, 0)` : 'none',
+        },
+        { opacity: 1, transform: 'none' },
+      ],
+      { duration, easing: 'cubic-bezier(0.16, 1, 0.3, 1)', fill: 'both' },
+    );
     animations.set(id, animation);
     animation.onfinish = () => {
       if (animations.get(id) !== animation) return;

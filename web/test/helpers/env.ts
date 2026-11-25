@@ -117,7 +117,8 @@ export class FakeTransport {
       throw new ApiError('offline', err instanceof Error ? err.message : 'network error');
     }
 
-    if ((response.status >= 200 && response.status < 300) || (request.binary && response.status === 304)) return response;
+    if ((response.status >= 200 && response.status < 300) || (request.binary && response.status === 304))
+      return response;
 
     const body = response.json as { error?: { code?: string; message?: string } } | undefined;
     const code = body?.error?.code ?? '';
@@ -144,9 +145,7 @@ export class FakeTransport {
    */
   respondWithBoth(payload: unknown, status = 200): void {
     this.respondWith((request) => {
-      const json = request.url.startsWith('/api/v1/books')
-        ? { items: [], total: 0, page: 1, pageSize: 60 }
-        : payload;
+      const json = request.url.startsWith('/api/v1/books') ? { items: [], total: 0, page: 1, pageSize: 60 } : payload;
       return { status, headers: {}, json };
     });
   }
@@ -158,11 +157,7 @@ export interface TestPlatform extends Platform {
   setOnline(next: boolean): void;
 }
 
-export function makePlatform(
-  transport: FakeTransport,
-  kv = new MemoryKv(),
-  blobs = new MemoryBlobs(),
-): TestPlatform {
+export function makePlatform(transport: FakeTransport, kv = new MemoryKv(), blobs = new MemoryBlobs()): TestPlatform {
   const listeners = new Set<(state: 'online' | 'offline') => void>();
   let online = true;
   return {

@@ -9,8 +9,15 @@ import { type JSX, useEffect, useRef, useState } from 'react';
 import { useRuntime } from '../app/providers/runtime-context.tsx';
 import { useCover } from './use-cover.ts';
 
-
-export function LazyCover({ url, title, className }: { url: string | null; title: string; className?: string }): JSX.Element {
+export function LazyCover({
+  url,
+  title,
+  className,
+}: {
+  url: string | null;
+  title: string;
+  className?: string;
+}): JSX.Element {
   const { api } = useRuntime();
   const frame = useRef<HTMLSpanElement>(null);
   const [visible, setVisible] = useState(false);
@@ -18,12 +25,26 @@ export function LazyCover({ url, title, className }: { url: string | null; title
   useEffect(() => {
     const node = frame.current;
     if (!node || visible) return;
-    if (typeof IntersectionObserver === 'undefined') { setVisible(true); return; }
-    const observer = new IntersectionObserver((entries) => { if (entries.some((entry) => entry.isIntersecting)) setVisible(true); }, { rootMargin: '200px' });
+    if (typeof IntersectionObserver === 'undefined') {
+      setVisible(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) setVisible(true);
+      },
+      { rootMargin: '200px' },
+    );
     observer.observe(node);
     return () => observer.disconnect();
   }, [visible]);
-  return <span ref={frame} className={className ? `lazy-cover ${className}` : 'lazy-cover'} aria-hidden="true">
-    {src ? <img src={src} alt="" /> : <span className="lazy-cover-placeholder">{title.trim().slice(0, 1) || '书'}</span>}
-  </span>;
+  return (
+    <span ref={frame} className={className ? `lazy-cover ${className}` : 'lazy-cover'} aria-hidden="true">
+      {src ? (
+        <img src={src} alt="" />
+      ) : (
+        <span className="lazy-cover-placeholder">{title.trim().slice(0, 1) || '书'}</span>
+      )}
+    </span>
+  );
 }

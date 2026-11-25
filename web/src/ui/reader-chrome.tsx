@@ -2,7 +2,19 @@ import { Select } from './select.tsx';
 import { BusyIndicator } from './busy.tsx';
 import { MIN_BRIGHTNESS } from '../render/theme.ts';
 import { CHINESE_VARIANTS } from '../shared/chinese-variant.ts';
-import { resolveTheme, selectedTheme, themeOptions, themeTokens, selectTheme, selectThemeMode, systemPrefersDark, type ReaderPaper, type ReaderSurface, type ResolvedTheme, type ThemePreference } from '../shared/theme/theme.ts';
+import {
+  resolveTheme,
+  selectedTheme,
+  themeOptions,
+  themeTokens,
+  selectTheme,
+  selectThemeMode,
+  systemPrefersDark,
+  type ReaderPaper,
+  type ReaderSurface,
+  type ResolvedTheme,
+  type ThemePreference,
+} from '../shared/theme/theme.ts';
 import { ThemePicker } from '../shared/theme/theme-picker.tsx';
 import type { ChapterQuality } from '../api/sources.ts';
 import { Sheet } from './sheet.tsx';
@@ -35,7 +47,14 @@ import { Fragment, type ReactNode, type JSX, useLayoutEffect, useRef, useState }
 import { Button, IconButton, SectionTitle, SwitchRow } from './toolkit.tsx';
 import { Icon, type IconName } from './icon.tsx';
 import { ActionMenu } from './action-menu.tsx';
-import { TAP_ACTIONS, isLastMenuCell, normalizeTapZones, tapActionLabel, tapZonePreset, type TapZoneGrid } from './tap-zones.ts';
+import {
+  TAP_ACTIONS,
+  isLastMenuCell,
+  normalizeTapZones,
+  tapActionLabel,
+  tapZonePreset,
+  type TapZoneGrid,
+} from './tap-zones.ts';
 
 /**
  * A table-of-contents row.
@@ -141,7 +160,6 @@ export interface ChromeState {
   lastDayTheme?: AppSettings['theme'];
   lastNightTheme?: AppSettings['theme'];
   readerSections?: AppSettings['readerSections'];
-  liquidGlass?: boolean;
   pageInsets?: AppSettings['pageInsets'];
   chineseVariant?: AppSettings['chineseVariant'];
   fit: AppSettings['fit'];
@@ -169,6 +187,10 @@ export interface ChromeState {
   ttsEngine: AppSettings['ttsEngine'];
   showFitRow: boolean;
   showDirectionRow: boolean;
+  /** How a PDF is read (its pages, or its text as chapters); `none` for every other book. */
+  pdfMode: 'none' | 'pdfjs' | 'enhanced';
+  /** True while a switch is being saved, so a second tap cannot race it. */
+  pdfModeBusy: boolean;
   showEncodingRow: boolean;
   /** Plain-text typography rows; see the `正文` section in the panel. */
   showTxtRows: boolean;
@@ -192,6 +214,8 @@ export interface ChromeHandlers {
   toggleToc(): void;
   toggleSettings(tab?: 'appearance' | 'behavior' | 'speech'): void;
   onSetting(patch: Partial<AppSettings>): void;
+  /** Reads this PDF as its pages or as text; the book re-opens on the same page. */
+  onPdfMode?(mode: 'pdfjs' | 'enhanced'): void;
   onSpeechSetting(patch: Partial<AppSettings>): void;
   onVoice(value: string): void;
   onSpeakFromHere(): void;
@@ -254,7 +278,8 @@ export function ReaderChrome({ state, stage, handlers, tools }: ReaderChromeProp
   const tocList = useRef<HTMLUListElement>(null);
   const footerRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
-    const footer = footerRef.current, screen = footer?.closest<HTMLElement>('.reader-screen');
+    const footer = footerRef.current,
+      screen = footer?.closest<HTMLElement>('.reader-screen');
     if (!footer || !screen) return;
     const measure = () => {
       const height = footer.getBoundingClientRect().height;
@@ -264,13 +289,20 @@ export function ReaderChrome({ state, stage, handlers, tools }: ReaderChromeProp
     const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(measure) : null;
     // Safe-area padding can change while the content box stays the same.
     observer?.observe(footer, { box: 'border-box' });
-    return () => { observer?.disconnect(); screen.style.removeProperty('--reader-footer-height'); };
+    return () => {
+      observer?.disconnect();
+      screen.style.removeProperty('--reader-footer-height');
+    };
   }, [state.chromeVisible]);
   useLayoutEffect(() => {
     if (!state.tocOpen) return;
     const current = tocList.current?.querySelector<HTMLElement>('[aria-current="true"]');
     const body = tocList.current?.closest<HTMLElement>('.sheet-body');
-    if (current && body) body.scrollTop += current.getBoundingClientRect().top - body.getBoundingClientRect().top - (body.clientHeight - current.clientHeight) / 2;
+    if (current && body)
+      body.scrollTop +=
+        current.getBoundingClientRect().top -
+        body.getBoundingClientRect().top -
+        (body.clientHeight - current.clientHeight) / 2;
   }, [state.tocOpen, state.currentSectionId]);
   let hiddenDepth: number | null = null;
   const fixed = state.layout === 'fixed';
@@ -285,53 +317,177 @@ export function ReaderChrome({ state, stage, handlers, tools }: ReaderChromeProp
       {tools}
       <div className="topbar" hidden={!state.chromeVisible}>
         <IconButton label="返回" icon="arrow-left" onClick={handlers.onBack} />
-        <button type="button" className="reader-heading reader-book-heading" aria-label="书籍信息" onClick={handlers.onBookInfo}><strong>{state.title}</strong><span>{state.chapterLabel}</span></button>
+        <button
+          type="button"
+          className="reader-heading reader-book-heading"
+          aria-label="书籍信息"
+          onClick={handlers.onBookInfo}
+        >
+          <strong>{state.title}</strong>
+          <span>{state.chapterLabel}</span>
+        </button>
         <div className="reader-top-actions">
-          {state.canSwitch && <IconButton label="切换书源" icon="sort" disabled={state.switching || state.refreshing || state.refreshingChapter || state.navigating} onClick={() => handlers.onAlternatives?.()} />}
-          {state.canRefresh && <IconButton label="刷新当前章节" icon="refresh" disabled={state.switching || state.refreshing || state.refreshingChapter || state.navigating} onClick={() => handlers.onRefreshChapter?.()} />}
-          {handlers.onToggleBookmark && <IconButton className="reader-bookmark" icon="bookmark" label={state.bookmarked ? '移除本页书签' : '为本页加书签'} pressed={!!state.bookmarked} onClick={handlers.onToggleBookmark} />}
-          {state.aiSummaryAvailable && <IconButton label="AI 总结" icon="file-text" disabled={state.aiSummaryBusy || state.navigating} onClick={() => handlers.onAiSummary?.()} />}
+          {state.canSwitch && (
+            <IconButton
+              label="切换书源"
+              icon="sort"
+              disabled={state.switching || state.refreshing || state.refreshingChapter || state.navigating}
+              onClick={() => handlers.onAlternatives?.()}
+            />
+          )}
+          {state.canRefresh && (
+            <IconButton
+              label="刷新当前章节"
+              icon="refresh"
+              disabled={state.switching || state.refreshing || state.refreshingChapter || state.navigating}
+              onClick={() => handlers.onRefreshChapter?.()}
+            />
+          )}
+          {handlers.onToggleBookmark && (
+            <IconButton
+              className="reader-bookmark"
+              icon="bookmark"
+              label={state.bookmarked ? '移除本页书签' : '为本页加书签'}
+              pressed={!!state.bookmarked}
+              onClick={handlers.onToggleBookmark}
+            />
+          )}
+          {state.aiSummaryAvailable && (
+            <IconButton
+              label="AI 总结"
+              icon="file-text"
+              disabled={state.aiSummaryBusy || state.navigating}
+              onClick={() => handlers.onAiSummary?.()}
+            />
+          )}
         </div>
-        {(state.sourceName || state.chapterUrl) && <div className="reader-source-info"><span>{state.sourceName || '当前书源'}</span>{state.chapterUrl && <a href={state.chapterUrl} target="_blank" rel="noopener noreferrer" title={state.chapterUrl}>{state.chapterUrl}</a>}</div>}
+        {(state.sourceName || state.chapterUrl) && (
+          <div className="reader-source-info">
+            <span>{state.sourceName || '当前书源'}</span>
+            {state.chapterUrl && (
+              <a href={state.chapterUrl} target="_blank" rel="noopener noreferrer" title={state.chapterUrl}>
+                {state.chapterUrl}
+              </a>
+            )}
+          </div>
+        )}
       </div>
-      {state.bookInfoOpen && <Sheet title="书籍信息" onClose={() => handlers.onBookInfo?.()}><article className="book-detail"><h3>{state.title}</h3><p className="book-detail-author">{state.author || '作者未知'}</p><dl><dt>书源</dt><dd>{state.sourceName || (state.canRefresh ? '远程书源' : '本地书籍')}</dd><dt>当前章节</dt><dd>{state.chapterLabel || '暂无信息'}</dd></dl><h4>内容简介</h4><p className="book-detail-description">{state.description || '暂无简介'}</p><ReadingHistory state={state} handlers={handlers} /></article></Sheet>}
+      {state.bookInfoOpen && (
+        <Sheet title="书籍信息" onClose={() => handlers.onBookInfo?.()}>
+          <article className="book-detail">
+            <h3>{state.title}</h3>
+            <p className="book-detail-author">{state.author || '作者未知'}</p>
+            <dl>
+              <dt>书源</dt>
+              <dd>{state.sourceName || (state.canRefresh ? '远程书源' : '本地书籍')}</dd>
+              <dt>当前章节</dt>
+              <dd>{state.chapterLabel || '暂无信息'}</dd>
+            </dl>
+            <h4>内容简介</h4>
+            <p className={`book-detail-description${state.description ? '' : ' book-detail-empty'}`}>
+              {state.description || '暂无简介'}
+            </p>
+            <ReadingHistory state={state} handlers={handlers} />
+          </article>
+        </Sheet>
+      )}
       <FloatingNotice message={state.aiSummaryBusy ? '正在生成章节总结…' : ''} busy />
-      {state.aiSummary && <Sheet title="AI 章节总结" onClose={() => handlers.onAiSummary?.()}><article className="book-detail"><p className="book-detail-description">{state.aiSummary}</p></article></Sheet>}
+      {state.aiSummary && (
+        <Sheet title="AI 章节总结" onClose={() => handlers.onAiSummary?.()}>
+          <article className="book-detail">
+            <p className="book-detail-description">{state.aiSummary}</p>
+          </article>
+        </Sheet>
+      )}
       <StageHost stage={stage} />
-      {state.openFailure && <div className="page-state reader-open-failure" role="alert">
-        <h2>无法打开这本书</h2>
-        <p>{state.openFailure}</p>
-        <div className="empty-actions">
-          {handlers.onRetryOpen && <Button className="primary" onClick={handlers.onRetryOpen}>重试</Button>}
-          <Button onClick={handlers.onBack}>返回</Button>
+      {state.openFailure && (
+        <div className="page-state reader-open-failure" role="alert">
+          <h2>无法打开这本书</h2>
+          <p>{state.openFailure}</p>
+          <div className="empty-actions">
+            {handlers.onRetryOpen && (
+              <Button className="primary" onClick={handlers.onRetryOpen}>
+                重试
+              </Button>
+            )}
+            <Button onClick={handlers.onBack}>返回</Button>
+          </div>
         </div>
-      </div>}
+      )}
       <ReaderIndicators state={state} />
       <div ref={footerRef} className="footer" hidden={!state.chromeVisible}>
         <div className="progress-row">
-          <button type="button" className="nav-chapter" disabled={state.navigating || state.chapterIndex <= 1}
-            onClick={() => handlers.onChapter(-1)}>{fixed ? '上一页' : '上一章'}</button>
-          {fixed && totalPages <= 1 && handlers.onScrubChapter
-            ? <PageScrubber key={state.chapterIndex} page={state.chapterIndex} count={state.chapterCount} disabled={state.navigating} onCommit={handlers.onScrubChapter} />
-            : <div className="reader-scrub">
-              <input className="progress-scrubber" type="range" min={1} max={totalPages} step={1}
-                value={currentPage} aria-label="章节内页数"
-                aria-valuetext={pageLabel} disabled={totalPages <= 1 || state.navigating}
-                onInput={(event) => handlers.onScrubPage(Number((event.currentTarget as HTMLInputElement).value))} />
+          <button
+            type="button"
+            className="nav-chapter"
+            disabled={state.navigating || state.chapterIndex <= 1}
+            onClick={() => handlers.onChapter(-1)}
+          >
+            {fixed ? '上一页' : '上一章'}
+          </button>
+          {fixed && totalPages <= 1 && handlers.onScrubChapter ? (
+            <PageScrubber
+              key={state.chapterIndex}
+              page={state.chapterIndex}
+              count={state.chapterCount}
+              disabled={state.navigating}
+              onCommit={handlers.onScrubChapter}
+            />
+          ) : (
+            <div className="reader-scrub">
+              <input
+                className="progress-scrubber"
+                type="range"
+                min={1}
+                max={totalPages}
+                step={1}
+                value={currentPage}
+                aria-label="章节内页数"
+                aria-valuetext={pageLabel}
+                disabled={totalPages <= 1 || state.navigating}
+                onInput={(event) => handlers.onScrubPage(Number((event.currentTarget as HTMLInputElement).value))}
+              />
               <span className="progress-page">{pageLabel}</span>
-            </div>}
-          <button type="button" className="nav-chapter" disabled={state.navigating || state.chapterIndex >= state.chapterCount}
-            onClick={() => handlers.onChapter(1)}>{fixed ? '下一页' : '下一章'}</button>
+            </div>
+          )}
+          <button
+            type="button"
+            className="nav-chapter"
+            disabled={state.navigating || state.chapterIndex >= state.chapterCount}
+            onClick={() => handlers.onChapter(1)}
+          >
+            {fixed ? '下一页' : '下一章'}
+          </button>
         </div>
         <div className="reader-actions">
           <TopButton icon="menu" label="目录" onClick={handlers.toggleToc} />
-          <TopButton icon="read-aloud" label={state.tts.active ? '朗读中' : '朗读'} pressed={state.tts.active} onClick={() => handlers.toggleSettings('speech')} />
+          <TopButton
+            icon="read-aloud"
+            label={state.tts.active ? '朗读中' : '朗读'}
+            pressed={state.tts.active}
+            onClick={() => handlers.toggleSettings('speech')}
+          />
           <TopButton icon={dark ? 'sun' : 'moon'} label={dark ? '日间' : '夜间'} onClick={toggleNight} />
           <TopButton icon="settings" label="设置" onClick={() => handlers.toggleSettings('appearance')} />
         </div>
       </div>
       {state.tocOpen ? (
-        <Sheet title="目录" subtitle={`${state.toc.length} 章`} onClose={handlers.toggleToc} actions={state.canRefresh ? <IconButton icon="refresh" label="刷新目录" busy={state.refreshing ?? false} disabled={state.refreshing || state.refreshingChapter || state.navigating} onClick={() => handlers.onRefresh?.()} /> : null}>
+        <Sheet
+          title="目录"
+          subtitle={`${state.toc.length} 章`}
+          onClose={handlers.toggleToc}
+          actions={
+            state.canRefresh ? (
+              <IconButton
+                icon="refresh"
+                label="刷新目录"
+                busy={state.refreshing ?? false}
+                disabled={state.refreshing || state.refreshingChapter || state.navigating}
+                onClick={() => handlers.onRefresh?.()}
+              />
+            ) : null
+          }
+        >
           {state.toc.length === 0 ? (
             <div className="empty-state">这本书没有目录</div>
           ) : (
@@ -348,62 +504,199 @@ export function ReaderChrome({ state, stage, handlers, tools }: ReaderChromeProp
                 if (hasChildren && collapsed.has(entry.id)) hiddenDepth = entry.depth;
                 const reachable = entry.spine !== undefined && entry.spine >= 0;
                 const heading = entry.volume && entry.volume !== state.toc[index - 1]?.volume ? entry.volume : '';
-                return (<Fragment key={entry.id + index}>
-                  {heading && <li className="toc-volume" role="presentation">{heading}</li>}
-                  <li data-section={entry.id}>
-                    {hasChildren && <button className="toc-collapse" aria-label={entry.label + (collapsed.has(entry.id) ? ' 展开' : ' 折叠')} aria-expanded={!collapsed.has(entry.id)} onClick={() => { const next = new Set(collapsed); if (next.has(entry.id)) next.delete(entry.id); else next.add(entry.id); setCollapsed(next); }}><Icon name={collapsed.has(entry.id) ? 'chevron-right' : 'chevron-down'} size={16} /></button>}
-                    <button
-                      type="button"
-                      aria-current={entry.id.split('#')[0] === state.currentSectionId}
-                      data-unreachable={reachable ? undefined : 'true'}
-                      disabled={!reachable || state.navigating || state.refreshing || state.refreshingChapter || state.switching}
-                      aria-busy={state.pendingChapterRef === entry.id}
-                      title={reachable ? undefined : '这一章不在当前窗口中'}
-                      style={entry.depth > 0 ? { paddingInlineStart: `${0.6 + entry.depth * 0.9}rem` } : undefined}
-                      onClick={() => handlers.onTocEntry(entry.id)}
-                    >
-                      <span className="toc-index">{index + 1}</span>
-                      <span className="toc-label">{entry.label}{entry.note && <small className="toc-note">{entry.note}</small>}</span>
-                      {entry.cached && <span className="toc-cached">已缓存</span>}
-                      {state.pendingChapterRef === entry.id && <BusyIndicator busy label="加载中…" />}
-                    </button>
-                  </li>
-                </Fragment>);
+                return (
+                  <Fragment key={entry.id + index}>
+                    {heading && (
+                      <li className="toc-volume" role="presentation">
+                        {heading}
+                      </li>
+                    )}
+                    <li data-section={entry.id}>
+                      {hasChildren && (
+                        <button
+                          className="toc-collapse"
+                          aria-label={entry.label + (collapsed.has(entry.id) ? ' 展开' : ' 折叠')}
+                          aria-expanded={!collapsed.has(entry.id)}
+                          onClick={() => {
+                            const next = new Set(collapsed);
+                            if (next.has(entry.id)) next.delete(entry.id);
+                            else next.add(entry.id);
+                            setCollapsed(next);
+                          }}
+                        >
+                          <Icon name={collapsed.has(entry.id) ? 'chevron-right' : 'chevron-down'} size={16} />
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        aria-current={entry.id.split('#')[0] === state.currentSectionId}
+                        data-unreachable={reachable ? undefined : 'true'}
+                        disabled={
+                          !reachable ||
+                          state.navigating ||
+                          state.refreshing ||
+                          state.refreshingChapter ||
+                          state.switching
+                        }
+                        aria-busy={state.pendingChapterRef === entry.id}
+                        title={reachable ? undefined : '这一章不在当前窗口中'}
+                        style={entry.depth > 0 ? { paddingInlineStart: `${0.6 + entry.depth * 0.9}rem` } : undefined}
+                        onClick={() => handlers.onTocEntry(entry.id)}
+                      >
+                        <span className="toc-index">{index + 1}</span>
+                        <span className="toc-label">
+                          {entry.label}
+                          {entry.note && <small className="toc-note">{entry.note}</small>}
+                        </span>
+                        {entry.cached && <span className="toc-cached">已缓存</span>}
+                        {state.pendingChapterRef === entry.id && <BusyIndicator busy label="加载中…" />}
+                      </button>
+                    </li>
+                  </Fragment>
+                );
               })}
             </ul>
           )}
         </Sheet>
       ) : null}
 
-      <FloatingNotice message={state.switching ? "正在获取书源内容…" : ""} busy />
-      {state.alternatives && <Sheet title="切换书源" onClose={() => handlers.onCancelSwitch?.()}><section className="source-switch" aria-label="切换书源">
-            <div className="segmented" role="group" aria-label="换源范围"><Button aria-pressed={state.alternativesPool !== 'backup'} disabled={state.switching === true} onClick={() => handlers.onAlternativePool?.('all')}>主力源</Button><Button aria-pressed={state.alternativesPool === 'backup'} disabled={state.switching === true} onClick={() => handlers.onAlternativePool?.('backup')}>备用源</Button></div>
-            <div className="source-switch-status" role="status"><span>{state.alternativesSearching ? '正在搜索书源' : '书源搜索完成'}</span><strong>{state.alternatives.items.length} 个可选</strong>
-              {state.alternativesSearching && state.alternatives.batch && <progress aria-label="换源搜索进度" max={Math.max(1, state.alternatives.batch.total)} value={state.alternatives.batch.completed} />}
+      <FloatingNotice message={state.switching ? '正在获取书源内容…' : ''} busy />
+      {state.alternatives && (
+        <Sheet title="切换书源" onClose={() => handlers.onCancelSwitch?.()}>
+          <section className="source-switch" aria-label="切换书源">
+            <div className="segmented" role="group" aria-label="换源范围">
+              <Button
+                aria-pressed={state.alternativesPool !== 'backup'}
+                disabled={state.switching === true}
+                onClick={() => handlers.onAlternativePool?.('all')}
+              >
+                主力源
+              </Button>
+              <Button
+                aria-pressed={state.alternativesPool === 'backup'}
+                disabled={state.switching === true}
+                onClick={() => handlers.onAlternativePool?.('backup')}
+              >
+                备用源
+              </Button>
             </div>
-            <p className="source-switch-hint">{state.alternativesPool === 'backup' ? '备用源可能更新较慢或正文不完整，可按需试读。' : '默认只搜主力源，找不到时可试试备用源。'}</p>
-            {!state.alternatives.items.length && !state.alternativesSearching && <p className="catalog-empty">没有找到书名、作者匹配的其它书源。</p>}
-            <div className="source-switch-list">{state.alternatives.items.map(entry => <button type="button" className="source-switch-card" key={entry.ref} aria-label={'查看此源目录：' + (entry.sourceName || entry.title)} disabled={state.switching === true} onClick={() => handlers.onAlternative?.(entry.ref, entry.title)}>
-              <span className="source-switch-card-heading"><strong>{entry.sourceName || '未命名书源'}</strong><Icon name="chevron-right" /></span>
-              <span className="source-switch-book">{entry.title}<span> · {entry.authors?.join(' / ') || '作者未知'}</span></span>
-              <span className="source-switch-chapter"><span>网站更新</span>{entry.latestChapter || '暂无章节信息'}</span>
-              {state.alternativeChecks?.[entry.ref] && <span className="source-switch-chapter">已检测 {state.alternativeChecks[entry.ref]!.chapter}：{state.alternativeChecks[entry.ref]!.quality
-                ? `${state.alternativeChecks[entry.ref]!.quality!.characters} 字符 · ${state.alternativeChecks[entry.ref]!.quality!.elapsedMs} ms`
-                : state.alternativeChecks[entry.ref]!.error}</span>}
-            </button>)}</div>
-            {!!state.alternatives.errors?.length && <CatalogFeedback page={state.alternatives} merged compact searching={!!state.alternativesSearching} />}
-            {state.alternativeChapters && <Sheet title="选择阅读章节" size="compact" busy={!!state.switching} onClose={() => handlers.onCancelAlternative?.()}><div className="alternative-preview"><h4>{state.alternativeTitle}</h4><label>切换后阅读的章节<Select value={state.alternativeChapter ?? ''} disabled={state.switching === true} onChange={event => handlers.onAlternativeChapter?.(event.currentTarget.value)}>
-              <option key="empty" value="">请选择章节</option>{state.alternativeChapters.map(chapter => <option key={chapter.id} value={chapter.id}>{chapter.title}</option>)}
-            </Select></label>
-              {state.alternativeLatest && <p>最新章节：{state.alternativeLatest}</p>}
-              <Button disabled={state.switching || state.alternativeQualityBusy || !state.alternativeChapter} onClick={() => handlers.onCheckAlternative?.()}>{state.alternativeQualityBusy ? '正在检测正文…' : '检测所选章节 / 重试'}</Button>
-              {state.alternativeQuality && <div role="status" className="chapter-quality"><strong>已获取正文</strong><p>{state.alternativeQuality.characters} 字符 · {state.alternativeQuality.images} 张图片 · {(state.alternativeQuality.bytes / 1024).toFixed(1)} KiB · {state.alternativeQuality.elapsedMs} ms</p><p>完整性未核验，发现缺段或串文请使用其他书源。</p></div>}
-              {state.alternativeQualityError && <p role="alert">{state.alternativeQualityError}</p>}
-              <Button type="button" disabled={state.switching || state.alternativeQualityBusy || !state.alternativeChapter} onClick={() => handlers.onSwitchSource?.()}>确认换源并阅读</Button></div></Sheet>}
-          </section></Sheet>}
+            <div className="source-switch-status" role="status">
+              <span>{state.alternativesSearching ? '正在搜索书源' : '书源搜索完成'}</span>
+              <strong>{state.alternatives.items.length} 个可选</strong>
+              {state.alternativesSearching && state.alternatives.batch && (
+                <progress
+                  aria-label="换源搜索进度"
+                  max={Math.max(1, state.alternatives.batch.total)}
+                  value={state.alternatives.batch.completed}
+                />
+              )}
+            </div>
+            <p className="source-switch-hint">
+              {state.alternativesPool === 'backup'
+                ? '备用源可能更新较慢或正文不完整，可按需试读。'
+                : '默认只搜主力源，找不到时可试试备用源。'}
+            </p>
+            {!state.alternatives.items.length && !state.alternativesSearching && (
+              <p className="catalog-empty">没有找到书名、作者匹配的其它书源。</p>
+            )}
+            <div className="source-switch-list">
+              {state.alternatives.items.map((entry) => (
+                <button
+                  type="button"
+                  className="source-switch-card"
+                  key={entry.ref}
+                  aria-label={'查看此源目录：' + (entry.sourceName || entry.title)}
+                  disabled={state.switching === true}
+                  onClick={() => handlers.onAlternative?.(entry.ref, entry.title)}
+                >
+                  <span className="source-switch-card-heading">
+                    <strong>{entry.sourceName || '未命名书源'}</strong>
+                    <Icon name="chevron-right" />
+                  </span>
+                  <span className="source-switch-book">
+                    {entry.title}
+                    <span> · {entry.authors?.join(' / ') || '作者未知'}</span>
+                  </span>
+                  <span className="source-switch-chapter">
+                    <span>网站更新</span>
+                    {entry.latestChapter || '暂无章节信息'}
+                  </span>
+                  {state.alternativeChecks?.[entry.ref] && (
+                    <span className="source-switch-chapter">
+                      已检测 {state.alternativeChecks[entry.ref]!.chapter}：
+                      {state.alternativeChecks[entry.ref]!.quality
+                        ? `${state.alternativeChecks[entry.ref]!.quality!.characters} 字符 · ${state.alternativeChecks[entry.ref]!.quality!.elapsedMs} ms`
+                        : state.alternativeChecks[entry.ref]!.error}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+            {!!state.alternatives.errors?.length && (
+              <CatalogFeedback page={state.alternatives} merged compact searching={!!state.alternativesSearching} />
+            )}
+            {state.alternativeChapters && (
+              <Sheet
+                title="选择阅读章节"
+                size="compact"
+                busy={!!state.switching}
+                onClose={() => handlers.onCancelAlternative?.()}
+              >
+                <div className="alternative-preview">
+                  <h4>{state.alternativeTitle}</h4>
+                  <label>
+                    切换后阅读的章节
+                    <Select
+                      value={state.alternativeChapter ?? ''}
+                      disabled={state.switching === true}
+                      onChange={(event) => handlers.onAlternativeChapter?.(event.currentTarget.value)}
+                    >
+                      <option key="empty" value="">
+                        请选择章节
+                      </option>
+                      {state.alternativeChapters.map((chapter) => (
+                        <option key={chapter.id} value={chapter.id}>
+                          {chapter.title}
+                        </option>
+                      ))}
+                    </Select>
+                  </label>
+                  {state.alternativeLatest && <p>最新章节：{state.alternativeLatest}</p>}
+                  <Button
+                    disabled={state.switching || state.alternativeQualityBusy || !state.alternativeChapter}
+                    onClick={() => handlers.onCheckAlternative?.()}
+                  >
+                    {state.alternativeQualityBusy ? '正在检测正文…' : '检测所选章节 / 重试'}
+                  </Button>
+                  {state.alternativeQuality && (
+                    <div role="status" className="chapter-quality">
+                      <strong>已获取正文</strong>
+                      <p>
+                        {state.alternativeQuality.characters} 字符 · {state.alternativeQuality.images} 张图片 ·{' '}
+                        {(state.alternativeQuality.bytes / 1024).toFixed(1)} KiB · {state.alternativeQuality.elapsedMs}{' '}
+                        ms
+                      </p>
+                      <p>完整性未核验，发现缺段或串文请使用其他书源。</p>
+                    </div>
+                  )}
+                  {state.alternativeQualityError && <p role="alert">{state.alternativeQualityError}</p>}
+                  <Button
+                    type="button"
+                    disabled={state.switching || state.alternativeQualityBusy || !state.alternativeChapter}
+                    onClick={() => handlers.onSwitchSource?.()}
+                  >
+                    确认换源并阅读
+                  </Button>
+                </div>
+              </Sheet>
+            )}
+          </section>
+        </Sheet>
+      )}
 
-      {state.settingsOpen && <ReaderSettings key={`${state.settingsTab}-${state.layout}`} state={state} handlers={handlers} />}
-
+      {state.settingsOpen && (
+        <ReaderSettings key={`${state.settingsTab}-${state.layout}`} state={state} handlers={handlers} />
+      )}
     </>
   );
 }
@@ -427,21 +720,44 @@ function ReadingHistory({ state, handlers }: { state: ChromeState; handlers: Chr
   return (
     <section className="reading-history" aria-label="阅读记录">
       <h4>阅读记录</h4>
-      {state.historyState === 'loading' && <p className="muted" role="status">正在读取阅读记录…</p>}
+      {state.historyState === 'loading' && (
+        <p className="muted" role="status">
+          正在读取阅读记录…
+        </p>
+      )}
       {state.historyState === 'offline' && <p className="muted">离线时无法读取阅读记录，连上服务端后再试。</p>}
-      {state.historyState === 'error' && <p className="muted" role="alert">阅读记录读取失败。 <Button onClick={() => handlers.onRetryHistory?.()}>重试</Button></p>}
-      {state.historyState === 'ready' && (state.history?.length
-        ? <ul>{state.history.map((entry, index) => {
-          const current = entry.locator === state.historyCurrent;
-          return <li key={`${entry.updatedAt}-${index}`}>
-            <button type="button" disabled={current} aria-current={current ? 'location' : undefined} onClick={() => handlers.onRestoreHistory?.(entry.locator)}>
-              <strong>{entry.chapterTitle || '未命名章节'}</strong>
-              <small>{Math.round(Math.max(0, Math.min(1, entry.percentage)) * 100)}% · {entry.device || '未知设备'} · {formatDate(entry.updatedAt)}</small>
-              {current && <span className="reading-history-current">当前</span>}
-            </button>
-          </li>;
-        })}</ul>
-        : <p className="muted">还没有阅读记录。</p>)}
+      {state.historyState === 'error' && (
+        <p className="muted" role="alert">
+          阅读记录读取失败。 <Button onClick={() => handlers.onRetryHistory?.()}>重试</Button>
+        </p>
+      )}
+      {state.historyState === 'ready' &&
+        (state.history?.length ? (
+          <ul>
+            {state.history.map((entry, index) => {
+              const current = entry.locator === state.historyCurrent;
+              return (
+                <li key={`${entry.updatedAt}-${index}`}>
+                  <button
+                    type="button"
+                    disabled={current}
+                    aria-current={current ? 'location' : undefined}
+                    onClick={() => handlers.onRestoreHistory?.(entry.locator)}
+                  >
+                    <strong>{entry.chapterTitle || '未命名章节'}</strong>
+                    <small>
+                      {Math.round(Math.max(0, Math.min(1, entry.percentage)) * 100)}% · {entry.device || '未知设备'} ·{' '}
+                      {formatDate(entry.updatedAt)}
+                    </small>
+                    {current && <span className="reading-history-current">当前</span>}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <p className="muted">还没有阅读记录。</p>
+        ))}
     </section>
   );
 }
@@ -464,93 +780,368 @@ const FONT_SIZE_BASE = 20;
 
 type SettingsSection = 'quick' | 'text' | 'theme' | 'behavior' | 'display' | 'speech';
 const SETTINGS_TITLES: Record<SettingsSection, string> = {
-  quick: '阅读设置', text: '字体与间距', theme: '全部配色', behavior: '翻页与点击', display: '显示设置', speech: '朗读',
+  quick: '阅读设置',
+  text: '字体与间距',
+  theme: '全部配色',
+  behavior: '翻页与点击',
+  display: '显示设置',
+  speech: '朗读',
 };
 
 function ReaderSettings({ state, handlers }: { state: ChromeState; handlers: ChromeHandlers }): JSX.Element {
   const [section, setSection] = useState<SettingsSection>(state.settingsTab === 'speech' ? 'speech' : 'quick');
-  const theme = handlers.theme(), systemDark = systemPrefersDark();
+  const theme = handlers.theme(),
+    systemDark = systemPrefersDark();
   const selected = selectedTheme(theme.preference, systemDark);
   const favorites = ['paper-white', 'local-kraft-day', 'paper-green', 'local-wechat-night'] as const;
-  return <Sheet className="reader-settings" title={SETTINGS_TITLES[section]} onClose={() => handlers.toggleSettings(state.settingsTab)}
-    actions={section !== 'quick' ? <IconButton icon="arrow-left" label="返回阅读设置" onClick={() => setSection('quick')} /> : null}
-    footer={section === 'quick' ? (<nav className="reader-settings-links" aria-label="详细阅读设置">
-        <button type="button" onClick={() => setSection('behavior')}><span>翻页与点击</span><Icon name="chevron-right" size={16} /></button>
-        <button type="button" onClick={() => setSection('display')}><span>显示设置</span><Icon name="chevron-right" size={16} /></button>
-        <button type="button" onClick={() => setSection('speech')}><span>朗读设置</span><Icon name="chevron-right" size={16} /></button>
-        {handlers.onTools && <button type="button" onClick={handlers.onTools}><span>阅读工具</span><Icon name="chevron-right" size={16} /></button>}
-      </nav>) : null}>
-    {section === 'quick' ? <div className="reader-settings-home">
-      <SliderRow label="页面亮度" value={state.brightness} min={MIN_BRIGHTNESS} max={1} step={0.05}
-        format={value => `${Math.round(value * 100)}%`} onChange={brightness => handlers.onSetting({ brightness })} />
-      {state.layout !== 'fixed' && <div className="reader-font-size">
-        <span>字号</span>
-        <div className="reader-size-stepper" role="group" aria-label="字号">
-          <IconButton icon="minus" label="减小字号" disabled={state.fontScale <= .8} onClick={() => handlers.onSetting({ fontScale: Math.max(.8, Math.round((state.fontScale - .05) * 100) / 100) })} />
-          <output aria-live="polite" aria-label="当前字号">{Math.round(state.fontScale * FONT_SIZE_BASE)}</output>
-          <IconButton icon="plus" label="增大字号" disabled={state.fontScale >= 2.2} onClick={() => handlers.onSetting({ fontScale: Math.min(2.2, Math.round((state.fontScale + .05) * 100) / 100) })} />
+  return (
+    <Sheet
+      className={`reader-settings${section === 'speech' ? ' speech-sheet' : ''}`}
+      title={SETTINGS_TITLES[section]}
+      onClose={() => handlers.toggleSettings(state.settingsTab)}
+      actions={
+        section !== 'quick' ? (
+          <IconButton icon="arrow-left" label="返回阅读设置" onClick={() => setSection('quick')} />
+        ) : null
+      }
+      footer={
+        section === 'quick' ? (
+          <nav className="reader-settings-links" aria-label="详细阅读设置">
+            <button type="button" onClick={() => setSection('behavior')}>
+              <span>翻页与点击</span>
+              <Icon name="chevron-right" size={16} />
+            </button>
+            <button type="button" onClick={() => setSection('display')}>
+              <span>显示设置</span>
+              <Icon name="chevron-right" size={16} />
+            </button>
+            <button type="button" onClick={() => setSection('speech')}>
+              <span>朗读设置</span>
+              <Icon name="chevron-right" size={16} />
+            </button>
+            {handlers.onTools && (
+              <button type="button" onClick={handlers.onTools}>
+                <span>阅读工具</span>
+                <Icon name="chevron-right" size={16} />
+              </button>
+            )}
+          </nav>
+        ) : null
+      }
+    >
+      {section === 'quick' ? (
+        <div className="reader-settings-home">
+          <SliderRow
+            label="页面亮度"
+            value={state.brightness}
+            min={MIN_BRIGHTNESS}
+            max={1}
+            step={0.05}
+            format={(value) => `${Math.round(value * 100)}%`}
+            onChange={(brightness) => handlers.onSetting({ brightness })}
+          />
+          {state.layout !== 'fixed' && (
+            <div className="reader-font-size">
+              <span>字号</span>
+              <div className="reader-size-stepper" role="group" aria-label="字号">
+                <IconButton
+                  icon="minus"
+                  label="减小字号"
+                  disabled={state.fontScale <= 0.8}
+                  onClick={() =>
+                    handlers.onSetting({ fontScale: Math.max(0.8, Math.round((state.fontScale - 0.05) * 100) / 100) })
+                  }
+                />
+                <output aria-live="polite" aria-label="当前字号">
+                  {Math.round(state.fontScale * FONT_SIZE_BASE)}
+                </output>
+                <IconButton
+                  icon="plus"
+                  label="增大字号"
+                  disabled={state.fontScale >= 2.2}
+                  onClick={() =>
+                    handlers.onSetting({ fontScale: Math.min(2.2, Math.round((state.fontScale + 0.05) * 100) / 100) })
+                  }
+                />
+              </div>
+              <button type="button" className="reader-font-more" onClick={() => setSection('text')}>
+                字体与间距
+                <Icon name="chevron-right" size={14} />
+              </button>
+            </div>
+          )}
+          <div className="reader-quick-themes" role="group" aria-label="常用配色">
+            {favorites.map((id) => {
+              const option = themeOptions.find((item) => item.value === id)!;
+              const tokens = themeTokens(resolveTheme(id, theme.surface.mode));
+              return (
+                <button
+                  type="button"
+                  key={id}
+                  aria-label={`配色：${option.label}`}
+                  aria-pressed={selected === id}
+                  onClick={() => handlers.onTheme(selectTheme(theme.preference, id))}
+                >
+                  <span className="reader-quick-color" style={{ backgroundColor: tokens.bg, color: tokens.ink }}>
+                    {selected === id && <Icon name="check" size={20} />}
+                  </span>
+                  <span>{option.label}</span>
+                </button>
+              );
+            })}
+            <button type="button" className="reader-all-themes" onClick={() => setSection('theme')}>
+              <span className="reader-quick-color">
+                <Icon name="palette" size={20} />
+              </span>
+              <span>更多配色</span>
+            </button>
+          </div>
+          <SwitchRow
+            label="跟随系统明暗"
+            hint=""
+            checked={theme.preference.mode === 'system'}
+            onChange={(follow) =>
+              handlers.onTheme(selectThemeMode(theme.preference, follow ? 'system' : theme.surface.mode))
+            }
+          />
         </div>
-        <button type="button" className="reader-font-more" onClick={() => setSection('text')}>字体与间距<Icon name="chevron-right" size={14} /></button>
-      </div>}
-      <div className="reader-quick-themes" role="group" aria-label="常用配色">
-        {favorites.map(id => {
-          const option = themeOptions.find(item => item.value === id)!;
-          const tokens = themeTokens(resolveTheme(id, theme.surface.mode));
-          return <button type="button" key={id} aria-label={`配色：${option.label}`} aria-pressed={selected === id} onClick={() => handlers.onTheme(selectTheme(theme.preference, id))}>
-            <span className="reader-quick-color" style={{ backgroundColor: tokens.bg, color: tokens.ink }}>{selected === id && <Icon name="check" size={20} />}</span>
-            <span>{option.label}</span>
-          </button>;
-        })}
-        <button type="button" className="reader-all-themes" onClick={() => setSection('theme')}><span className="reader-quick-color"><Icon name="palette" size={20} /></span><span>更多配色</span></button>
-      </div>
-      <SwitchRow label="跟随系统明暗" hint="" checked={theme.preference.mode === 'system'} onChange={follow => handlers.onTheme(selectThemeMode(theme.preference, follow ? 'system' : theme.surface.mode))} />
-
-    </div> : section === 'theme' ? <ThemePicker preference={theme.preference} systemDark={systemDark} onChange={handlers.onTheme} />
-      : section === 'speech' ? <>{state.tts.active && <SpeechBar state={state.tts} handlers={handlers} />}<SpeechSettings state={state} handlers={handlers} /></>
-      : <SettingsBody section={section} state={state} handlers={handlers} />}
-  </Sheet>;
+      ) : section === 'theme' ? (
+        <ThemePicker preference={theme.preference} systemDark={systemDark} onChange={handlers.onTheme} />
+      ) : section === 'speech' ? (
+        <>
+          <SpeechSettings state={state} handlers={handlers} />
+        </>
+      ) : (
+        <SettingsBody section={section} state={state} handlers={handlers} />
+      )}
+    </Sheet>
+  );
 }
 
-function SettingsBody({ section, state, handlers }: { section: 'text' | 'behavior' | 'display'; state: ChromeState; handlers: ChromeHandlers }): JSX.Element {
-  if (section === 'text') return <>
-    <SliderRow label="字号" value={Math.round(state.fontScale * FONT_SIZE_BASE)} min={16} max={44} step={1} format={String} onChange={fontSize => handlers.onSetting({ fontScale: fontSize / FONT_SIZE_BASE })} />
-    <SelectRow label="字体" options={[
-      { value: 'inherit', label: '原书' },
-      { value: 'system-ui, -apple-system, "Noto Sans SC", sans-serif', label: '系统黑体' },
-      { value: '"Songti SC", "Noto Serif SC", "Source Han Serif SC", SimSun, serif', label: '宋体' },
-      { value: '"Kaiti SC", KaiTi, "Noto Serif SC", serif', label: '楷体' },
-      { value: '"PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif', label: '苹方/雅黑' },
-    ]} value={state.fontFamily} onChange={fontFamily => handlers.onSetting({ fontFamily })} />
-    <SegmentedRow label="行距" options={LINE_HEIGHT_LADDER.map(value => ({ value, label: value === 'inherit' ? '原书' : value }))} value={state.lineHeight} onChange={lineHeight => handlers.onSetting({ lineHeight })} />
-    <SegmentedRow label="对齐" options={[{ value: 'inherit', label: '原书' }, { value: 'start', label: '左对齐' }, { value: 'justify', label: '两端对齐' }]} value={state.textAlign} onChange={value => handlers.onSetting({ textAlign: value as AppSettings['textAlign'] })} />
-    <SegmentedRow label="繁简转换（全局）" options={[...CHINESE_VARIANTS]} value={state.chineseVariant ?? 'original'} onChange={value => handlers.onSetting({ chineseVariant: value as AppSettings['chineseVariant'] })} />
-    {state.showTxtRows && <>
-      <SliderRow label="段落缩进" value={state.txtIndent} min={0} max={4} step={.25} format={value => value === 0 ? '无' : `${value.toFixed(2)} 字`} onChange={txtIndent => handlers.onSetting({ txtIndent })} />
-      <SliderRow label="段间距" value={state.txtParagraphGap} min={0} max={1.5} step={.05} format={value => value === 0 ? '无' : `${value.toFixed(2)} 字`} onChange={txtParagraphGap => handlers.onSetting({ txtParagraphGap })} />
-      {state.showEncodingRow && <SelectRow label="TXT 编码" options={['', 'utf-8', 'gb18030', 'big5', 'utf-16le'].map(value => ({ value, label: value || '自动识别' }))} value={state.txtEncoding} onChange={txtEncoding => handlers.onSetting({ txtEncoding })} />}
-    </>}
-  </>;
-  if (section === 'display') return <>
-    <SectionTitle>页面留白</SectionTitle>
-    {state.layout !== 'fixed' && <SliderRow label="基础页边距" value={state.pageMargin} min={0} max={4} step={.25} format={value => `${value.toFixed(2)}rem`} onChange={pageMargin => handlers.onSetting({ pageMargin })} />}
-    {(['top', 'bottom', 'left', 'right'] as const).map((edge, index) => <SliderRow key={edge} label={['上边距', '下边距', '左边距', '右边距'][index]!} value={(state.pageInsets ?? DEFAULT_APP_SETTINGS.pageInsets)[edge]} min={0} max={80} step={2} format={value => `${value}px`} onChange={value => handlers.onSetting({ pageInsets: { ...(state.pageInsets ?? DEFAULT_APP_SETTINGS.pageInsets), [edge]: value } })} />)}
-    <SectionTitle>页眉页脚</SectionTitle>
-    {READOUT_FIELDS.map(({ key, label }) => <SelectRow key={key} label={label} options={READOUT_OPTIONS} value={state[key] ?? DEFAULT_APP_SETTINGS[key]} onChange={value => handlers.onSetting({ [key]: value as ReadoutMode })} />)}
-    <SectionTitle>界面效果</SectionTitle>
-    <SwitchRow label="液态玻璃" hint="控制栏和面板呈现半透明玻璃效果" checked={state.liquidGlass ?? false} onChange={liquidGlass => handlers.onSetting({ liquidGlass })} />
-  </>;
-  return <>
-    {state.layout !== 'fixed' && <SegmentedRow label="翻页方式" options={[{ value: 'scroll', label: '滚动' }, { value: 'paged', label: '翻页' }]} value={state.mode} onChange={value => handlers.onSetting({ mode: value as AppSettings['mode'] })} />}
-    {state.layout !== 'fixed' && state.mode === 'scroll' && <SegmentedRow label="专注模式" options={[{ value: 'off', label: '关' }, { value: 'on', label: '开' }]} value={state.focusMode ? 'on' : 'off'} onChange={value => handlers.onSetting({ focus: value === 'on' })} />}
-    <SegmentedRow label="翻页动画" options={[{ value: 'slide', label: '滑动' }, { value: 'fade', label: '淡入' }, { value: 'none', label: '无' }]} value={state.pageAnimation} onChange={value => handlers.onSetting({ pageAnimation: value as AppSettings['pageAnimation'] })} />
-    <TapZoneEditor grid={normalizeTapZones(state.tapZones, state.tapZone)} onChange={tapZones => handlers.onSetting({ tapZones })} />
-    {state.showFitRow && <SegmentedRow label="图片适配" options={[{ value: 'contain', label: '完整' }, { value: 'width', label: '适宽' }]} value={state.fit} onChange={value => handlers.onSetting({ fit: value as AppSettings['fit'] })} />}
-    {state.showDirectionRow && <SegmentedRow label="翻页方向" options={[{ value: 'ltr', label: '左→右' }, { value: 'rtl', label: '右→左' }]} value={state.comicDirection} onChange={value => handlers.onSetting({ comicDirection: value as AppSettings['comicDirection'] })} />}
-    <Button onClick={() => { handlers.onSetting({ pageAnimation: 'none', mode: 'paged' }); handlers.onTheme(selectTheme(handlers.theme().preference, 'paper-white')); }}>应用电纸书预设</Button>
-    <p className="muted">白纸主题、分页、无翻页动画。屏幕刷新由设备控制。</p>
-  </>;
+function SettingsBody({
+  section,
+  state,
+  handlers,
+}: {
+  section: 'text' | 'behavior' | 'display';
+  state: ChromeState;
+  handlers: ChromeHandlers;
+}): JSX.Element {
+  if (section === 'text')
+    return (
+      <>
+        <SliderRow
+          label="字号"
+          value={Math.round(state.fontScale * FONT_SIZE_BASE)}
+          min={16}
+          max={44}
+          step={1}
+          format={String}
+          onChange={(fontSize) => handlers.onSetting({ fontScale: fontSize / FONT_SIZE_BASE })}
+        />
+        <SelectRow
+          label="字体"
+          options={[
+            { value: 'inherit', label: '原书' },
+            { value: 'system-ui, -apple-system, "Noto Sans SC", sans-serif', label: '系统黑体' },
+            { value: '"Songti SC", "Noto Serif SC", "Source Han Serif SC", SimSun, serif', label: '宋体' },
+            { value: '"Kaiti SC", KaiTi, "Noto Serif SC", serif', label: '楷体' },
+            { value: '"PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif', label: '苹方/雅黑' },
+          ]}
+          value={state.fontFamily}
+          onChange={(fontFamily) => handlers.onSetting({ fontFamily })}
+        />
+        <SegmentedRow
+          label="行距"
+          options={LINE_HEIGHT_LADDER.map((value) => ({ value, label: value === 'inherit' ? '原书' : value }))}
+          value={state.lineHeight}
+          onChange={(lineHeight) => handlers.onSetting({ lineHeight })}
+        />
+        <SegmentedRow
+          label="对齐"
+          options={[
+            { value: 'inherit', label: '原书' },
+            { value: 'start', label: '左对齐' },
+            { value: 'justify', label: '两端对齐' },
+          ]}
+          value={state.textAlign}
+          onChange={(value) => handlers.onSetting({ textAlign: value as AppSettings['textAlign'] })}
+        />
+        <SegmentedRow
+          label="繁简转换（全局）"
+          options={[...CHINESE_VARIANTS]}
+          value={state.chineseVariant ?? 'original'}
+          onChange={(value) => handlers.onSetting({ chineseVariant: value as AppSettings['chineseVariant'] })}
+        />
+        {state.showTxtRows && (
+          <>
+            <SliderRow
+              label="段落缩进"
+              value={state.txtIndent}
+              min={0}
+              max={4}
+              step={0.25}
+              format={(value) => (value === 0 ? '无' : `${value.toFixed(2)} 字`)}
+              onChange={(txtIndent) => handlers.onSetting({ txtIndent })}
+            />
+            <SliderRow
+              label="段间距"
+              value={state.txtParagraphGap}
+              min={0}
+              max={1.5}
+              step={0.05}
+              format={(value) => (value === 0 ? '无' : `${value.toFixed(2)} 字`)}
+              onChange={(txtParagraphGap) => handlers.onSetting({ txtParagraphGap })}
+            />
+            {state.showEncodingRow && (
+              <SelectRow
+                label="TXT 编码"
+                options={['', 'utf-8', 'gb18030', 'big5', 'utf-16le'].map((value) => ({
+                  value,
+                  label: value || '自动识别',
+                }))}
+                value={state.txtEncoding}
+                onChange={(txtEncoding) => handlers.onSetting({ txtEncoding })}
+              />
+            )}
+          </>
+        )}
+      </>
+    );
+  if (section === 'display')
+    return (
+      <>
+        <SectionTitle>页面留白</SectionTitle>
+        {state.layout !== 'fixed' && (
+          <SliderRow
+            label="基础页边距"
+            value={state.pageMargin}
+            min={0}
+            max={4}
+            step={0.25}
+            format={(value) => `${value.toFixed(2)}rem`}
+            onChange={(pageMargin) => handlers.onSetting({ pageMargin })}
+          />
+        )}
+        {(['top', 'bottom', 'left', 'right'] as const).map((edge, index) => (
+          <SliderRow
+            key={edge}
+            label={['上边距', '下边距', '左边距', '右边距'][index]!}
+            value={(state.pageInsets ?? DEFAULT_APP_SETTINGS.pageInsets)[edge]}
+            min={0}
+            max={80}
+            step={2}
+            format={(value) => `${value}px`}
+            onChange={(value) =>
+              handlers.onSetting({
+                pageInsets: { ...(state.pageInsets ?? DEFAULT_APP_SETTINGS.pageInsets), [edge]: value },
+              })
+            }
+          />
+        ))}
+        <SectionTitle>页眉页脚</SectionTitle>
+        {READOUT_FIELDS.map(({ key, label }) => (
+          <SelectRow
+            key={key}
+            label={label}
+            options={READOUT_OPTIONS}
+            value={state[key] ?? DEFAULT_APP_SETTINGS[key]}
+            onChange={(value) => handlers.onSetting({ [key]: value as ReadoutMode })}
+          />
+        ))}
+      </>
+    );
+  return (
+    <>
+      {state.layout !== 'fixed' && (
+        <SegmentedRow
+          label="翻页方式"
+          options={[
+            { value: 'scroll', label: '滚动' },
+            { value: 'paged', label: '翻页' },
+          ]}
+          value={state.mode}
+          onChange={(value) => handlers.onSetting({ mode: value as AppSettings['mode'] })}
+        />
+      )}
+      {state.layout !== 'fixed' && state.mode === 'scroll' && (
+        <SegmentedRow
+          label="专注模式"
+          options={[
+            { value: 'off', label: '关' },
+            { value: 'on', label: '开' },
+          ]}
+          value={state.focusMode ? 'on' : 'off'}
+          onChange={(value) => handlers.onSetting({ focus: value === 'on' })}
+        />
+      )}
+      <SegmentedRow
+        label="翻页动画"
+        options={[
+          { value: 'slide', label: '滑动' },
+          { value: 'fade', label: '淡入' },
+          { value: 'none', label: '无' },
+        ]}
+        value={state.pageAnimation}
+        onChange={(value) => handlers.onSetting({ pageAnimation: value as AppSettings['pageAnimation'] })}
+      />
+      <TapZoneEditor
+        grid={normalizeTapZones(state.tapZones, state.tapZone)}
+        onChange={(tapZones) => handlers.onSetting({ tapZones })}
+      />
+      {state.pdfMode !== 'none' && handlers.onPdfMode ? (
+        <>
+          <SegmentedRow
+            label="PDF 解析"
+            options={[
+              { value: 'pdfjs', label: '原版页面' },
+              { value: 'enhanced', label: '增强解析' },
+            ]}
+            value={state.pdfMode}
+            disabled={state.pdfModeBusy}
+            onChange={(value) => handlers.onPdfMode!(value as 'pdfjs' | 'enhanced')}
+          />
+          <p className="reader-setting-hint">
+            {state.pdfMode === 'enhanced'
+              ? '按书签把文字整理成章节，可调字号、朗读、批注，并显示插图、表格和公式。'
+              : '保留原书版式；切到增强解析可像 EPUB 一样阅读（仅这本书，下次打开仍然有效）。'}
+          </p>
+        </>
+      ) : null}
+      {state.showFitRow && (
+        <SegmentedRow
+          label="图片适配"
+          options={[
+            { value: 'contain', label: '完整' },
+            { value: 'width', label: '适宽' },
+          ]}
+          value={state.fit}
+          onChange={(value) => handlers.onSetting({ fit: value as AppSettings['fit'] })}
+        />
+      )}
+      {state.showDirectionRow && (
+        <SegmentedRow
+          label="翻页方向"
+          options={[
+            { value: 'ltr', label: '左→右' },
+            { value: 'rtl', label: '右→左' },
+          ]}
+          value={state.comicDirection}
+          onChange={(value) => handlers.onSetting({ comicDirection: value as AppSettings['comicDirection'] })}
+        />
+      )}
+      <Button
+        onClick={() => {
+          handlers.onSetting({ pageAnimation: 'none', mode: 'paged' });
+          handlers.onTheme(selectTheme(handlers.theme().preference, 'paper-white'));
+        }}
+      >
+        应用电纸书预设
+      </Button>
+      <p className="muted">白纸主题、分页、无翻页动画。屏幕刷新由设备控制。</p>
+    </>
+  );
 }
-
 
 /**
  * The read-aloud section.
@@ -565,17 +1156,18 @@ function SpeechSettings({ state, handlers }: { state: ChromeState; handlers: Chr
   if (state.speechUnavailable) {
     return (
       <div className="notice">
-        当前环境没有可用的朗读引擎。请管理员在「我的 → 系统设置 → 服务配置 → HTTP 朗读」配置语音服务，或启用设备的系统语音。
+        当前环境没有可用的朗读引擎。请管理员在「我的 → 系统设置 → 服务配置 → HTTP
+        朗读」配置语音服务，或启用设备的系统语音。
       </div>
     );
   }
   const RATE_PRESETS = [0.8, 1, 1.2, 1.5, 2];
+  const rates = RATE_PRESETS.includes(state.ttsRate)
+    ? RATE_PRESETS
+    : [...RATE_PRESETS, state.ttsRate].sort((a, b) => a - b);
   return (
     <>
-      {/* The thing a reader opens this sheet to do comes first; the tuning follows. */}
-      <button type="button" className="button primary speech-start" onClick={handlers.onSpeakFromHere}>
-        从当前位置朗读
-      </button>
+      <SpeechBar state={state.tts} chapterLabel={state.chapterLabel} handlers={handlers} />
       {/* The engine picker only appears when there is a choice to make. One
           engine is not a setting. */}
       {state.showEngineRow ? (
@@ -586,21 +1178,17 @@ function SpeechSettings({ state, handlers }: { state: ChromeState; handlers: Chr
           onChange={(value) => handlers.onSwitchEngine(value as AppSettings['ttsEngine'])}
         />
       ) : null}
-      <SliderRow
-        label="语速"
-        value={state.ttsRate}
-        min={0.5}
-        max={2.5}
-        step={0.1}
-        format={(value) => `${value.toFixed(1)}×`}
-        onChange={(value) => handlers.onSpeechSetting({ ttsRate: value })}
-      />
-      <SegmentedRow
-        label="常用"
-        options={RATE_PRESETS.map((value) => ({ value: String(value), label: `${value.toFixed(1)}×` }))}
-        value={String(RATE_PRESETS.find((value) => Math.abs(value - state.ttsRate) < 0.05) ?? '')}
-        onChange={(value) => handlers.onSpeechSetting({ ttsRate: Number(value) })}
-      />
+      <div className="speech-rate">
+        <SegmentedRow
+          label="语速"
+          options={rates.map((value) => ({
+            value: String(value),
+            label: `${RATE_PRESETS.includes(value) ? value.toFixed(1) : value}×`,
+          }))}
+          value={String(state.ttsRate)}
+          onChange={(value) => handlers.onSpeechSetting({ ttsRate: Number(value) })}
+        />
+      </div>
       {state.showVoiceRow ? (
         <SelectRow label="语音" options={state.voices} value={state.ttsVoice} onChange={handlers.onVoice} />
       ) : null}
@@ -613,7 +1201,8 @@ function SpeechSettings({ state, handlers }: { state: ChromeState; handlers: Chr
         value={state.ttsAutoAdvance ? 'auto' : 'stop'}
         onChange={(value) => handlers.onSpeechSetting({ ttsAutoAdvance: value === 'auto' })}
       />
-      <details className="panel-fold"><summary>音调与音量</summary>
+      <details className="panel-fold">
+        <summary>音调与音量</summary>
         {state.showPitchRow ? (
           <SliderRow
             label="音调"
@@ -648,32 +1237,30 @@ function SpeechSettings({ state, handlers }: { state: ChromeState; handlers: Chr
  * the header covering the text. The bar is therefore tied to the *engine's*
  * state, not to the chrome's.
  */
-function SpeechBar({ state, handlers }: { state: SpeechBarState; handlers: ChromeHandlers }): JSX.Element {
-  const max = Math.max(0, (state.sentenceTotal || state.total) - 1);
+function SpeechBar({
+  state,
+  chapterLabel,
+  handlers,
+}: {
+  state: SpeechBarState;
+  chapterLabel: string;
+  handlers: ChromeHandlers;
+}): JSX.Element {
+  const total = Math.max(0, state.sentenceTotal || state.total);
+  const max = Math.max(0, total - 1);
   const value = Math.max(0, state.sentenceIndex >= 0 ? state.sentenceIndex : state.index);
   const playing = state.state === 'playing';
   return (
     <div className="tts-bar" data-state={state.state} role="group" aria-label="朗读控制">
-      {/* Two rows, like any player: what is being read with its scrubber, then the
-          transport.
-
-          The bar used to be a single row: previous, play/pause, next, the sentence
-          and its range, the count chip, and an ✕ — seven things across a phone.
-          The flex row gave the sentence `flex: 1`, so *it* was the only thing that
-          shrank, and on a 360px screen the last control (停止) was pushed past the
-          right edge and clipped. The reader's report is the honest description of
-          the result: "没法停止" — there was a stop button, and it was off the
-          screen. Two rows rather than a scrollable one, because a control the
-          reader has to go looking for is a control that does not exist (the same
-          argument the rail's own scrollbar is built on).
-
-          Every control is `flex: 1` so they divide the width evenly and the row
-          always fits: no fixed widths to run out of, and the targets grow with the
-          screen instead of huddling in the middle of a tablet. */}
       <div className="tts-row tts-progress">
-        <span className="tts-text" title={state.label}>
-          {state.label}
-        </span>
+        <div className="tts-heading">
+          <span className="tts-text" title={chapterLabel || state.label}>
+            {chapterLabel || state.label}
+          </span>
+          <span className="tts-position">
+            第 {total ? Math.min(value + 1, total) : 0} / {total} 句
+          </span>
+        </div>
         <input
           className="tts-range"
           type="range"
@@ -682,37 +1269,40 @@ function SpeechBar({ state, handlers }: { state: SpeechBarState; handlers: Chrom
           step={1}
           value={value}
           aria-label="朗读进度"
+          disabled={!state.active || total === 0}
           onInput={(event) => handlers.onSpeechScrub(Number((event.currentTarget as HTMLInputElement).value))}
         />
       </div>
       <div className="tts-row tts-controls">
-        <IconButton label="上一句" icon="step-backward" onClick={handlers.onSpeechPrevious} />
         <IconButton
-          label={playing ? '暂停朗读' : '继续朗读'}
-          icon={playing ? 'pause' : 'play'}
-          className="tts-toggle"
-          onClick={handlers.onSpeechToggle}
-        />
-        <IconButton label="下一句" icon="step-forward" onClick={handlers.onSpeechNext} />
-        <button
-          type="button"
-          className="tts-chip"
-          aria-label={`${state.chip}，从当前页重新朗读`}
-          title="从当前页重新朗读"
+          label="从本页重新朗读"
+          title="从本页重新朗读"
+          icon="refresh"
+          className="tts-restart"
+          disabled={!state.active}
           onClick={handlers.onSpeakFromHere}
-        >
-          {state.chip}
-        </button>
-        {/* Stop is last and it is the one destructive control, so it is separated
-            by its own colour rather than by position alone. `stop` rather than
-            `close`: the ✕ read as "close this bar", which is what pause does not
-            do — the reader who wanted the voice to stop pressed it, got a hidden
-            bar, and heard the book keep reading. Stop is now a square, which is
-            the universal transport glyph for exactly this. */}
+        />
+        <div className="tts-transport">
+          <IconButton
+            label="上一句"
+            icon="step-backward"
+            disabled={!state.active}
+            onClick={handlers.onSpeechPrevious}
+          />
+          <IconButton
+            label={!state.active ? '从当前位置朗读' : playing ? '暂停朗读' : '继续朗读'}
+            icon={playing ? 'pause' : 'play'}
+            className="tts-toggle"
+            onClick={state.active ? handlers.onSpeechToggle : handlers.onSpeakFromHere}
+          />
+          <IconButton label="下一句" icon="step-forward" disabled={!state.active} onClick={handlers.onSpeechNext} />
+        </div>
         <IconButton
-          label="停止朗读"
+          label="停止"
+          title="停止"
           icon="stop"
           className="tts-stop"
+          disabled={!state.active}
           onClick={handlers.onStopSpeech}
         />
       </div>
@@ -725,11 +1315,13 @@ function SegmentedRow({
   options,
   value,
   onChange,
+  disabled = false,
 }: {
   label: string;
   options: Array<{ value: string; label: string }>;
   value: string;
   onChange(value: string): void;
+  disabled?: boolean;
 }): JSX.Element {
   return (
     <div className="field is-stacked">
@@ -740,6 +1332,7 @@ function SegmentedRow({
             type="button"
             key={option.value}
             aria-pressed={option.value === value}
+            disabled={disabled}
             onClick={() => onChange(option.value)}
           >
             {option.label}
@@ -782,8 +1375,12 @@ function TapZoneEditor({ grid, onChange }: { grid: TapZoneGrid; onChange(grid: T
     <section className="tap-zones" aria-label="点击区域设置">
       <div className="tap-zones-head">
         <span className="tap-zones-title">每格的动作</span>
-        <Button className="tap-zones-action" onClick={() => onChange(mirrored)}>左右互换</Button>
-        <Button className="tap-zones-action" disabled={isDefault} onClick={() => onChange(tapZonePreset('standard'))}>恢复默认</Button>
+        <Button className="tap-zones-action" onClick={() => onChange(mirrored)}>
+          左右互换
+        </Button>
+        <Button className="tap-zones-action" disabled={isDefault} onClick={() => onChange(tapZonePreset('standard'))}>
+          恢复默认
+        </Button>
       </div>
       <div className="tap-zones-grid">
         {grid.map((action, index) => {
@@ -795,9 +1392,9 @@ function TapZoneEditor({ grid, onChange }: { grid: TapZoneGrid; onChange(grid: T
               className={`tap-zone-cell is-${action}`}
               label={`${name}：${tapActionLabel(action)}`}
               title={`点击${name}`}
-              icon={TAP_ACTIONS.find(item => item.value === action)?.icon ?? 'close'}
+              icon={TAP_ACTIONS.find((item) => item.value === action)?.icon ?? 'close'}
               text={tapActionLabel(action)}
-              items={TAP_ACTIONS.map(item => ({
+              items={TAP_ACTIONS.map((item) => ({
                 label: item.label,
                 checked: item.value === action,
                 disabled: locked && item.value !== 'menu',
@@ -843,7 +1440,9 @@ function SliderRow({
         value={value}
         onInput={(event) => onChange(Number((event.currentTarget as HTMLInputElement).value))}
       />
-      <output className="field-value" aria-hidden="true">{format(value)}</output>
+      <output className="field-value" aria-hidden="true">
+        {format(value)}
+      </output>
     </div>
   );
 }
@@ -854,16 +1453,39 @@ function SliderRow({
  * The label follows the thumb; the page opens when the thumb is let go, so dragging
  * across 200 pages decodes one image instead of 200.
  */
-function PageScrubber({ page, count, disabled, onCommit }: { page: number; count: number; disabled: boolean; onCommit(page: number): void }): JSX.Element {
+function PageScrubber({
+  page,
+  count,
+  disabled,
+  onCommit,
+}: {
+  page: number;
+  count: number;
+  disabled: boolean;
+  onCommit(page: number): void;
+}): JSX.Element {
   const [draft, setDraft] = useState(page);
   const label = `第 ${draft}/${count} 页`;
-  const commit = () => { if (draft !== page) onCommit(draft); };
+  const commit = () => {
+    if (draft !== page) onCommit(draft);
+  };
   return (
     <div className="reader-scrub">
-      <input className="progress-scrubber" type="range" min={1} max={Math.max(1, count)} step={1}
-        value={draft} aria-label="页码" aria-valuetext={label} disabled={count <= 1 || disabled}
+      <input
+        className="progress-scrubber"
+        type="range"
+        min={1}
+        max={Math.max(1, count)}
+        step={1}
+        value={draft}
+        aria-label="页码"
+        aria-valuetext={label}
+        disabled={count <= 1 || disabled}
         onInput={(event) => setDraft(Number((event.currentTarget as HTMLInputElement).value))}
-        onPointerUp={commit} onKeyUp={commit} onBlur={commit} />
+        onPointerUp={commit}
+        onKeyUp={commit}
+        onBlur={commit}
+      />
       <span className="progress-page">{label}</span>
     </div>
   );
@@ -884,7 +1506,11 @@ function SelectRow({
   return (
     <div className="field">
       <label>{label}</label>
-      <Select aria-label={label} value={value} onChange={(event) => onChange((event.currentTarget as HTMLSelectElement).value)}>
+      <Select
+        aria-label={label}
+        value={value}
+        onChange={(event) => onChange((event.currentTarget as HTMLSelectElement).value)}
+      >
         {options.map((option) => (
           <option key={option.value} value={option.value}>
             {option.label}
@@ -904,7 +1530,17 @@ function SelectRow({
  * is no word under them). Centred, equal-width, and full-height so the whole
  * column of the bar is the target rather than the glyph.
  */
-function TopButton({ icon, label, onClick, pressed }: { icon: IconName; label: string; onClick(): void; pressed?: boolean }): JSX.Element {
+function TopButton({
+  icon,
+  label,
+  onClick,
+  pressed,
+}: {
+  icon: IconName;
+  label: string;
+  onClick(): void;
+  pressed?: boolean;
+}): JSX.Element {
   return (
     <button type="button" className="top-button" aria-label={label} aria-pressed={pressed} onClick={onClick}>
       <Icon name={icon} />

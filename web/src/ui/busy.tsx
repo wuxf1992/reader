@@ -13,5 +13,10 @@ export function useDelayedBusy(busy: boolean): boolean {
 
 export function BusyIndicator({ busy, label = '加载中…' }: { busy: boolean; label?: string }) {
   const visible = useDelayedBusy(busy);
-  return visible ? <span className="busy-indicator" role={label ? 'status' : undefined}><span className="busy-spinner" aria-hidden="true" />{label}</span> : null;
+  return visible ? (
+    <span className="busy-indicator" role={label ? 'status' : undefined}>
+      <span className="busy-spinner" aria-hidden="true" />
+      {label}
+    </span>
+  ) : null;
 }

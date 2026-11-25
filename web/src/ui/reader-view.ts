@@ -4,13 +4,7 @@ import type { BookDoc, Section, StagedBook } from '../formats/types.ts';
 import type { BookContent } from '../net/api.ts';
 import type { NativePageHost } from './native-page.ts';
 import { ResourceResolver, hydrateResources } from './resources.ts';
-import {
-  createBookHost,
-  extractBody,
-  extractInlineStyles,
-  sanitiseInjectedContent,
-  type BookShadowHost,
-} from './shadow.ts';
+import { createBookHost, extractBody, extractInlineStyles, type BookShadowHost } from './shadow.ts';
 import { escapeHtml, htmlToText, isTextOnlyMarkup, textToChapterHtml } from '../formats/segments.ts';
 import { bookPercentage, formatLocator, parseLocator } from './locator.ts';
 import { collectSpokenChunks, type SpokenChunk } from '../render/tts-text.ts';
@@ -205,9 +199,11 @@ const FOCUS_BLOCKS = 'p, li, h1, h2, h3, h4, h5, h6, blockquote, pre, figure, ta
  */
 export function focusLine(scrollTop: number, maxScroll: number, height: number): number {
   if (maxScroll <= 0 || height <= 1) return 0;
-  const rest = height * FOCUS_REST, below = height - 1 - rest;
+  const rest = height * FOCUS_REST,
+    below = height - 1 - rest;
   const offset = Math.max(0, Math.min(maxScroll, scrollTop));
-  const rampIn = Math.min(rest, maxScroll * FOCUS_REST), rampOut = Math.min(below, maxScroll * (1 - FOCUS_REST));
+  const rampIn = Math.min(rest, maxScroll * FOCUS_REST),
+    rampOut = Math.min(below, maxScroll * (1 - FOCUS_REST));
   return rest * Math.min(1, offset / rampIn) + below * Math.max(0, 1 - (maxScroll - offset) / rampOut);
 }
 
@@ -221,10 +217,12 @@ export function focusLine(scrollTop: number, maxScroll: number, height: number):
  * top is found the same way in every case.
  */
 export function focusScrollFor(top: number, maxScroll: number, height: number): number {
-  let low = 0, high = Math.max(0, Math.ceil(maxScroll));
+  let low = 0,
+    high = Math.max(0, Math.ceil(maxScroll));
   while (low < high) {
     const middle = (low + high) >> 1;
-    if (middle + focusLine(middle, maxScroll, height) > top) high = middle; else low = middle + 1;
+    if (middle + focusLine(middle, maxScroll, height) > top) high = middle;
+    else low = middle + 1;
   }
   return low;
 }
@@ -255,8 +253,15 @@ export class ReaderView {
   private currentObjectUrl: string | null = null;
   private animationTimer: ReturnType<typeof setTimeout> | null = null;
   private fadingPage: HTMLElement | null = null;
-  private drag: { overlay: HTMLDivElement; current: HTMLDivElement; preview: HTMLDivElement | null;
-    width: number; page: number; neighbour: number; settling: boolean } | null = null;
+  private drag: {
+    overlay: HTMLDivElement;
+    current: HTMLDivElement;
+    preview: HTMLDivElement | null;
+    width: number;
+    page: number;
+    neighbour: number;
+    settling: boolean;
+  } | null = null;
   private animationRun = 0;
   private pageTurnDistance: number | null = null;
   private spokenChunks: SpokenChunk[] = [];
@@ -322,12 +327,23 @@ export class ReaderView {
     this.container.append(this.host);
     this.bindChapterLinks();
     this.host.flow.addEventListener('scroll', () => this.snapStrayScroll(), { passive: true });
-    this.host.addEventListener('scroll', () => { this.pageMaskScrolled(); this.scheduleFocus(); }, { passive: true });
+    this.host.addEventListener(
+      'scroll',
+      () => {
+        this.pageMaskScrolled();
+        this.scheduleFocus();
+      },
+      { passive: true },
+    );
     // `load` does not bubble, so it is caught on the way down. A picture that
     // arrives after the highlights were painted pushes the text below it.
-    this.host.flow.addEventListener('load', (event) => {
-      if (event.target instanceof HTMLImageElement) this.repaintMarks();
-    }, true);
+    this.host.flow.addEventListener(
+      'load',
+      (event) => {
+        if (event.target instanceof HTMLImageElement) this.repaintMarks();
+      },
+      true,
+    );
     document.fonts?.addEventListener('loadingdone', this.fontsChanged);
     let timer: ReturnType<typeof setTimeout> | undefined;
     const changed = () => {
@@ -335,7 +351,10 @@ export class ReaderView {
       timer = setTimeout(() => {
         const anchor = this.selectionAnchor();
         const range = anchor ? this.textAnchorRange(anchor) : null;
-        this.options.onSelection?.(anchor, range && typeof range.getBoundingClientRect === 'function' ? range.getBoundingClientRect() : null);
+        this.options.onSelection?.(
+          anchor,
+          range && typeof range.getBoundingClientRect === 'function' ? range.getBoundingClientRect() : null,
+        );
       }, 160);
     };
     this.host.ownerDocument.addEventListener('selectionchange', changed);
@@ -354,14 +373,19 @@ export class ReaderView {
       if (this.selectionAnchor() || (touch && this.doc.layout === 'fixed' && !this.doc.pdf)) event.preventDefault();
       changed();
     };
-    this.host.shadow.addEventListener('contextmenu',contextMenu);
+    this.host.shadow.addEventListener('contextmenu', contextMenu);
     this.detachSelection = () => {
-      clearTimeout(timer); this.host.ownerDocument.removeEventListener('selectionchange', changed);
-      this.host.shadow.removeEventListener('selectionchange', changed); this.host.shadow.removeEventListener('pointerup', changed);
-      this.host.ownerDocument.removeEventListener('touchend', changed, true); this.host.ownerDocument.removeEventListener('pointercancel', changed, true);
+      clearTimeout(timer);
+      this.host.ownerDocument.removeEventListener('selectionchange', changed);
+      this.host.shadow.removeEventListener('selectionchange', changed);
+      this.host.shadow.removeEventListener('pointerup', changed);
+      this.host.ownerDocument.removeEventListener('touchend', changed, true);
+      this.host.ownerDocument.removeEventListener('pointercancel', changed, true);
       this.host.ownerDocument.removeEventListener('scroll', changed, true);
-      window.visualViewport?.removeEventListener('resize', changed); window.visualViewport?.removeEventListener('scroll', changed);
-      this.host.shadow.removeEventListener('keyup', changed); this.host.shadow.removeEventListener('contextmenu',contextMenu);
+      window.visualViewport?.removeEventListener('resize', changed);
+      window.visualViewport?.removeEventListener('scroll', changed);
+      this.host.shadow.removeEventListener('keyup', changed);
+      this.host.shadow.removeEventListener('contextmenu', contextMenu);
     };
     this.applySettings();
   }
@@ -400,7 +424,10 @@ export class ReaderView {
       const bare = href.trim().startsWith('#');
       const ref = bare ? null : chapterRefFromLink(href, anchor.baseURI);
       const fragment = bare ? href.trim().slice(1) : ref ? linkFragment(href, anchor.baseURI) : '';
-      const consume = (): void => { event.preventDefault(); event.stopPropagation(); };
+      const consume = (): void => {
+        event.preventDefault();
+        event.stopPropagation();
+      };
       // A note reference is answered where the reader is (see `footnote.ts`). The
       // screen says whether it could show the note; if not, the link is a jump.
       if (fragment && (bare || ref) && isNoteReference(anchor) && this.options.onNoteLink?.({ ref, fragment })) {
@@ -529,13 +556,18 @@ export class ReaderView {
     const previous = this.settings;
     // Brightness is an overlay over the page: nothing moves, so there is nothing to
     // measure or restore — and a slider sends one of these per step of a drag.
-    const changed = next ? (Object.keys(next) as Array<keyof ViewSettings>).filter(key => next[key] !== previous[key]) : null;
+    const changed = next
+      ? (Object.keys(next) as Array<keyof ViewSettings>).filter((key) => next[key] !== previous[key])
+      : null;
     // 专注模式 is the same kind of thing: veils over a page that does not move.
-    const relayout = !changed || changed.some(key => key !== 'brightness' && key !== 'focus');
+    const relayout = !changed || changed.some((key) => key !== 'brightness' && key !== 'focus');
     // Capture the live position before typography changes its scroll extent — once
     // per frame. A drag delivers several steps before the restore below runs, and a
     // second measurement would read the half-reflowed page and lose the place.
-    if (next && relayout) { this.cancelDrag(); this.animatePage('none'); }
+    if (next && relayout) {
+      this.cancelDrag();
+      this.animatePage('none');
+    }
     if (next && relayout && !this.relayoutPending) {
       this.measureWithin();
       if (previous.mode === 'scroll') this.textPageAnchor = this.leadingTextRange();
@@ -550,7 +582,10 @@ export class ReaderView {
     // `inherit` is what keeps the author's line-height; only an explicit user
     // choice replaces it.
     this.container.style.setProperty('--reader-line-height', this.settings.lineHeight);
-    this.container.style.setProperty('--reader-txt-line-height', this.settings.lineHeight === 'inherit' ? '1.8' : this.settings.lineHeight);
+    this.container.style.setProperty(
+      '--reader-txt-line-height',
+      this.settings.lineHeight === 'inherit' ? '1.8' : this.settings.lineHeight,
+    );
     // Same reasoning for the font stack: the default is `inherit`, so a book
     // that ships its own stack keeps it. The reader's choice is offered first so
     // a book that ships *nothing* looks like the rest of their library.
@@ -581,9 +616,10 @@ export class ReaderView {
     if (next && previous.mode !== this.settings.mode) this.animatePage('none');
     if (next && previous.fit !== this.settings.fit && this.doc.pdf) {
       const section = this.doc.sections[this.sectionIndex];
-      if (section) void this.renderFixed(section).catch(() => {
-        this.host.flow.textContent = 'PDF 页面渲染失败，请重新打开';
-      });
+      if (section)
+        void this.renderFixed(section).catch(() => {
+          this.host.flow.textContent = 'PDF 页面渲染失败，请重新打开';
+        });
     }
   }
 
@@ -598,22 +634,25 @@ export class ReaderView {
   private snapshotPage(className: string): HTMLDivElement {
     const frame = document.createElement('div');
     for (const attribute of this.host.attributes) {
-      if (!['class', 'style', 'data-animating', 'id'].includes(attribute.name)) frame.setAttribute(attribute.name, attribute.value);
+      if (!['class', 'style', 'data-animating', 'id'].includes(attribute.name))
+        frame.setAttribute(attribute.name, attribute.value);
     }
     frame.className = className;
     frame.setAttribute('aria-hidden', 'true');
     frame.setAttribute('inert', '');
     frame.style.cssText = this.host.style.cssText;
-    const parent = this.container.getBoundingClientRect(), page = this.host.getBoundingClientRect();
+    const parent = this.container.getBoundingClientRect(),
+      page = this.host.getBoundingClientRect();
     const scaleX = this.container.offsetWidth > 0 ? parent.width / this.container.offsetWidth : 1;
     const scaleY = this.container.offsetHeight > 0 ? parent.height / this.container.offsetHeight : 1;
     Object.assign(frame.style, {
       left: `${(page.left - parent.left) / scaleX - this.container.clientLeft + this.container.scrollLeft}px`,
       top: `${(page.top - parent.top) / scaleY - this.container.clientTop + this.container.scrollTop}px`,
-      width: `${page.width / scaleX}px`, height: `${page.height / scaleY}px`,
+      width: `${page.width / scaleX}px`,
+      height: `${page.height / scaleY}px`,
     });
     const shadow = frame.attachShadow({ mode: 'open' });
-    shadow.append(...[...this.host.shadow.childNodes].map(node => node.cloneNode(true)));
+    shadow.append(...[...this.host.shadow.childNodes].map((node) => node.cloneNode(true)));
     this.container.append(frame);
     frame.scrollTop = this.host.scrollTop;
     const flow = shadow.querySelector<HTMLElement>('.book-flow');
@@ -675,23 +714,25 @@ export class ReaderView {
     // CSS animations can start a frame late. Wait for both pages to finish instead
     // of cutting them off using wall-clock time measured before they began.
     const animated = [this.host.flow, ...(this.fadingPage ? [this.fadingPage] : [])];
-    const animations = animated.flatMap(element => typeof element.getAnimations === 'function' ? element.getAnimations() : []);
-    if (animations.length) void Promise.all(animations.map(animation => animation.finished)).then(finished, () => undefined);
+    const animations = animated.flatMap((element) =>
+      typeof element.getAnimations === 'function' ? element.getAnimations() : [],
+    );
+    if (animations.length)
+      void Promise.all(animations.map((animation) => animation.finished)).then(finished, () => undefined);
     this.animationTimer = setTimeout(finished, 1000); // Legacy hosts / interrupted compositor.
-
   }
 
   /** Adopt a checked directory without rendering over the current page. */
   updateWindow(content: BookContent): boolean {
     const section = this.doc.sections[this.sectionIndex];
-    const item = content.items.find(item => item.href === section?.id);
+    const item = content.items.find((item) => item.href === section?.id);
     if (!this.staged || !section || !item) return false;
     const local = adoptWindow(this.doc, content, item.seq);
     if (local < 0) return false;
     // Retain the displayed body, selection and scroll position when the directory changes.
     this.doc.sections[local] = section;
     this.sectionIndex = local;
-    this.doc.toc = content.items.map(item => ({ id: item.href, label: item.title, depth: 0 }));
+    this.doc.toc = content.items.map((item) => ({ id: item.href, label: item.title, depth: 0 }));
     return true;
   }
 
@@ -727,8 +768,14 @@ export class ReaderView {
 
   /** Preview pages without changing the live scroller or publishing tentative progress. */
   beginDrag(): boolean {
-    if (this.drag || this.doc.layout !== 'reflowable' || this.settings.mode !== 'paged'
-      || this.settings.direction === 'rtl' || this.settings.pageAnimation !== 'slide') return false;
+    if (
+      this.drag ||
+      this.doc.layout !== 'reflowable' ||
+      this.settings.mode !== 'paged' ||
+      this.settings.direction === 'rtl' ||
+      this.settings.pageAnimation !== 'slide'
+    )
+      return false;
     if (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) return false;
     const width = this.host.clientWidth;
     if (width <= 0) return false;
@@ -741,11 +788,19 @@ export class ReaderView {
     for (const key of ['left', 'top', 'width', 'height'] as const) overlay.style[key] = current.style[key];
     this.container.append(overlay);
     overlay.append(current);
-    current.style.left = '0'; current.style.top = '0';
+    current.style.left = '0';
+    current.style.top = '0';
     current.scrollTop = this.host.scrollTop;
     current.shadowRoot!.querySelector<HTMLElement>('.book-flow')!.scrollLeft = this.host.flow.scrollLeft;
-    this.drag = { overlay, current, preview: null, width,
-      page: this.usesColumns() ? this.columnIndex() : this.scrollPage(), neighbour: 0, settling: false };
+    this.drag = {
+      overlay,
+      current,
+      preview: null,
+      width,
+      page: this.usesColumns() ? this.columnIndex() : this.scrollPage(),
+      neighbour: 0,
+      settling: false,
+    };
     return true;
   }
 
@@ -754,19 +809,24 @@ export class ReaderView {
     if (!drag || drag.settling) return;
     const neighbour = deltaX < 0 ? 1 : -1;
     if (neighbour !== drag.neighbour) {
-      drag.preview?.remove(); drag.preview = null; drag.neighbour = neighbour;
+      drag.preview?.remove();
+      drag.preview = null;
+      drag.neighbour = neighbour;
       const target = drag.page + neighbour;
       const total = this.usesColumns() ? this.columnCount() : this.screenCount();
       // shortcut: previews stay within a chapter; extend them when adjacent chapters are preloaded.
       if (target >= 0 && target < total) {
         const preview = this.snapshotPage('reader-page-snapshot');
         drag.overlay.prepend(preview);
-        preview.style.left = '0'; preview.style.top = '0';
-        if (this.usesColumns()) preview.shadowRoot!.querySelector<HTMLElement>('.book-flow')!.scrollLeft = target * this.columnStride(total);
+        preview.style.left = '0';
+        preview.style.top = '0';
+        if (this.usesColumns())
+          preview.shadowRoot!.querySelector<HTMLElement>('.book-flow')!.scrollLeft = target * this.columnStride(total);
         else {
           preview.scrollTop = this.screenOffset(target);
           const slice = this.textPages()?.[target];
-          if (slice) preview.style.clipPath = `inset(0 0 ${Math.max(0, this.host.clientHeight - slice.visibleHeight)}px 0)`;
+          if (slice)
+            preview.style.clipPath = `inset(0 0 ${Math.max(0, this.host.clientHeight - slice.visibleHeight)}px 0)`;
         }
         drag.preview = preview;
       }
@@ -782,14 +842,19 @@ export class ReaderView {
     drag.settling = true;
     const x = direction && drag.preview ? (direction === 'next' ? -drag.width : drag.width) : 0;
     const frames = [drag.current, ...(drag.preview ? [drag.preview] : [])];
-    await Promise.all(frames.map(async (frame, index) => {
-      const transform = `translateX(${x + (index ? drag.neighbour * drag.width : 0)}px)`;
-      if (typeof frame.animate === 'function') {
-        const animation = frame.animate([{ transform: frame.style.transform }, { transform }],
-          { duration: 180, easing: 'cubic-bezier(0.22, 0.61, 0.36, 1)', fill: 'forwards' });
-        await animation.finished.catch(() => undefined);
-      } else frame.style.transform = transform;
-    }));
+    await Promise.all(
+      frames.map(async (frame, index) => {
+        const transform = `translateX(${x + (index ? drag.neighbour * drag.width : 0)}px)`;
+        if (typeof frame.animate === 'function') {
+          const animation = frame.animate([{ transform: frame.style.transform }, { transform }], {
+            duration: 180,
+            easing: 'cubic-bezier(0.22, 0.61, 0.36, 1)',
+            fill: 'forwards',
+          });
+          await animation.finished.catch(() => undefined);
+        } else frame.style.transform = transform;
+      }),
+    );
     if (this.drag !== drag) return false;
     if (!direction) this.cancelDrag();
     return direction !== null;
@@ -826,10 +891,14 @@ export class ReaderView {
     this.textPagesMeasured = true;
     const height = this.host.clientHeight;
     const pages = paginateLines(this.lineBoxes(), height);
-    if (!pages.length) { this.textPagesMeasured = false; return null; } // No geometry yet (or a layout-free test DOM).
+    if (!pages.length) {
+      this.textPagesMeasured = false;
+      return null;
+    } // No geometry yet (or a layout-free test DOM).
     this.textPageCache = pages;
     const flow = this.host.flow;
-    const naturalBottom = flow.getBoundingClientRect().bottom - this.host.getBoundingClientRect().top + this.host.scrollTop;
+    const naturalBottom =
+      flow.getBoundingClientRect().bottom - this.host.getBoundingClientRect().top + this.host.scrollTop;
     const extra = Math.max(0, pages.at(-1)!.offset + height + 1 - naturalBottom);
     if (extra > 0) {
       const padding = Number.parseFloat(getComputedStyle(flow).paddingBottom) || 0;
@@ -853,7 +922,7 @@ export class ReaderView {
   private rememberTextPage(page: TextPage | undefined): void {
     this.textPageAnchor = null;
     if (!page || page.offset === 0) return;
-    const line = this.textLineGeometry.find(l => l.top >= page.offset - 0.5);
+    const line = this.textLineGeometry.find((l) => l.top >= page.offset - 0.5);
     if (!line) return;
     this.textPageAnchor = this.rangeAtLine(line);
   }
@@ -861,16 +930,20 @@ export class ReaderView {
   private rangeAtLine(line: { node: Text; top: number }): Range | null {
     const range = document.createRange();
     const hostTop = this.host.getBoundingClientRect().top;
-    let low = 0, high = line.node.length;
+    let low = 0,
+      high = line.node.length;
     while (low < high) {
       const mid = Math.floor((low + high) / 2);
-      range.setStart(line.node, mid); range.setEnd(line.node, mid + 1);
-      const rect = [...range.getClientRects()].find(r => r.width > 0 && r.height > 0);
+      range.setStart(line.node, mid);
+      range.setEnd(line.node, mid + 1);
+      const rect = [...range.getClientRects()].find((r) => r.width > 0 && r.height > 0);
       const bottom = rect ? rect.bottom - hostTop + this.host.scrollTop : -Infinity;
-      if (bottom > line.top + 0.5) high = mid; else low = mid + 1;
+      if (bottom > line.top + 0.5) high = mid;
+      else low = mid + 1;
     }
     if (low >= line.node.length) return null;
-    range.setStart(line.node, low); range.setEnd(line.node, low + 1);
+    range.setStart(line.node, low);
+    range.setEnd(line.node, low + 1);
     return range;
   }
 
@@ -879,9 +952,17 @@ export class ReaderView {
     const box = this.host.getBoundingClientRect();
     if (box.width <= 0 || box.height <= 0) return null;
     for (const node of textNodes(this.host.flow)) {
-      const range = document.createRange(); range.selectNodeContents(node);
-      const rect = [...range.getClientRects()].find(r => r.width > 0 && r.height > 0 &&
-        r.bottom > box.top + 1 && r.top < box.bottom && r.right > box.left && r.left < box.right);
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      const rect = [...range.getClientRects()].find(
+        (r) =>
+          r.width > 0 &&
+          r.height > 0 &&
+          r.bottom > box.top + 1 &&
+          r.top < box.bottom &&
+          r.right > box.left &&
+          r.left < box.right,
+      );
       if (rect) return this.rangeAtLine({ node, top: rect.top - box.top + this.host.scrollTop });
     }
     return null;
@@ -907,7 +988,10 @@ export class ReaderView {
   }
 
   /** An explicit jump supersedes a chapter fetch already in flight. */
-  cancelPendingOpen(): void { this.openingEpoch++; this.animatePage('none'); }
+  cancelPendingOpen(): void {
+    this.openingEpoch++;
+    this.animatePage('none');
+  }
 
   /** Opens a section by index, optionally at a fractional offset within it. */
   async open(index: number, offset = 0): Promise<void> {
@@ -918,14 +1002,19 @@ export class ReaderView {
     // A staged section has no body until it is asked for. Doing it here, rather
     // than in the loader, is what keeps "opening a book" and "showing a chapter"
     // from both needing to know about windows.
-    try { if (this.staged) await this.staged.loadSection(index); }
-    catch (error) { if (epoch !== this.openingEpoch) return; throw error; }
+    try {
+      if (this.staged) await this.staged.loadSection(index);
+    } catch (error) {
+      if (epoch !== this.openingEpoch) return;
+      throw error;
+    }
     if (epoch !== this.openingEpoch) return;
     // A background directory update can move this chapter while its body is loading.
-    index = this.doc.sections.findIndex(candidate => candidate.id === section.id);
+    index = this.doc.sections.findIndex((candidate) => candidate.id === section.id);
     if (index < 0) return;
     this.doc.sections[index] = section;
-    if (this.staged && !this.doc.sections[index]?.id.startsWith('chapter:') && shouldPrefetch()) void this.staged.loadSection(index + 1).catch(() => undefined);
+    if (this.staged && !this.doc.sections[index]?.id.startsWith('chapter:') && shouldPrefetch())
+      void this.staged.loadSection(index + 1).catch(() => undefined);
     this.sectionIndex = index;
     this.searchAnchor = null;
     this.textPageAnchor = null;
@@ -938,7 +1027,7 @@ export class ReaderView {
       await this.renderReflowable(section);
     }
     if (epoch !== this.openingEpoch) return;
-    index = this.doc.sections.findIndex(candidate => candidate.id === section.id);
+    index = this.doc.sections.findIndex((candidate) => candidate.id === section.id);
     if (index < 0) return;
     this.sectionIndex = index;
     this.options.onChapterChange?.(index, section);
@@ -989,7 +1078,8 @@ export class ReaderView {
     for (const node of textNodes(this.host.flow)) {
       if (offset < node.length) {
         const range = document.createRange();
-        range.setStart(node, offset); range.setEnd(node, offset + 1);
+        range.setStart(node, offset);
+        range.setEnd(node, offset + 1);
         return range;
       }
       offset -= node.length;
@@ -1017,8 +1107,9 @@ export class ReaderView {
   selectionAnchor(): TextAnchor | null {
     const shadow = this.host.shadow as ShadowRoot & { getSelection?: () => Selection | null };
     const sectionId = this.doc.sections[this.sectionIndex]?.id ?? '';
-    const anchor = selectedAnchor(this.host.flow, sectionId, shadow.getSelection?.() ?? null)
-      ?? selectedAnchor(this.host.flow, sectionId, this.host.ownerDocument.getSelection());
+    const anchor =
+      selectedAnchor(this.host.flow, sectionId, shadow.getSelection?.() ?? null) ??
+      selectedAnchor(this.host.flow, sectionId, this.host.ownerDocument.getSelection());
     return anchor && this.chineseText ? this.chineseText.sourceAnchor(anchor) : anchor;
   }
 
@@ -1033,16 +1124,26 @@ export class ReaderView {
 
   revealFragment(fragment: string): boolean {
     let id = fragment;
-    try { id = decodeURIComponent(fragment); } catch { /* literal id */ }
-    const element = this.host.shadow.getElementById(id) ?? [...this.host.flow.querySelectorAll('[name]')].find(e => e.getAttribute('name') === id);
+    try {
+      id = decodeURIComponent(fragment);
+    } catch {
+      /* literal id */
+    }
+    const element =
+      this.host.shadow.getElementById(id) ??
+      [...this.host.flow.querySelectorAll('[name]')].find((e) => e.getAttribute('name') === id);
     if (!element) return false;
     // An empty anchor (`<a id="n3"></a>`) has no box to reveal; the block it opens does.
     if (!element.textContent?.trim() && element.parentElement && this.host.flow.contains(element.parentElement)) {
-      const range = document.createRange(); range.selectNode(element);
-      this.revealRange(range); return true;
+      const range = document.createRange();
+      range.selectNode(element);
+      this.revealRange(range);
+      return true;
     }
-    const range = document.createRange(); range.selectNodeContents(element);
-    this.revealRange(range); return true;
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    this.revealRange(range);
+    return true;
   }
 
   /**
@@ -1058,8 +1159,13 @@ export class ReaderView {
     if (this.doc.layout === 'fixed') return null;
     const hit = path.find((node): node is Element => node instanceof Element && pictureSource(node) !== '');
     if (!hit || !this.host.flow.contains(hit) || !isPicture(hit)) return null;
-    const pictures = [...this.host.flow.querySelectorAll('img, image')].filter(element => element === hit || (pictureSource(element) !== '' && isPicture(element)));
-    return { images: pictures.map(element => ({ src: pictureSource(element), alt: element.getAttribute('alt') ?? '' })), index: pictures.indexOf(hit) };
+    const pictures = [...this.host.flow.querySelectorAll('img, image')].filter(
+      (element) => element === hit || (pictureSource(element) !== '' && isPicture(element)),
+    );
+    return {
+      images: pictures.map((element) => ({ src: pictureSource(element), alt: element.getAttribute('alt') ?? '' })),
+      index: pictures.indexOf(hit),
+    };
   }
 
   /**
@@ -1116,7 +1222,7 @@ export class ReaderView {
   }
 
   clearSelection(): void {
-    (this.host.shadow as ShadowRoot & {getSelection?: () => Selection | null}).getSelection?.()?.removeAllRanges();
+    (this.host.shadow as ShadowRoot & { getSelection?: () => Selection | null }).getSelection?.()?.removeAllRanges();
     this.host.ownerDocument.getSelection()?.removeAllRanges();
   }
 
@@ -1139,14 +1245,23 @@ export class ReaderView {
 
   /** Re-places the veils on the next frame; a scroll delivers many events per frame. */
   private scheduleFocus(): void {
-    if (!this.focusActive) { this.clearFocus(); return; }
+    if (!this.focusActive) {
+      this.clearFocus();
+      return;
+    }
     if (this.focusFrame !== null) return;
-    this.focusFrame = requestAnimationFrame(() => { this.focusFrame = null; this.syncFocus(); });
+    this.focusFrame = requestAnimationFrame(() => {
+      this.focusFrame = null;
+      this.syncFocus();
+    });
   }
 
   private clearFocus(): void {
-    if (this.focusFrame !== null) { cancelAnimationFrame(this.focusFrame); this.focusFrame = null; }
-    this.focusVeils?.forEach(veil => veil.remove());
+    if (this.focusFrame !== null) {
+      cancelAnimationFrame(this.focusFrame);
+      this.focusFrame = null;
+    }
+    this.focusVeils?.forEach((veil) => veil.remove());
     this.focusVeils = null;
     this.focusBlocks = [];
     this.focusIndex = -1;
@@ -1162,9 +1277,12 @@ export class ReaderView {
    */
   private paragraphs(): HTMLElement[] {
     if (this.focusBlocks[0]?.isConnected) return this.focusBlocks;
-    this.focusBlocks = [...this.host.flow.querySelectorAll<HTMLElement>(FOCUS_BLOCKS)].filter(element =>
-      !element.querySelector(FOCUS_BLOCKS) && !element.closest('[data-reader-mark]')
-      && (element.textContent?.trim() || element.querySelector('img, svg, video, canvas')));
+    this.focusBlocks = [...this.host.flow.querySelectorAll<HTMLElement>(FOCUS_BLOCKS)].filter(
+      (element) =>
+        !element.querySelector(FOCUS_BLOCKS) &&
+        !element.closest('[data-reader-mark]') &&
+        (element.textContent?.trim() || element.querySelector('img, svg, video, canvas')),
+    );
     return this.focusBlocks;
   }
 
@@ -1176,25 +1294,42 @@ export class ReaderView {
    * five thousand paragraphs costs the same two elements as a chapter of five.
    */
   private syncFocus(): void {
-    if (!this.focusActive) { this.clearFocus(); return; }
-    const host = this.host, box = host.getBoundingClientRect();
+    if (!this.focusActive) {
+      this.clearFocus();
+      return;
+    }
+    const host = this.host,
+      box = host.getBoundingClientRect();
     const maxScroll = host.scrollHeight - host.clientHeight;
     const blocks = this.paragraphs();
     // A chapter that fits the screen has nothing to follow, and veiling a page the
     // reader can see whole would only hide it.
-    if (!blocks.length || box.height <= 0 || maxScroll <= 1) { this.focusVeils?.forEach(veil => { veil.hidden = true; }); this.focusIndex = -1; return; }
+    if (!blocks.length || box.height <= 0 || maxScroll <= 1) {
+      this.focusVeils?.forEach((veil) => {
+        veil.hidden = true;
+      });
+      this.focusIndex = -1;
+      return;
+    }
     const y = box.top + focusLine(host.scrollTop, maxScroll, box.height);
     // The first paragraph that ends below the line. Paragraphs are in document
     // order and so, give or take a float, in vertical order: a binary search.
-    let low = 0, high = blocks.length - 1;
+    let low = 0,
+      high = blocks.length - 1;
     while (low < high) {
       const middle = (low + high) >> 1;
-      if (blocks[middle]!.getBoundingClientRect().bottom > y) high = middle; else low = middle + 1;
+      if (blocks[middle]!.getBoundingClientRect().bottom > y) high = middle;
+      else low = middle + 1;
     }
     this.focusIndex = low;
     const rect = blocks[low]!.getBoundingClientRect();
     if (!this.focusVeils) {
-      const veil = (): HTMLElement => { const element = document.createElement('div'); element.className = 'focus-veil'; element.setAttribute('aria-hidden', 'true'); return element; };
+      const veil = (): HTMLElement => {
+        const element = document.createElement('div');
+        element.className = 'focus-veil';
+        element.setAttribute('aria-hidden', 'true');
+        return element;
+      };
       this.focusVeils = [veil(), veil()];
       this.container.append(...this.focusVeils);
     }
@@ -1220,7 +1355,8 @@ export class ReaderView {
    */
   focusStep(delta: 1 | -1): boolean {
     if (!this.focusActive) return false;
-    const host = this.host, blocks = this.paragraphs();
+    const host = this.host,
+      blocks = this.paragraphs();
     const maxScroll = host.scrollHeight - host.clientHeight;
     if (!blocks.length || maxScroll <= 1) return false;
     if (this.focusIndex < 0) this.syncFocus();
@@ -1244,14 +1380,22 @@ export class ReaderView {
   }
 
   private paintRange(range: Range, color: string, kind: string, id?: string): void {
-    if (kind === 'search') for (const node of this.host.flow.querySelectorAll('[data-reader-mark="search"]')) node.remove();
+    if (kind === 'search')
+      for (const node of this.host.flow.querySelectorAll('[data-reader-mark="search"]')) node.remove();
     const box = this.host.flow.getBoundingClientRect();
     const rects = typeof range.getClientRects === 'function' ? [...range.getClientRects()] : [];
     for (const rect of rects) {
-      const mark = document.createElement(id ? 'button' : 'span'); mark.dataset['readerMark'] = kind;
+      const mark = document.createElement(id ? 'button' : 'span');
+      mark.dataset['readerMark'] = kind;
       if (id) {
-        mark.dataset['noteId'] = id; mark.setAttribute('aria-label', '查看高亮或批注'); mark.setAttribute('type', 'button');
-        mark.addEventListener('click', event => { event.preventDefault(); event.stopPropagation(); this.options.onAnnotation?.(id, mark.getBoundingClientRect()); });
+        mark.dataset['noteId'] = id;
+        mark.setAttribute('aria-label', '查看高亮或批注');
+        mark.setAttribute('type', 'button');
+        mark.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          this.options.onAnnotation?.(id, mark.getBoundingClientRect());
+        });
       } else mark.setAttribute('aria-hidden', 'true');
       mark.style.cssText = `position:absolute;pointer-events:${id ? 'auto' : 'none'};cursor:${id ? 'pointer' : 'default'};border:0;padding:0;margin:0;min-width:0;min-height:0;background:${color};opacity:.32;left:${rect.left - box.left + this.host.flow.scrollLeft}px;top:${rect.top - box.top + this.host.flow.scrollTop}px;width:${rect.width}px;height:${rect.height}px;`;
       this.host.flow.append(mark);
@@ -1261,7 +1405,8 @@ export class ReaderView {
   private revealRange(range: Range): void {
     const rect = rangeRect(range);
     if (rect) {
-      const scroller = this.scroller, box = scroller.getBoundingClientRect();
+      const scroller = this.scroller,
+        box = scroller.getBoundingClientRect();
       if (this.usesColumns()) this.scrollToColumnAt(scroller.scrollLeft + rect.left - box.left);
       else if (this.usesTextPages()) this.showScreen(this.textPageAt(scroller.scrollTop + rect.top - box.top));
       else scroller.scrollTop += rect.top - box.top - box.height / 3;
@@ -1391,7 +1536,8 @@ export class ReaderView {
     this.cancelPendingOpen();
     document.fonts?.removeEventListener('loadingdone', this.fontsChanged);
     this.doc.pdf?.cancel();
-    this.detachSelection?.(); this.detachSelection = null;
+    this.detachSelection?.();
+    this.detachSelection = null;
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
     clearTimeout(this.maskTimer);
@@ -1400,7 +1546,10 @@ export class ReaderView {
     this.detachChapterLinks?.();
     this.detachChapterLinks = null;
     this.clearFocus();
-    if (this.pagePictureUrl) { URL.revokeObjectURL(this.pagePictureUrl); this.pagePictureUrl = null; }
+    if (this.pagePictureUrl) {
+      URL.revokeObjectURL(this.pagePictureUrl);
+      this.pagePictureUrl = null;
+    }
     this.clearSpeechHighlight();
     this.releaseObjectUrl();
     this.resolver.dispose();
@@ -1505,7 +1654,7 @@ export class ReaderView {
           .filter((element) => !/^H[1-6]$/.test(element.tagName))
           .map((element) => element.textContent ?? '')
           .filter((block) => block.trim().length > 0);
-        text = blocks.length > 0 ? blocks.join('\n\n') : wrapper.textContent ?? '';
+        text = blocks.length > 0 ? blocks.join('\n\n') : (wrapper.textContent ?? '');
         cleanMarkup = false;
       }
     } else if (section.plainText && section.bodyIsMarkup !== false) {
@@ -1565,12 +1714,14 @@ export class ReaderView {
     // The chapter's own <style> blocks are prepended so the book's link-level
     // stylesheets (already in `doc.styles`) can still override them, matching
     // the cascade the book was authored against.
-    this.host.setContent(body, [...inlineStyles, ...this.doc.styles]);
-    sanitiseInjectedContent(this.host.shadow, {
+    this.host.setContent(body, [...inlineStyles, ...this.doc.styles], {
       ...(this.options.signAssetUrl ? { signAssetUrl: this.options.signAssetUrl } : {}),
     });
     this.options.transformText?.(this.host.flow, section.id);
-    this.chineseText = this.settings.chineseVariant === 'original' ? null : new ChineseChapterText(this.host.flow, this.settings.chineseVariant);
+    this.chineseText =
+      this.settings.chineseVariant === 'original'
+        ? null
+        : new ChineseChapterText(this.host.flow, this.settings.chineseVariant);
     await hydrateResources(this.host.shadow, this.resolver);
     // The page's own geometry is decided here, once the text is in the DOM: the grid
     // the chapter is set on is how tall a page may be before its last line is cut, and
@@ -1727,8 +1878,10 @@ export class ReaderView {
     const target = rect ? scroller.scrollTop + rect.top - this.host.getBoundingClientRect().top : null;
     if (this.settings.mode === 'paged') {
       const pages = this.textPages();
-      const page = pages ? target !== null ? this.textPageAt(target)
-        : nearestTextPage(pages, this.sectionOffset * pages.at(-1)!.offset)
+      const page = pages
+        ? target !== null
+          ? this.textPageAt(target)
+          : nearestTextPage(pages, this.sectionOffset * pages.at(-1)!.offset)
         : Math.round(this.sectionOffset * (this.screenCount() - 1));
       this.showScreen(page, false);
     } else scroller.scrollTop = target ?? limit * this.sectionOffset;
@@ -1987,10 +2140,11 @@ export class ReaderView {
       let cut = Number.POSITIVE_INFINITY;
       // Line-sized rects only: a range over a block also reports the boxes of the
       // elements inside it, and a paragraph box crossing the edge is not a cut line.
-      if (line > 0) for (const box of this.lineBoxes()) {
-        if (box.bottom - box.top > line * 1.5) continue;
-        if (box.top >= top && box.top < bottom - 0.5 && box.bottom > bottom + 0.5 && box.top < cut) cut = box.top;
-      }
+      if (line > 0)
+        for (const box of this.lineBoxes()) {
+          if (box.bottom - box.top > line * 1.5) continue;
+          if (box.top >= top && box.top < bottom - 0.5 && box.bottom > bottom + 0.5 && box.top < cut) cut = box.top;
+        }
       if (Number.isFinite(cut)) mask = Math.max(0, bottom - cut);
     }
     this.maskedAt = host.scrollTop;
@@ -2439,7 +2593,8 @@ export class ReaderView {
     const scroller = this.scroller;
     const target = block.offsetTop - scroller.clientHeight / 3;
     if (this.usesTextPages()) {
-      const rect = block.getBoundingClientRect(), box = scroller.getBoundingClientRect();
+      const rect = block.getBoundingClientRect(),
+        box = scroller.getBoundingClientRect();
       this.showScreen(this.textPageAt(scroller.scrollTop + rect.top - box.top));
     } else scroller.scrollTop = Math.max(0, target);
   }
@@ -2476,14 +2631,22 @@ export class ReaderView {
             // Bounded: a book referencing a missing asset must not stall the
             // position restore forever.
             const timer = setTimeout(resolve, 3000);
-            img.addEventListener('load', () => {
-              clearTimeout(timer);
-              resolve();
-            }, { once: true });
-            img.addEventListener('error', () => {
-              clearTimeout(timer);
-              resolve();
-            }, { once: true });
+            img.addEventListener(
+              'load',
+              () => {
+                clearTimeout(timer);
+                resolve();
+              },
+              { once: true },
+            );
+            img.addEventListener(
+              'error',
+              () => {
+                clearTimeout(timer);
+                resolve();
+              },
+              { once: true },
+            );
           }),
       ),
     );
@@ -2506,7 +2669,6 @@ function rangeRect(range: Range): DOMRect | null {
     return null;
   }
 }
-
 
 /**
  * Whether a link in a chapter stays inside the book.
@@ -2537,7 +2699,8 @@ function pictureSource(element: Element): string {
  */
 function isPicture(element: Element): boolean {
   const rect = element.getBoundingClientRect();
-  const short = Math.min(rect.width, rect.height), long = Math.max(rect.width, rect.height);
+  const short = Math.min(rect.width, rect.height),
+    long = Math.max(rect.width, rect.height);
   return short >= 48 || (short >= 24 && long >= 120);
 }
 

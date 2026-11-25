@@ -22,7 +22,11 @@ it('does not treat parsing or a slow first download as a network timeout for lat
   const budget = { timedOut: false };
   expect(await withOfflineTimeout(Promise.resolve('metadata'), true, budget)).toBe('metadata');
   await vi.advanceTimersByTimeAsync(6000);
-  const progress = withOfflineTimeout(new Promise(resolve => setTimeout(() => resolve('remote position'), 20)), true, budget);
+  const progress = withOfflineTimeout(
+    new Promise((resolve) => setTimeout(() => resolve('remote position'), 20)),
+    true,
+    budget,
+  );
   await vi.advanceTimersByTimeAsync(20);
   expect(await progress).toBe('remote position');
   expect(budget.timedOut).toBe(false);
@@ -30,7 +34,7 @@ it('does not treat parsing or a slow first download as a network timeout for lat
 
 it('does not impose the cached-read limit on a first download', async () => {
   vi.useFakeTimers();
-  const result = withOfflineTimeout(new Promise(resolve => setTimeout(() => resolve('book'), 6000)), false);
+  const result = withOfflineTimeout(new Promise((resolve) => setTimeout(() => resolve('book'), 6000)), false);
   await vi.advanceTimersByTimeAsync(6000);
   expect(await result).toBe('book');
 });

@@ -8,56 +8,197 @@ import { RuntimeContext } from '../src/app/providers/runtime-context.tsx';
 import { useAuthStore } from '../src/shared/stores/auth.store.ts';
 import { HomePage, activityProgress, greeting } from '../src/features/home/pages/HomePage.tsx';
 import { saveMediaPreferences } from '../src/features/media/services/preferences.ts';
+import { ApiError } from '../src/api/errors.ts';
 
 const root = document.createElement('div');
 document.body.append(root);
 const user = { id: 'u1', username: 'lin', displayName: '林间', role: 'member', createdAt: 0 };
-const book = { id: 'b1', title: '夜航船', author: '示例', format: 'epub', coverUrl: null, percentage: 0.42, chapterTitle: '第十二章 夜雨', lastReadAt: 1 };
-const activity = (over: object) => ({ id: 'a', itemId: 'i1', partId: 'p', assetId: 's', libraryId: 'l', kind: 'episode', title: '示例剧集', partTitle: '第 3 集', start: 0, end: 2480, available: 1, position: 1748, completed: false, ...over });
+const book = {
+  id: 'b1',
+  title: '夜航船',
+  author: '示例',
+  format: 'epub',
+  coverUrl: null,
+  percentage: 0.42,
+  chapterTitle: '第十二章 夜雨',
+  lastReadAt: 1,
+};
+const activity = (over: object) => ({
+  id: 'a',
+  itemId: 'i1',
+  partId: 'p',
+  assetId: 's',
+  libraryId: 'l',
+  kind: 'episode',
+  title: '示例剧集',
+  partTitle: '第 3 集',
+  start: 0,
+  end: 2480,
+  available: 1,
+  position: 1748,
+  completed: false,
+  ...over,
+});
 
-const series = { id: 's1', libraryId: 'l', kind: 'series', title: '示例剧集', parentId: null, metadata: {}, overrides: {}, children: [], editions: [] };
+const series = {
+  id: 's1',
+  libraryId: 'l',
+  kind: 'series',
+  title: '示例剧集',
+  parentId: null,
+  metadata: {},
+  overrides: {},
+  children: [],
+  editions: [],
+};
 const episode = { ...series, id: 'i1', kind: 'episode', title: '第 3 集', parentId: 's1' };
-const poster = (id: string, title: string) => ({ id, libraryId: 'l', kind: 'movie', title, parentId: null, metadata: {}, overrides: {}, channel: 'video', libraryName: '片库' });
+const poster = (id: string, title: string) => ({
+  id,
+  libraryId: 'l',
+  kind: 'movie',
+  title,
+  parentId: null,
+  metadata: {},
+  overrides: {},
+  channel: 'video',
+  libraryName: '片库',
+});
 
-function mount({ reading = [book], shelf = [book], video = [activity({ title: '第 3 集', updatedAt: 5 })], audio = [] as object[], discover = { items: [] as object[], total: 0 } }: { reading?: object[]; shelf?: object[]; video?: object[]; audio?: object[]; discover?: { items: object[]; total: number } } = {}) {
+function mount({
+  reading = [book],
+  shelf = [book],
+  video = [activity({ title: '第 3 集', updatedAt: 5 })],
+  audio = [] as object[],
+  discover = { items: [] as object[], total: 0 },
+  added = [book] as object[] | Error,
+  mediaError,
+}: {
+  reading?: object[];
+  shelf?: object[];
+  video?: object[];
+  audio?: object[];
+  discover?: { items: object[]; total: number };
+  added?: object[] | Error;
+  mediaError?: Error;
+} = {}) {
   const runtime = {
     api: {
       baseUrl: 'https://reader.example.com',
       currentSession: () => ({ user }),
       continueReading: vi.fn().mockResolvedValue(reading),
-      listBooks: vi.fn().mockResolvedValue({ items: shelf, total: shelf.length }),
+      listBooks: vi.fn(async ({ sort }: { sort: string }) => {
+        if (sort === 'added' && added instanceof Error) throw added;
+        const items = sort === 'added' ? added : shelf;
+        return { items, total: (items as object[]).length };
+      }),
       coverBytes: vi.fn().mockRejectedValue(new Error('none')),
     },
-    offline: { current: {}, cacheContinueReading: async () => undefined, replaceBooks: async () => undefined, books: () => [] },
+    offline: {
+      current: {},
+      cacheContinueReading: async () => undefined,
+      replaceBooks: async () => undefined,
+      books: () => [],
+    },
     mediaApi: {
       preferenceScope: () => 'home-test',
-      request: vi.fn(async (path: string) => path.startsWith('browse?')
-        ? (path.includes('channel=video&') ? discover : { items: [], total: 0 })
-        : { items: path.includes('channel=video') ? video : audio, total: 0 }),
-      detail: vi.fn(async (id: string) => id === 's1' ? series : episode),
+      request: vi.fn(async (path: string) => {
+        if (mediaError) throw mediaError;
+        return path.startsWith('browse?')
+          ? path.includes('channel=video&')
+            ? discover
+            : { items: [], total: 0 }
+          : { items: path.includes('channel=video') ? video : audio, total: 0 };
+      }),
+      detail: vi.fn(async (id: string) => (id === 's1' ? series : episode)),
       cover: vi.fn().mockRejectedValue(new Error('none')),
     },
   } as any;
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  act(() => render(
-    <RuntimeContext.Provider value={runtime}><QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={['/']}><Routes><Route path="/" element={<HomePage />} /></Routes></MemoryRouter>
-    </QueryClientProvider></RuntimeContext.Provider>,
-    root,
-  ));
+  act(() =>
+    render(
+      <RuntimeContext.Provider value={runtime}>
+        <QueryClientProvider client={client}>
+          <MemoryRouter initialEntries={['/']}>
+            <Routes>
+              <Route path="/" element={<HomePage />} />
+            </Routes>
+          </MemoryRouter>
+        </QueryClientProvider>
+      </RuntimeContext.Provider>,
+      root,
+    ),
+  );
   return runtime;
 }
-const settle = () => act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
+const settle = () =>
+  act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
 // For a result that takes a chain of requests (activity → episode → series): a fixed 20ms
 // is enough on an idle machine and not under a full parallel run, so wait for the thing itself.
-const until = async (done: () => boolean) => { for (let i = 0; i < 50 && !done(); i++) await settle(); };
+const until = async (done: () => boolean) => {
+  for (let i = 0; i < 50 && !done(); i++) await settle();
+};
 
-afterEach(() => { act(() => render(null, root)); useAuthStore.setState({ session: null, verifiedUser: null }); localStorage.clear(); });
+afterEach(() => {
+  act(() => render(null, root));
+  useAuthStore.setState({ session: null, verifiedUser: null });
+  localStorage.clear();
+  vi.unstubAllGlobals();
+});
+
+function sidebar() {
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    matches: query === '(min-width: 701px)',
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  }));
+}
 
 describe('首页', () => {
-  it('pure reading never requests media history or discovery',async()=>{
-    useAuthStore.setState({verifiedUser:{...user,role:'member',features:{media:false}}});
-    const runtime=mount();await settle();
+  it('adds a bounded recently-added shelf preview on desktop with a sorted all-books link', async () => {
+    sidebar();
+    const added = Array.from({ length: 6 }, (_, index) => ({ ...book, id: `new-${index}`, title: `新书${index}` }));
+    const runtime = mount({ added });
+    await until(() => root.querySelectorAll('.home-recent-books .book-card').length === 4);
+    expect(root.querySelector('.home-recent-books')?.textContent).toContain('新书0');
+    expect(root.querySelector('.home-recent-books')?.textContent).not.toContain('新书4');
+    expect(root.querySelector('.home-recent-books .home-section a')?.getAttribute('href')).toBe('/shelf?sort=added');
+    expect(runtime.api.listBooks).toHaveBeenCalledWith(
+      expect.objectContaining({ scope: 'shelf', sort: 'added', order: 'desc' }),
+      expect.anything(),
+    );
+  });
+
+  it('does not request or show the desktop module on mobile', async () => {
+    const runtime = mount();
+    await settle();
+    expect(root.querySelector('.home-recent-books')).toBeNull();
+    expect(runtime.api.listBooks.mock.calls.some(([query]: [{ sort: string }]) => query.sort === 'added')).toBe(false);
+  });
+
+  it.each([[], new Error('offline')])('hides an empty or failed recent-books module (%s)', async (added) => {
+    sidebar();
+    const runtime = mount({ added });
+    await until(() => runtime.api.listBooks.mock.calls.length >= 2);
+    await settle();
+    expect(root.querySelector('.home-recent-books')).toBeNull();
+    expect(root.querySelector('.home-shelf .book-card')).not.toBeNull();
+    expect(root.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it.each(['MEDIA_STARTING', 'MEDIA_UNAVAILABLE'])('keeps books usable when media returns 503 %s', async (code) => {
+    sidebar();
+    mount({ mediaError: new ApiError('server', code, code, 503) });
+    await until(() => root.querySelector('.home-recent-books .book-card') !== null);
+    expect(root.querySelector('.home-discover')).toBeNull();
+    expect(root.querySelector('[role="alert"]')).toBeNull();
+    expect(root.querySelector('.home-shelf .book-card')).not.toBeNull();
+  });
+  it('pure reading never requests media history or discovery', async () => {
+    useAuthStore.setState({ verifiedUser: { ...user, role: 'member', features: { media: false } } });
+    const runtime = mount();
+    await settle();
     expect(runtime.mediaApi.request).not.toHaveBeenCalled();
     expect(runtime.mediaApi.detail).not.toHaveBeenCalled();
     expect(root.querySelectorAll('a[href^="/media/"]')).toHaveLength(0);
@@ -80,7 +221,7 @@ describe('首页', () => {
     await until(() => root.querySelector('.home-continue a.home-resume strong')?.textContent === '示例剧集');
     expect(root.querySelector('h1')?.textContent).toContain('林间');
     const cards = [...root.querySelectorAll<HTMLAnchorElement>('.home-continue a.home-resume')];
-    expect(cards.map(card => card.dataset.channel)).toEqual(['video', 'read']);
+    expect(cards.map((card) => card.dataset.channel)).toEqual(['video', 'read']);
     const [video, read] = cards as [HTMLAnchorElement, HTMLAnchorElement];
     expect(video.getAttribute('href')).toBe('/media/video/items/i1');
     await vi.waitFor(() => expect(video.querySelector('strong')?.textContent).toBe('示例剧集'));
@@ -98,17 +239,25 @@ describe('首页', () => {
     useAuthStore.setState({ verifiedUser: user as any });
     localStorage.clear();
     const runtime = mount({ discover: { items: [poster('m1', '远山'), poster('m2', '近水')], total: 9 } });
-    const browses = () => runtime.mediaApi.request.mock.calls.map(([path]: [string]) => path).filter((path: string) => path.startsWith('browse?channel=video'));
+    const browses = () =>
+      runtime.mediaApi.request.mock.calls
+        .map(([path]: [string]) => path)
+        .filter((path: string) => path.startsWith('browse?channel=video'));
     await settle();
     const section = () => root.querySelector<HTMLElement>('.home-discover[data-channel="video"]')!;
     expect(section().querySelector('h2')?.textContent).toBe('看点什么');
-    expect([...section().querySelectorAll('a.home-tile')].map(tile => tile.getAttribute('href'))).toEqual(['/media/video/items/m1', '/media/video/items/m2']);
+    expect([...section().querySelectorAll('a.home-tile')].map((tile) => tile.getAttribute('href'))).toEqual([
+      '/media/video/items/m1',
+      '/media/video/items/m2',
+    ]);
     expect(root.querySelector('.home-discover[data-channel="audiobook"]')).toBeNull();
     expect(root.querySelector('.home-discover[data-channel="music"]')).toBeNull();
     expect(browses()).toEqual([expect.stringContaining('sort=added')]);
     expect(section().querySelector('.home-shuffle')).toBeNull();
 
-    const random = [...section().querySelectorAll<HTMLButtonElement>('.segmented button')].find(button => button.textContent === '随便看看')!;
+    const random = [...section().querySelectorAll<HTMLButtonElement>('.segmented button')].find(
+      (button) => button.textContent === '随便看看',
+    )!;
     act(() => random.click());
     await settle();
     expect(random.getAttribute('aria-pressed')).toBe('true');
@@ -123,7 +272,9 @@ describe('首页', () => {
     useAuthStore.setState({ verifiedUser: user as any });
     const runtime = mount({ reading: [{ ...book, id: 'b2', title: '新书', lastReadAt: 9 }, book] });
     await settle();
-    expect([...root.querySelectorAll<HTMLAnchorElement>('a.home-resume')].map(card => card.getAttribute('href'))).toEqual(['/book/b2', '/media/video/items/i1']);
+    expect(
+      [...root.querySelectorAll<HTMLAnchorElement>('a.home-resume')].map((card) => card.getAttribute('href')),
+    ).toEqual(['/book/b2', '/media/video/items/i1']);
     expect(runtime.api.continueReading).toHaveBeenCalledWith(1, expect.anything());
   });
 
@@ -140,45 +291,62 @@ describe('首页', () => {
     saveMediaPreferences('home-test', { density: 'compact', showContinue: false, showLibraryName: true });
     const runtime = mount();
     await settle();
-    expect([...root.querySelectorAll<HTMLAnchorElement>('a.home-resume')].map(card => card.dataset.channel)).toEqual(['read']);
+    expect([...root.querySelectorAll<HTMLAnchorElement>('a.home-resume')].map((card) => card.dataset.channel)).toEqual([
+      'read',
+    ]);
     expect(runtime.mediaApi.request.mock.calls.some(([path]: [string]) => path.startsWith('history'))).toBe(false);
-    act(() => { saveMediaPreferences('home-test', { density: 'compact', showContinue: true, showLibraryName: true }); });
+    act(() => {
+      saveMediaPreferences('home-test', { density: 'compact', showContinue: true, showLibraryName: true });
+    });
     await settle();
-    expect([...root.querySelectorAll<HTMLAnchorElement>('a.home-resume')].map(card => card.dataset.channel)).toEqual(['video', 'read']);
+    expect([...root.querySelectorAll<HTMLAnchorElement>('a.home-resume')].map((card) => card.dataset.channel)).toEqual([
+      'video',
+      'read',
+    ]);
   });
 });
-
 
 it('shows unread new chapter digits on the independent continue-reading cover', async () => {
   mount({ reading: [{ ...book, format: 'chapters', newChapters: 3 }] });
   await until(() => root.querySelector('.home-resume[data-channel="read"] .chapter-update-badge')?.textContent === '3');
   expect(root.querySelector('.home-resume[data-channel="read"] .chapter-update-badge')?.textContent).toBe('3');
-  expect(root.querySelector('.home-resume[data-channel="read"]')?.getAttribute('aria-label')).toContain('3 章新章节未读');
+  expect(root.querySelector('.home-resume[data-channel="read"]')?.getAttribute('aria-label')).toContain(
+    '3 章新章节未读',
+  );
   expect(root.querySelector('.home-resume[data-channel="video"] .chapter-update-badge')).toBeNull();
 });
 
-
-it.each([1, 0])('preserves recent reading order even when a ninth book has new chapters: %s', async count => {
+it.each([1, 0])('preserves recent reading order even when a ninth book has new chapters: %s', async (count) => {
   useAuthStore.setState({ verifiedUser: user as any });
   const recent = Array.from({ length: 8 }, (_, i) => ({ ...book, id: `recent-${i}`, lastReadAt: 20 - i }));
   const updated = { ...book, id: 'ninth', title: '新章连载', format: 'chapters', newChapters: count, lastReadAt: 1 };
   const shelf = [...recent, updated];
   mount({ reading: [recent[0]!], shelf, video: [] });
   await until(() => root.querySelectorAll('.home-shelf .book-card').length === 8);
-  const ids = [...root.querySelectorAll<HTMLElement>('.home-shelf .book-card')].map(card => card.dataset.shelfBookId);
-  expect(ids).toEqual(recent.map(book => book.id));
+  const ids = [...root.querySelectorAll<HTMLElement>('.home-shelf .book-card')].map((card) => card.dataset.shelfBookId);
+  expect(ids).toEqual(recent.map((book) => book.id));
   expect(root.querySelector('.home-shelf .chapter-update-badge')).toBeNull();
   expect(root.querySelector('.home-resume[data-channel=read]')?.getAttribute('href')).toBe('/book/recent-0');
-  expect(shelf.map(book => book.id)).toEqual([...recent.map(book => book.id), 'ninth']);
+  expect(shelf.map((book) => book.id)).toEqual([...recent.map((book) => book.id), 'ninth']);
 });
 
-
 it('keeps new chapter digits on the recent books without changing their order', async () => {
-  const recent = Array.from({ length: 9 }, (_, i) => ({ ...book, id: `read-${i}`, lastReadAt: 20 - i, format: 'chapters', newChapters: i === 2 ? 3 : 0 }));
+  const recent = Array.from({ length: 9 }, (_, i) => ({
+    ...book,
+    id: `read-${i}`,
+    lastReadAt: 20 - i,
+    format: 'chapters',
+    newChapters: i === 2 ? 3 : 0,
+  }));
   const runtime = mount({ shelf: recent, reading: [recent[0]!], video: [] });
   await until(() => root.querySelectorAll('.home-shelf .book-card').length === 8);
-  expect([...root.querySelectorAll<HTMLElement>('.home-shelf .book-card')].map(card => card.dataset.shelfBookId)).toEqual(recent.slice(0, 8).map(book => book.id));
+  expect(
+    [...root.querySelectorAll<HTMLElement>('.home-shelf .book-card')].map((card) => card.dataset.shelfBookId),
+  ).toEqual(recent.slice(0, 8).map((book) => book.id));
   expect(root.querySelector('[data-shelf-book-id="read-2"] .chapter-update-badge')?.textContent).toBe('3');
-  expect(runtime.api.listBooks).toHaveBeenCalledWith(expect.objectContaining({ sort: 'recent', order: 'desc' }), expect.anything());
+  expect(runtime.api.listBooks).toHaveBeenCalledWith(
+    expect.objectContaining({ sort: 'recent', order: 'desc' }),
+    expect.anything(),
+  );
   expect(root.querySelector('.home-section a[href="/shelf"]')?.textContent).toBe('查看书架');
 });

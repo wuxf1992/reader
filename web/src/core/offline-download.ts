@@ -12,9 +12,25 @@ import { offlineRenditionRef, renditionRef } from '../ui/rendition.ts';
  */
 export const RANGED_FORMATS: readonly string[] = ['chapters', 'txt', 'mobi'];
 
+/**
+ * Whether this book downloads by chapter range. A PDF does when it is read as text
+ * (增强解析): its chapters are the server's; read as pages, the file is the book.
+ */
+export function downloadsByChapter(manifest: Pick<Manifest, 'book' | 'content'>): boolean {
+  return (
+    RANGED_FORMATS.includes(manifest.book.format) ||
+    (manifest.book.format === 'pdf' && manifest.content?.kind === 'reflowable')
+  );
+}
+
 export interface DownloadState {
   status: 'idle' | 'running' | 'paused' | 'cancelled' | 'complete' | 'error';
-  completed: number; total: number; from: number; to: number; message: string; revision?: string | undefined;
+  completed: number;
+  total: number;
+  from: number;
+  to: number;
+  message: string;
+  revision?: string | undefined;
 }
 export class OfflineDownload {
   state: DownloadState = { status: 'idle', completed: 0, total: 0, from: 1, to: 1, message: '' };
@@ -22,12 +38,17 @@ export class OfflineDownload {
   private loading: Promise<void> | null = null;
   private readonly listeners = new Set<(state: DownloadState) => void>();
   private pending: Promise<void> = Promise.resolve();
-  constructor(private readonly api: ReaderApi, private readonly cache: PublicationCache,
-    private readonly manifest: Manifest, private readonly changed: (state: DownloadState) => void,
-    private readonly current: () => boolean = () => true) {}
+  constructor(
+    private readonly api: ReaderApi,
+    private readonly cache: PublicationCache,
+    private readonly manifest: Manifest,
+    private readonly changed: (state: DownloadState) => void,
+    private readonly current: () => boolean = () => true,
+  ) {}
 
   onChange(listener: (state: DownloadState) => void): () => void {
-    this.listeners.add(listener); listener({ ...this.state });
+    this.listeners.add(listener);
+    listener({ ...this.state });
     return () => this.listeners.delete(listener);
   }
   private emit(): void {
@@ -36,7 +57,10 @@ export class OfflineDownload {
   }
   load(): Promise<void> {
     if (this.run) return Promise.resolve();
-    return this.loading ??= this.restore().catch(error => { this.loading = null; throw error; });
+    return (this.loading ??= this.restore().catch((error) => {
+      this.loading = null;
+      throw error;
+    }));
   }
   private async restore(): Promise<void> {
     const raw = await this.cache.task(this.manifest.book.id);
@@ -45,14 +69,22 @@ export class OfflineDownload {
       const saved = JSON.parse(raw) as DownloadState;
       if (saved.revision !== this.manifest.content?.revision) return;
       this.state = saved;
-      if (this.state.status === 'running') { this.state.status = 'paused'; this.state.message = '已暂停，可继续下载'; }
+      if (this.state.status === 'running') {
+        this.state.status = 'paused';
+        this.state.message = '已暂停，可继续下载';
+      }
       this.emit();
-    } catch { /* A missing task never invalidates cached chapters. */ }
+    } catch {
+      /* A missing task never invalidates cached chapters. */
+    }
   }
   async pause(cancel = false): Promise<void> {
     this.run?.abort();
     await this.pending;
-    await this.update({ status: cancel ? 'cancelled' : 'paused', message: cancel ? '已取消，已下载内容保留' : '已暂停，可继续下载' });
+    await this.update({
+      status: cancel ? 'cancelled' : 'paused',
+      message: cancel ? '已取消，已下载内容保留' : '已暂停，可继续下载',
+    });
   }
   async clear(): Promise<void> {
     await this.pause(true);
@@ -63,28 +95,48 @@ export class OfflineDownload {
     signal.throwIfAborted();
     if (!this.current()) throw new ApiError('aborted', '账号或服务已切换，下载已暂停');
   }
-  async start(from = 1, to = RANGED_FORMATS.includes(this.manifest.book.format) ? this.manifest.content?.total ?? 1 : 1): Promise<void> {
+  async start(
+    from = 1,
+    to = downloadsByChapter(this.manifest) ? (this.manifest.content?.total ?? 1) : 1,
+  ): Promise<void> {
     if (this.run) return;
-    const run = this.run = new AbortController();
-    this.pending = this.download(run, from, to).finally(() => { if (this.run === run) this.run = null; });
+    const run = (this.run = new AbortController());
+    this.pending = this.download(run, from, to).finally(() => {
+      if (this.run === run) this.run = null;
+    });
     await this.pending;
   }
   private async update(patch: Partial<DownloadState>): Promise<void> {
-    this.state = { ...this.state, ...patch }; this.emit();
+    this.state = { ...this.state, ...patch };
+    this.emit();
     await this.cache.putTask(this.manifest.book.id, JSON.stringify(this.state));
   }
   private async download(run: AbortController, from: number, to: number): Promise<void> {
-    const book = this.manifest.book, signal = run.signal;
+    const book = this.manifest.book,
+      signal = run.signal;
     try {
       this.assertCurrent(signal);
       const overrides = await this.cache.overrides(book.id);
       this.assertCurrent(signal);
-      const chapters = RANGED_FORMATS.includes(book.format) && !!this.manifest.content && !(book.format === 'txt' && overrides?.headingPrefix);
-      const total = chapters ? this.manifest.content?.total ?? 0 : 1;
+      const chapters =
+        downloadsByChapter(this.manifest) &&
+        !!this.manifest.content &&
+        !(book.format === 'txt' && overrides?.headingPrefix);
+      const total = chapters ? (this.manifest.content?.total ?? 0) : 1;
       if (book.format === 'image' && this.manifest.files.length > 1) throw new Error('图片目录暂不支持整书离线下载');
-      if (!['chapters', 'epub', 'txt', 'pdf', 'cbz', 'zip', 'image', 'mobi'].includes(book.format)) throw new Error('此格式暂不支持整书离线下载');
-      if (!Number.isInteger(from) || !Number.isInteger(to) || from < 1 || to < from || to > total) throw new Error('章节范围无效');
-      await this.update({ status: 'running', from, to, total: to - from + 1, completed: 0, message: '正在下载', revision: this.manifest.content?.revision });
+      if (!['chapters', 'epub', 'txt', 'pdf', 'cbz', 'zip', 'image', 'mobi'].includes(book.format))
+        throw new Error('此格式暂不支持整书离线下载');
+      if (!Number.isInteger(from) || !Number.isInteger(to) || from < 1 || to < from || to > total)
+        throw new Error('章节范围无效');
+      await this.update({
+        status: 'running',
+        from,
+        to,
+        total: to - from + 1,
+        completed: 0,
+        message: '正在下载',
+        revision: this.manifest.content?.revision,
+      });
       this.assertCurrent(signal);
       await this.cache.putManifest(book.id, this.manifest);
       this.assertCurrent(signal);
@@ -92,8 +144,9 @@ export class OfflineDownload {
         // Complete EPUB archives carry CSS/fonts/images, unlike isolated chapter HTML.
         const cached = await this.cache.resource(book.id, OFFLINE_FILE);
         this.assertCurrent(signal);
-        const bytes = cached ?? await this.api.bookBytes(book.id, { signal });
-        this.assertCurrent(signal); await this.cache.putResource(book.id, OFFLINE_FILE, bytes);
+        const bytes = cached ?? (await this.api.bookBytes(book.id, { signal }));
+        this.assertCurrent(signal);
+        await this.cache.putResource(book.id, OFFLINE_FILE, bytes);
         await this.update({ completed: 1 });
       } else {
         const content = this.manifest.content!;
@@ -105,7 +158,7 @@ export class OfflineDownload {
           const window = group === (content.group ?? 0) ? content : await this.api.items(book.id, group, { signal });
           this.assertCurrent(signal);
           await this.cache.putWindow(book.id, group, window);
-          items.push(...window.items.filter(item => item.seq >= from - 1 && item.seq < to));
+          items.push(...window.items.filter((item) => item.seq >= from - 1 && item.seq < to));
         }
         if (items.length !== to - from + 1) throw new Error('目录已变化，请重新打开书籍再下载');
         for (const item of items) {
@@ -116,14 +169,29 @@ export class OfflineDownload {
           if (!cached) {
             const blob = await this.api.asset(book.id, ref, { signal });
             const bytes = new Uint8Array(await blob.arrayBuffer());
-            this.assertCurrent(signal); await this.cache.putResource(book.id, ref, bytes);
+            this.assertCurrent(signal);
+            await this.cache.putResource(book.id, ref, bytes);
           }
-          this.assertCurrent(signal); await this.update({ completed: this.state.completed + 1 });
+          this.assertCurrent(signal);
+          await this.update({ completed: this.state.completed + 1 });
         }
       }
-      this.assertCurrent(signal); await this.update({ status: 'complete', message: chapters ? '所选章节已可离线阅读' : '整书已可离线阅读' });
+      // A PDF read as text draws its figures from the PDF itself, so the file comes along.
+      if (chapters && book.format === 'pdf' && !(await this.cache.resource(book.id, OFFLINE_FILE))) {
+        this.assertCurrent(signal);
+        await this.update({ message: '正在下载插图所需的原文件' });
+        const bytes = await this.api.bookBytes(book.id, { signal });
+        this.assertCurrent(signal);
+        await this.cache.putResource(book.id, OFFLINE_FILE, bytes);
+      }
+      this.assertCurrent(signal);
+      await this.update({ status: 'complete', message: chapters ? '所选章节已可离线阅读' : '整书已可离线阅读' });
     } catch (error) {
-      if (!signal.aborted) await this.update({ status: this.current() ? 'error' : 'paused', message: error instanceof Error ? error.message : '下载失败，可重试' });
+      if (!signal.aborted)
+        await this.update({
+          status: this.current() ? 'error' : 'paused',
+          message: error instanceof Error ? error.message : '下载失败，可重试',
+        });
     }
   }
 }

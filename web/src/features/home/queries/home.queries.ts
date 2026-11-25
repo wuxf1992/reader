@@ -10,12 +10,22 @@ export function readingQuery(runtime: AppRuntime) {
   const sameScope = () => runtime.api.baseUrl === baseUrl && runtime.api.currentSession()?.user.id === userId;
   const cachedReading = (): ContinueReadingItem[] => {
     if (!userId || !sameScope()) return [];
-    const local = runtime.offline.books().flatMap(book => {
+    const local = runtime.offline.books().flatMap((book) => {
       const progress = runtime.offline.progressFor(book.id);
-      return progress ? [{ ...book, percentage: progress.percentage, chapterTitle: progress.chapterTitle, lastReadAt: progress.updatedAt }] : [];
+      return progress
+        ? [
+            {
+              ...book,
+              percentage: progress.percentage,
+              chapterTitle: progress.chapterTitle,
+              lastReadAt: progress.updatedAt,
+            },
+          ]
+        : [];
     });
     return [...local, ...(runtime.offline.current.continueReading ?? [])]
-      .sort((a, b) => (b.lastReadAt ?? 0) - (a.lastReadAt ?? 0)).slice(0, 1);
+      .sort((a, b) => (b.lastReadAt ?? 0) - (a.lastReadAt ?? 0))
+      .slice(0, 1);
   };
   return queryOptions<ContinueReadingItem[]>({
     queryKey: ['home', 'reading', baseUrl, userId],
@@ -46,7 +56,10 @@ export function readingQuery(runtime: AppRuntime) {
         const cached = cachedReading();
         if (!cached.length) throw error;
         return cached;
-      } finally { clearTimeout(timeout); combined.dispose(); }
+      } finally {
+        clearTimeout(timeout);
+        combined.dispose();
+      }
     },
     placeholderData: () => {
       const cached = cachedReading();

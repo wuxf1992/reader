@@ -33,7 +33,13 @@ function runtime() {
     continueReading: vi.fn(async () => []),
     browseBatchShelf: vi.fn(async () => ({ books: [] })),
     setBaseUrl: vi.fn(),
-    instance: vi.fn(async () => ({ name: 'reader', apiVersion: 1, userCount: 1, registrationOpen: false, invitationRequired: false })),
+    instance: vi.fn(async () => ({
+      name: 'reader',
+      apiVersion: 1,
+      userCount: 1,
+      registrationOpen: false,
+      invitationRequired: false,
+    })),
     opdsCredentials: vi.fn(async () => ({ credentials: [], catalogUrl: '/opds' })),
     createOpdsCredential: vi.fn(),
     revokeOpdsCredential: vi.fn(),
@@ -49,7 +55,18 @@ function runtime() {
 
 function mount(node: ReactNode, value = runtime(), initialEntry = '/') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  act(() => render(<RuntimeContext value={value}><QueryClientProvider client={queryClient}><><MemoryRouter initialEntries={[initialEntry]}>{node}</MemoryRouter></></QueryClientProvider></RuntimeContext>, root));
+  act(() =>
+    render(
+      <RuntimeContext value={value}>
+        <QueryClientProvider client={queryClient}>
+          <>
+            <MemoryRouter initialEntries={[initialEntry]}>{node}</MemoryRouter>
+          </>
+        </QueryClientProvider>
+      </RuntimeContext>,
+      root,
+    ),
+  );
   return value;
 }
 
@@ -59,10 +76,19 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function OpdsProbe() { return <p data-opds-return={useLocation().state?.returnTo} />; }
+function OpdsProbe() {
+  return <p data-opds-return={useLocation().state?.returnTo} />;
+}
 
 it('keeps the shelf entry points available and restores clear, settings and OPDS actions', async () => {
-  const value = mount(<Routes><Route path="/shelf" element={<ShelfPage />} /><Route path="/me/opds" element={<OpdsProbe />} /></Routes>, runtime(), '/shelf?q=三体');
+  const value = mount(
+    <Routes>
+      <Route path="/shelf" element={<ShelfPage />} />
+      <Route path="/me/opds" element={<OpdsProbe />} />
+    </Routes>,
+    runtime(),
+    '/shelf?q=三体',
+  );
   expect(root.textContent).toContain('书源');
   expect(root.textContent).not.toContain('刷新');
   expect(root.querySelector('button[aria-label^="书架设置"]')).not.toBeNull();
@@ -75,12 +101,18 @@ it('keeps the shelf entry points available and restores clear, settings and OPDS
   await act(async () => settingsButton?.click());
   const textChoices = root.querySelector('[role="group"][aria-label="繁简转换（全局）"]')!;
   expect(textChoices).not.toBeNull();
-  await act(async () => [...textChoices.querySelectorAll('button')].find(button => button.textContent === '繁体')!.click());
+  await act(async () =>
+    [...textChoices.querySelectorAll('button')].find((button) => button.textContent === '繁体')!.click(),
+  );
   expect(value.updateSettings).toHaveBeenCalledWith({ chineseVariant: 'traditional' });
   expect(root.textContent).toContain('连接外部阅读器');
-  await act(async () => [...root.querySelectorAll('button')].find(button => button.textContent === '连接外部阅读器')?.click());
+  await act(async () =>
+    [...root.querySelectorAll('button')].find((button) => button.textContent === '连接外部阅读器')?.click(),
+  );
   // The OPDS page of 我的, which returns to the shelf.
-  await vi.waitFor(() => expect(root.querySelector('[data-opds-return]')?.getAttribute('data-opds-return')).toBe('/shelf'));
+  await vi.waitFor(() =>
+    expect(root.querySelector('[data-opds-return]')?.getAttribute('data-opds-return')).toBe('/shelf'),
+  );
 });
 
 it('collapses the server address and explains that sessions are remembered on login', () => {

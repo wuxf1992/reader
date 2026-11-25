@@ -26,7 +26,7 @@
   font: inherit;
   font-size: var(--text-body);
   line-height: 1.5;
-  box-shadow: 0 -14px 36px color-mix(in srgb, #000 22%, transparent);
+  box-shadow: var(--shadow-sheet);
   overflow: hidden;
 }
 
@@ -36,11 +36,13 @@
   animation: sheet-rise 220ms var(--motion-ease);
 }
 
-.sheet[open]::backdrop { animation: sheet-backdrop-enter 220ms ease-out both; }
+.sheet[open]::backdrop {
+  animation: sheet-backdrop-enter 220ms ease-out both;
+}
 
 /* The fallback colour is for WebViews whose ::backdrop does not inherit custom properties. */
 .sheet::backdrop {
-  background: var(--color-scrim, rgb(0 0 0 / 0.4));
+  background: var(--color-scrim, var(--color-backdrop-fallback));
 }
 
 /* The bar is 2.25rem × 0.25rem as before; the padding is finger room for dragging,
@@ -51,7 +53,7 @@
   width: 2.25rem;
   height: 0.25rem;
   margin: 0 auto;
-  padding: 0.5rem 2rem 0.25rem;
+  padding: var(--space-2) var(--space-8) var(--space-1);
   border-radius: var(--radius-pill);
   background: var(--reader-line);
   background-clip: content-box;
@@ -64,7 +66,7 @@
   gap: var(--space-2);
   min-height: 3.25rem;
   box-sizing: border-box;
-  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-3);
+  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-4);
   border-bottom: 1px solid var(--reader-line);
 }
 
@@ -101,17 +103,17 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
-  padding: var(--space-3) var(--space-3) calc(var(--space-3) + var(--safe-bottom));
+  padding: var(--space-4) var(--space-4) calc(var(--space-4) + var(--safe-bottom));
 }
 
 /* A compact sheet is as tall as its content: a zero basis would collapse its body to
    the padding and clip the prompt. It still shrinks and scrolls past the height cap. */
-.sheet[data-size='compact'] > .sheet-body {
+.sheet[data-size="compact"] > .sheet-body {
   flex-basis: auto;
 }
 
 .sheet:has(> .sheet-footer) > .sheet-body {
-  padding-bottom: var(--space-3);
+  padding-bottom: var(--space-4);
 }
 
 .sheet-footer {
@@ -120,7 +122,7 @@
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: var(--space-2);
-  padding: var(--space-2) var(--space-3) calc(var(--space-2) + var(--safe-bottom));
+  padding: var(--space-2) var(--space-4) calc(var(--space-2) + var(--safe-bottom));
   border-top: 1px solid var(--reader-line);
 }
 
@@ -142,7 +144,7 @@
 .sheet-form {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-4);
 }
 
 .sheet-field {
@@ -234,7 +236,7 @@
   line-height: 1.4;
 }
 
-.sheet-list-item[aria-checked='true'] {
+.sheet-list-item[aria-checked="true"] {
   color: var(--reader-accent);
   font-weight: 600;
 }
@@ -270,23 +272,43 @@
 }
 
 @keyframes sheet-rise {
-  from { transform: translateY(100%); }
-  to { transform: none; }
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: none;
+  }
 }
 
 @keyframes sheet-pop {
-  from { opacity: 0; transform: scale(0.96); }
-  to { opacity: 1; transform: none; }
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 @keyframes sheet-slide {
-  from { opacity: 0; transform: translateX(1rem); }
-  to { opacity: 1; transform: none; }
+  from {
+    opacity: 0;
+    transform: translateX(1rem);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 @keyframes sheet-backdrop-enter {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 @media (max-width: 700px) {
@@ -294,7 +316,7 @@
      WebViews keep the native dialog at its intrinsic content height and the
      body's overflow area never becomes a scroll container. Compact prompts
      remain content-sized. */
-  .sheet:not([data-size='compact']) {
+  .sheet:not([data-size="compact"]) {
     height: min(80vh, calc(100vh - var(--safe-top) - 1.5rem));
     height: min(80dvh, calc(100dvh - var(--safe-top) - 1.5rem));
   }
@@ -309,7 +331,7 @@
    viewport height, leaving only a thin strip of the body visible. Use explicit
    regions there; desktop Chrome keeps the normal flex layout above. */
 @media (max-width: 700px) {
-  .sheet[data-host='pwa']:not([data-size='compact']) {
+  .sheet[data-host="pwa"]:not([data-size="compact"]) {
     inset: 20vh 0 0;
     height: auto;
     max-height: none;
@@ -317,7 +339,7 @@
     flex-direction: column;
   }
 
-  .sheet[data-host='pwa']:not([data-size='compact']) > .sheet-body {
+  .sheet[data-host="pwa"]:not([data-size="compact"]) > .sheet-body {
     flex: 1 1 0%;
     height: auto;
     min-height: 0;
@@ -332,34 +354,34 @@
     max-height: calc(100dvh - max(1rem, var(--safe-top)) - max(1rem, var(--safe-bottom)));
     border-bottom: 1px solid var(--reader-line);
     border-radius: var(--radius-lg);
-    box-shadow: 0 12px 48px color-mix(in srgb, #000 20%, transparent);
+    box-shadow: var(--shadow-lg);
   }
 
   .sheet[open] {
     animation-name: sheet-slide;
   }
 
-  .sheet[data-size='compact'] {
+  .sheet[data-size="compact"] {
     bottom: auto;
   }
 
   /* Opened by a tap or a focused control: beside the opener, positioned by sheet.tsx. */
-  .sheet[data-size='compact'][data-anchored] {
+  .sheet[data-size="compact"][data-anchored] {
     right: auto;
     bottom: auto;
     width: min(24rem, calc(100vw - 2rem));
-    box-shadow: 0 12px 40px color-mix(in srgb, #000 18%, transparent);
+    box-shadow: var(--shadow-lg);
   }
 
-  .sheet[data-size='compact'][data-anchored][open] {
+  .sheet[data-size="compact"][data-anchored][open] {
     animation-name: sheet-pop;
   }
 
-  .sheet[data-size='compact'][data-anchored]::backdrop {
-    background: color-mix(in srgb, var(--color-scrim, rgb(0 0 0 / 0.4)) 45%, transparent);
+  .sheet[data-size="compact"][data-anchored]::backdrop {
+    background: color-mix(in srgb, var(--color-scrim, var(--color-backdrop-fallback)) 45%, transparent);
   }
 
-  .sheet[data-size='wide'] {
+  .sheet[data-size="wide"] {
     width: min(42rem, calc(100vw - 2rem));
   }
 
@@ -372,7 +394,7 @@
   }
 
   .sheet-body {
-    padding-bottom: var(--space-3);
+    padding-bottom: var(--space-4);
   }
 
   .sheet-footer {
@@ -380,16 +402,26 @@
   }
 }
 
-.sheet[data-closing] { pointer-events: none; }
-.sheet[data-closing]::backdrop { animation: sheet-backdrop-exit 150ms ease-in forwards; }
+.sheet[data-closing] {
+  pointer-events: none;
+}
+.sheet[data-closing]::backdrop {
+  animation: sheet-backdrop-exit 150ms ease-in forwards;
+}
 
 @keyframes sheet-backdrop-exit {
-  to { opacity: 0; }
+  to {
+    opacity: 0;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .sheet[open]::backdrop { animation-duration: 0.001s !important; }
-  .sheet[data-closing]::backdrop { animation-duration: 80ms !important; }
+  .sheet[open]::backdrop {
+    animation-duration: 0.001s !important;
+  }
+  .sheet[data-closing]::backdrop {
+    animation-duration: 80ms !important;
+  }
 }
 
 /* 编辑信息: a field's label carries its manual badge and 恢复 on one line. */
@@ -409,7 +441,9 @@
   font: inherit;
   cursor: pointer;
 }
-.book-metadata-form small[role="alert"] { color: var(--color-danger); }
+.book-metadata-form small[role="alert"] {
+  color: var(--color-danger);
+}
 
 /* Dragging (sheet-drag.ts, phones only): the handle takes the gesture from the page,
    the sheet follows the finger without easing, then eases to where it rests. */
@@ -424,18 +458,20 @@
   }
 
   .sheet[data-settling] {
-    transition: height var(--motion-duration) var(--motion-ease), transform var(--motion-duration) var(--motion-ease);
+    transition:
+      height var(--motion-duration) var(--motion-ease),
+      transform var(--motion-duration) var(--motion-ease);
   }
 
   /* Pulled up: nearly the whole screen, below the status bar. Doubled class to win over
      the reader's half-screen panel and the PWA layout without depending on file order. */
-  .sheet.sheet[data-expanded]:not([data-size='compact']) {
+  .sheet.sheet[data-expanded]:not([data-size="compact"]) {
     max-height: none;
     height: calc(100vh - var(--safe-top) - 0.5rem);
     height: calc(100dvh - var(--safe-top) - 0.5rem);
   }
 
-  .sheet.sheet[data-host='pwa'][data-expanded]:not([data-size='compact']) {
+  .sheet.sheet[data-host="pwa"][data-expanded]:not([data-size="compact"]) {
     top: calc(var(--safe-top) + 0.5rem);
     height: auto;
   }

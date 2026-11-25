@@ -30,9 +30,24 @@ import type {
   User,
 } from './types.ts';
 import type { Platform } from '../core/platform.ts';
-import type { SourceType, SourceInstance, SourcePlugin, SourceEntry, SourcePage, SourceAcquisition, ChapterSubscription, SourceChapter } from './sources.ts';
+import type {
+  SourceType,
+  SourceInstance,
+  SourcePlugin,
+  SourceEntry,
+  SourcePage,
+  SourceAcquisition,
+  ChapterSubscription,
+  SourceChapter,
+} from './sources.ts';
 import { isCancelledError } from '@tanstack/query-core';
-import { affectedNavigationQuery, createReaderQueryClient, isLiveNavigationQuery, isNavigationQuery, readerQueryKey } from './query.ts';
+import {
+  affectedNavigationQuery,
+  createReaderQueryClient,
+  isLiveNavigationQuery,
+  isNavigationQuery,
+  readerQueryKey,
+} from './query.ts';
 
 export interface SessionStore {
   load(): Promise<Session | null>;
@@ -48,7 +63,7 @@ export interface SessionStore {
  * engines may I offer here", not "does this endpoint exist".
  */
 export interface TtsCapabilities {
-  timeoutMs?:number;
+  timeoutMs?: number;
   http: boolean;
   formats: string[];
   maxLength: number;
@@ -183,7 +198,12 @@ export class ReaderApi {
 
   /** Renew before expiry; transient failures leave the persisted login intact. */
   async renewSessionIfNeeded(): Promise<void> {
-    if (!this.session || Math.min(this.session.accessTokenExpiresAt, this.session.resourceTokenExpiresAt ?? Infinity) > Date.now() + 5 * 60_000) return;
+    if (
+      !this.session ||
+      Math.min(this.session.accessTokenExpiresAt, this.session.resourceTokenExpiresAt ?? Infinity) >
+        Date.now() + 5 * 60_000
+    )
+      return;
     await this.refreshSession(this.sessionGeneration);
   }
 
@@ -193,7 +213,9 @@ export class ReaderApi {
   }
 
   /** Drop unusable local credentials without waiting for a logout request. */
-  discardSession(): Promise<void> { return this.setSession(null); }
+  discardSession(): Promise<void> {
+    return this.setSession(null);
+  }
 
   private async setSession(session: Session | null, rotation = false): Promise<void> {
     if (!rotation) {
@@ -204,11 +226,13 @@ export class ReaderApi {
     const generation = this.sessionGeneration;
     this.session = session;
     if (!rotation) this.queryScope += 1;
-    const write = this.sessionWrites.catch(() => undefined).then(() =>
-      session ? this.sessions.save(session) : this.sessions.clear());
+    const write = this.sessionWrites
+      .catch(() => undefined)
+      .then(() => (session ? this.sessions.save(session) : this.sessions.clear()));
     this.sessionWrites = write;
-    try { await write; }
-    finally {
+    try {
+      await write;
+    } finally {
       // Revocation must reach the UI even if credential storage is unavailable.
       if (generation === this.sessionGeneration) for (const listener of this.listeners) listener(session);
     }
@@ -250,27 +274,54 @@ export class ReaderApi {
   }
 
   async me(options: RequestOptions = {}): Promise<User> {
-    const generation=this.sessionGeneration;
+    const generation = this.sessionGeneration;
     const result = await this.get<{ user: User }>('/api/v1/auth/me', options);
-    if(!options.signal?.aborted&&generation===this.sessionGeneration&&this.session?.user.id===result.user.id){
-      const session={...this.session,user:result.user};
-      this.session=session;
-      const write=this.sessionWrites.catch(()=>undefined).then(()=>generation===this.sessionGeneration?this.sessions.save(session):undefined);
-      this.sessionWrites=write;
+    if (!options.signal?.aborted && generation === this.sessionGeneration && this.session?.user.id === result.user.id) {
+      const session = { ...this.session, user: result.user };
+      this.session = session;
+      const write = this.sessionWrites
+        .catch(() => undefined)
+        .then(() => (generation === this.sessionGeneration ? this.sessions.save(session) : undefined));
+      this.sessionWrites = write;
       // Profile caching must not revoke valid credentials when local storage is full.
       await write.catch(() => undefined);
     }
     return result.user;
   }
 
-  async adminUsers(): Promise<{users:import('./types.ts').ManagedUser[]}> { return this.get('/api/v1/admin/users'); }
-  async adminCreateUser(input:{username:string;password:string;displayName:string;role:'admin'|'member';mediaEnabled?:boolean}): Promise<unknown> { return this.call('/api/v1/admin/users','POST',input); }
-  async adminUpdateUser(id:string,input:{disabled?:boolean;role?:'admin'|'member';mediaEnabled?:boolean}): Promise<unknown> { return this.call('/api/v1/admin/users/'+encodeURIComponent(id),'PATCH',input); }
-  async adminResetPassword(id:string,password:string): Promise<unknown> { return this.call('/api/v1/admin/users/'+encodeURIComponent(id)+'/password','POST',{password}); }
-  async registrationSettings(): Promise<import('./types.ts').RegistrationSettings> { return this.get('/api/v1/admin/registration'); }
-  async setRegistrationMode(mode:import('./types.ts').RegistrationSettings['mode']): Promise<unknown> { return this.call('/api/v1/admin/registration','PATCH',{mode}); }
-  async createInvite(input:{label:string;maxUses:number;days:number}): Promise<{code:string}> { return this.call('/api/v1/admin/invites','POST',input); }
-  async disableInvite(id:string): Promise<unknown> { return this.call('/api/v1/admin/invites/'+encodeURIComponent(id),'DELETE'); }
+  async adminUsers(): Promise<{ users: import('./types.ts').ManagedUser[] }> {
+    return this.get('/api/v1/admin/users');
+  }
+  async adminCreateUser(input: {
+    username: string;
+    password: string;
+    displayName: string;
+    role: 'admin' | 'member';
+    mediaEnabled?: boolean;
+  }): Promise<unknown> {
+    return this.call('/api/v1/admin/users', 'POST', input);
+  }
+  async adminUpdateUser(
+    id: string,
+    input: { disabled?: boolean; role?: 'admin' | 'member'; mediaEnabled?: boolean },
+  ): Promise<unknown> {
+    return this.call('/api/v1/admin/users/' + encodeURIComponent(id), 'PATCH', input);
+  }
+  async adminResetPassword(id: string, password: string): Promise<unknown> {
+    return this.call('/api/v1/admin/users/' + encodeURIComponent(id) + '/password', 'POST', { password });
+  }
+  async registrationSettings(): Promise<import('./types.ts').RegistrationSettings> {
+    return this.get('/api/v1/admin/registration');
+  }
+  async setRegistrationMode(mode: import('./types.ts').RegistrationSettings['mode']): Promise<unknown> {
+    return this.call('/api/v1/admin/registration', 'PATCH', { mode });
+  }
+  async createInvite(input: { label: string; maxUses: number; days: number }): Promise<{ code: string }> {
+    return this.call('/api/v1/admin/invites', 'POST', input);
+  }
+  async disableInvite(id: string): Promise<unknown> {
+    return this.call('/api/v1/admin/invites/' + encodeURIComponent(id), 'DELETE');
+  }
 
   async changePassword(currentPassword: string, newPassword: string): Promise<void> {
     await this.call('/api/v1/auth/password', 'POST', { currentPassword, newPassword });
@@ -280,84 +331,194 @@ export class ReaderApi {
 
   // ---- shelf ----
 
-  async sourcePage(id: string, pageId: string, action?: string, values?: Record<string, unknown>): Promise<ExtensionPage> {
+  async sourcePage(
+    id: string,
+    pageId: string,
+    action?: string,
+    values?: Record<string, unknown>,
+  ): Promise<ExtensionPage> {
     const path = '/api/v1/sources/' + encodeURIComponent(id) + '/pages/' + encodeURIComponent(pageId);
     return action ? this.call(path, 'POST', { action, values }) : this.get(path);
   }
 
-  async pluginPage(id: string, pageId: string, action?: string, values?: Record<string, unknown>): Promise<ExtensionPage> {
+  async pluginPage(
+    id: string,
+    pageId: string,
+    action?: string,
+    values?: Record<string, unknown>,
+  ): Promise<ExtensionPage> {
     const path = '/api/v1/plugins/' + encodeURIComponent(id) + '/pages/' + encodeURIComponent(pageId);
     return action ? this.call(path, 'POST', { action, values }) : this.get(path);
   }
-  async sourceFilters(id: string): Promise<ExtensionField[]> { return this.get('/api/v1/sources/' + encodeURIComponent(id) + '/search-filters'); }
-  async sourceOptions(id: string): Promise<{ canSwitch: boolean }> { return this.get('/api/v1/books/' + encodeURIComponent(id) + '/source-options'); }
-  alternatives(id: string, query: { sessionId: string; cursor?: string; pool?: 'all' | 'backup' }, options: RequestOptions = {}): AsyncGenerator<SourcePage> {
+  async sourceFilters(id: string): Promise<ExtensionField[]> {
+    return this.get('/api/v1/sources/' + encodeURIComponent(id) + '/search-filters');
+  }
+  async sourceOptions(id: string): Promise<{ canSwitch: boolean }> {
+    return this.get('/api/v1/books/' + encodeURIComponent(id) + '/source-options');
+  }
+  alternatives(
+    id: string,
+    query: { sessionId: string; cursor?: string; pool?: 'all' | 'backup' },
+    options: RequestOptions = {},
+  ): AsyncGenerator<SourcePage> {
     return this.catalogStream('/api/v1/books/' + encodeURIComponent(id) + '/alternatives', query, options);
   }
   async refreshChapter(id: string, ref: string, options: RequestOptions = {}): Promise<Blob> {
-    const response = await this.request('/api/v1/books/' + encodeURIComponent(id) + '/refresh-chapter', 'POST', { ref }, { ...options, binary: true });
+    const response = await this.request(
+      '/api/v1/books/' + encodeURIComponent(id) + '/refresh-chapter',
+      'POST',
+      { ref },
+      { ...options, binary: true },
+    );
     const bytes = new Uint8Array(response.bytes ?? []);
     return new Blob([bytes.buffer]);
   }
-  async switchQuality(id: string, entryRef: string, chapterId: string, options: RequestOptions = {}): Promise<ChapterQuality> {
-    return this.call('/api/v1/books/' + encodeURIComponent(id) + '/switch-quality','POST',{entryRef,chapterId},options);
+  async switchQuality(
+    id: string,
+    entryRef: string,
+    chapterId: string,
+    options: RequestOptions = {},
+  ): Promise<ChapterQuality> {
+    return this.call(
+      '/api/v1/books/' + encodeURIComponent(id) + '/switch-quality',
+      'POST',
+      { entryRef, chapterId },
+      options,
+    );
   }
-  async credentialStatus(id: string): Promise<CredentialStatus> { return this.get('/api/v1/sources/' + encodeURIComponent(id) + '/credentials'); }
-  async opdsCredentials(): Promise<{ credentials: OpdsCredential[]; catalogUrl: string }> { return this.get('/api/v1/opds/credentials'); }
-  async createOpdsCredential(name: string): Promise<OpdsCredential & { username: string; password: string; catalogUrl: string }> { return this.call('/api/v1/opds/credentials', 'POST', { name }); }
-  async revokeOpdsCredential(id: string): Promise<void> { await this.call('/api/v1/opds/credentials/' + encodeURIComponent(id), 'DELETE'); }
-  async deleteCredential(id: string, key: string): Promise<void> { await this.call('/api/v1/sources/' + encodeURIComponent(id) + '/credentials/' + encodeURIComponent(key),'DELETE'); }
+  async credentialStatus(id: string): Promise<CredentialStatus> {
+    return this.get('/api/v1/sources/' + encodeURIComponent(id) + '/credentials');
+  }
+  async opdsCredentials(): Promise<{ credentials: OpdsCredential[]; catalogUrl: string }> {
+    return this.get('/api/v1/opds/credentials');
+  }
+  async createOpdsCredential(
+    name: string,
+  ): Promise<OpdsCredential & { username: string; password: string; catalogUrl: string }> {
+    return this.call('/api/v1/opds/credentials', 'POST', { name });
+  }
+  async revokeOpdsCredential(id: string): Promise<void> {
+    await this.call('/api/v1/opds/credentials/' + encodeURIComponent(id), 'DELETE');
+  }
+  async deleteCredential(id: string, key: string): Promise<void> {
+    await this.call('/api/v1/sources/' + encodeURIComponent(id) + '/credentials/' + encodeURIComponent(key), 'DELETE');
+  }
   /** Store another edition's cover as this book's cover. */
   async changeCover(id: string, entryRef: string, coverRef: string, sourceId?: string): Promise<void> {
-    await this.call('/api/v1/books/' + encodeURIComponent(id) + '/cover-source', 'POST', { entryRef, coverRef, ...(sourceId ? { sourceId } : {}) });
+    await this.call('/api/v1/books/' + encodeURIComponent(id) + '/cover-source', 'POST', {
+      entryRef,
+      coverRef,
+      ...(sourceId ? { sourceId } : {}),
+    });
   }
   /** A local book goes back to the cover its file carries. */
   /** 编辑信息: manual values, kept above whatever a rescan reads from the file. */
   async updateBookMetadata(id: string, patch: Partial<Record<BookMetadataField, string | string[]>>): Promise<Book> {
-    return (await this.call<{ book: Book }>('/api/v1/books/' + encodeURIComponent(id) + '/metadata', 'PATCH', patch)).book;
+    return (await this.call<{ book: Book }>('/api/v1/books/' + encodeURIComponent(id) + '/metadata', 'PATCH', patch))
+      .book;
   }
   /** Drops one manual value, so the field shows what the file says again. */
   async clearBookMetadata(id: string, field: BookMetadataField): Promise<Book> {
-    return (await this.call<{ book: Book }>('/api/v1/books/' + encodeURIComponent(id) + '/metadata/' + encodeURIComponent(field), 'DELETE')).book;
+    return (
+      await this.call<{ book: Book }>(
+        '/api/v1/books/' + encodeURIComponent(id) + '/metadata/' + encodeURIComponent(field),
+        'DELETE',
+      )
+    ).book;
   }
-  async restoreCover(id: string): Promise<void> { await this.call('/api/v1/books/' + encodeURIComponent(id) + '/cover-source', 'DELETE'); }
-  async switchPreview(id: string, entryRef: string): Promise<{ chapters: Array<{ id: string; title: string }>; latestChapter?: string }> {
+  async restoreCover(id: string): Promise<void> {
+    await this.call('/api/v1/books/' + encodeURIComponent(id) + '/cover-source', 'DELETE');
+  }
+  async switchPreview(
+    id: string,
+    entryRef: string,
+  ): Promise<{ chapters: Array<{ id: string; title: string }>; latestChapter?: string }> {
     return this.call('/api/v1/books/' + encodeURIComponent(id) + '/switch-preview', 'POST', { entryRef });
   }
-  async switchSource(id: string, entryRef: string, chapterId: string, revision: string): Promise<{ content: BookContent; href: string }> {
-    return this.call('/api/v1/books/' + encodeURIComponent(id) + '/switch-source', 'POST', { entryRef, chapterId, revision });
+  async switchSource(
+    id: string,
+    entryRef: string,
+    chapterId: string,
+    revision: string,
+  ): Promise<{ content: BookContent; href: string }> {
+    return this.call('/api/v1/books/' + encodeURIComponent(id) + '/switch-source', 'POST', {
+      entryRef,
+      chapterId,
+      revision,
+    });
   }
-  async sourceTypes(): Promise<SourceType[]> { return (await this.get<{ types: SourceType[] }>('/api/v1/sources/types')).types; }
-  async sources(): Promise<SourceInstance[]> { return (await this.get<{ sources: SourceInstance[] }>('/api/v1/sources')).sources; }
-  async plugins(): Promise<SourcePlugin[]> { return (await this.get<{ plugins: SourcePlugin[] }>('/api/v1/plugins')).plugins; }
+  async sourceTypes(): Promise<SourceType[]> {
+    return (await this.get<{ types: SourceType[] }>('/api/v1/sources/types')).types;
+  }
+  async sources(): Promise<SourceInstance[]> {
+    return (await this.get<{ sources: SourceInstance[] }>('/api/v1/sources')).sources;
+  }
+  async plugins(): Promise<SourcePlugin[]> {
+    return (await this.get<{ plugins: SourcePlugin[] }>('/api/v1/plugins')).plugins;
+  }
   async saveSource(id: string | null, input: Record<string, unknown>): Promise<SourceInstance> {
-    return (await this.call<{ source: SourceInstance }>(`/api/v1/sources${id ? `/${encodeURIComponent(id)}` : ''}`, id ? 'PATCH' : 'POST', input)).source;
+    return (
+      await this.call<{ source: SourceInstance }>(
+        `/api/v1/sources${id ? `/${encodeURIComponent(id)}` : ''}`,
+        id ? 'PATCH' : 'POST',
+        input,
+      )
+    ).source;
   }
-  async removeSource(id: string): Promise<void> { await this.call(`/api/v1/sources/${encodeURIComponent(id)}`, 'DELETE'); }
+  async removeSource(id: string): Promise<void> {
+    await this.call(`/api/v1/sources/${encodeURIComponent(id)}`, 'DELETE');
+  }
   async sourceCredential(id: string, key: string, value: string): Promise<void> {
-    await this.call(`/api/v1/sources/${encodeURIComponent(id)}/credentials/${encodeURIComponent(key)}`, 'PUT', { value });
+    await this.call(`/api/v1/sources/${encodeURIComponent(id)}/credentials/${encodeURIComponent(key)}`, 'PUT', {
+      value,
+    });
   }
-  async installPlugin(packageName: string): Promise<SourcePlugin> { return (await this.call<{ plugin: SourcePlugin }>('/api/v1/plugins', 'POST', { package: packageName, trusted: true })).plugin; }
+  async installPlugin(packageName: string): Promise<SourcePlugin> {
+    return (
+      await this.call<{ plugin: SourcePlugin }>('/api/v1/plugins', 'POST', { package: packageName, trusted: true })
+    ).plugin;
+  }
   async uploadPlugin(file: File): Promise<SourcePlugin> {
     const form = new FormData();
     form.append('trusted', 'true');
     form.append('file', file, file.name);
     return (await this.call<{ plugin: SourcePlugin }>('/api/v1/plugins/upload', 'POST', form)).plugin;
   }
-  async enablePlugin(id: string, enabled: boolean): Promise<void> { await this.call(`/api/v1/plugins/${encodeURIComponent(id)}`, 'PATCH', { enabled }); }
-  async uninstallPlugin(id: string): Promise<void> { await this.call(`/api/v1/plugins/${encodeURIComponent(id)}`, 'DELETE'); }
-  async sourceCatalog(id: string, query: { ref?: string; cursor?: string } = {}, options: RequestOptions = {}): Promise<SourcePage> {
+  async enablePlugin(id: string, enabled: boolean): Promise<void> {
+    await this.call(`/api/v1/plugins/${encodeURIComponent(id)}`, 'PATCH', { enabled });
+  }
+  async uninstallPlugin(id: string): Promise<void> {
+    await this.call(`/api/v1/plugins/${encodeURIComponent(id)}`, 'DELETE');
+  }
+  async sourceCatalog(
+    id: string,
+    query: { ref?: string; cursor?: string } = {},
+    options: RequestOptions = {},
+  ): Promise<SourcePage> {
     const params = new URLSearchParams();
     if (query.ref) params.set('ref', query.ref);
     if (query.cursor) params.set('cursor', query.cursor);
     return this.get(`/api/v1/sources/${encodeURIComponent(id)}/browse?${params}`, options);
   }
-  async *searchSource(id: string, query: { query: string; sessionId: string; cursor?: string; filters?: Record<string, string>; resultLimit?: number }, options: RequestOptions = {}): AsyncGenerator<SourcePage> {
+  async *searchSource(
+    id: string,
+    query: {
+      query: string;
+      sessionId: string;
+      cursor?: string;
+      filters?: Record<string, string>;
+      resultLimit?: number;
+    },
+    options: RequestOptions = {},
+  ): AsyncGenerator<SourcePage> {
     yield* this.catalogStream('/api/v1/sources/' + encodeURIComponent(id) + '/search', query, options);
   }
   private async *catalogStream(path: string, query: unknown, options: RequestOptions): AsyncGenerator<SourcePage> {
-    const generation = this.sessionGeneration, controller = new AbortController();
-    const { signal, dispose } = combineAbortSignals(options.signal ? [options.signal, controller.signal] : [controller.signal]);
+    const generation = this.sessionGeneration,
+      controller = new AbortController();
+    const { signal, dispose } = combineAbortSignals(
+      options.signal ? [options.signal, controller.signal] : [controller.signal],
+    );
     this.streams.add(controller);
     try {
       const response = await this.request(path, 'POST', query, { ...options, signal, stream: true });
@@ -365,13 +526,27 @@ export class ReaderApi {
       for await (const event of eventStream(response.stream, signal)) {
         this.assertSession(generation);
         let data: unknown;
-        try { data = JSON.parse(event.data); } catch { throw new ApiError('server', '搜索事件格式错误', 'INVALID_STREAM'); }
+        try {
+          data = JSON.parse(event.data);
+        } catch {
+          throw new ApiError('server', '搜索事件格式错误', 'INVALID_STREAM');
+        }
         if (event.event === 'done') return;
         if (event.event === 'error') {
           const error = data as { message?: string; code?: string; status?: number };
-          throw new ApiError(errorForStatus(error.status ?? 500), error.message ?? '搜索失败', error.code ?? 'SEARCH_FAILED', error.status ?? 500);
+          throw new ApiError(
+            errorForStatus(error.status ?? 500),
+            error.message ?? '搜索失败',
+            error.code ?? 'SEARCH_FAILED',
+            error.status ?? 500,
+          );
         }
-        if (event.event !== 'results' || !data || typeof data !== 'object' || !Array.isArray((data as SourcePage).items)) {
+        if (
+          event.event !== 'results' ||
+          !data ||
+          typeof data !== 'object' ||
+          !Array.isArray((data as SourcePage).items)
+        ) {
           throw new ApiError('server', '无效的搜索事件', 'INVALID_STREAM');
         }
         yield data as SourcePage;
@@ -382,22 +557,35 @@ export class ReaderApi {
       // account-change contract on that path as well as between events.
       this.assertSession(generation);
       throw error;
-    } finally { controller.abort(); dispose(); this.streams.delete(controller); }
+    } finally {
+      controller.abort();
+      dispose();
+      this.streams.delete(controller);
+    }
   }
   async sourceDetail(id: string, ref: string): Promise<SourceEntry> {
     return this.get(`/api/v1/sources/${encodeURIComponent(id)}/entries?ref=${encodeURIComponent(ref)}`);
   }
   async sourceChapters(id: string, ref: string, options: RequestOptions = {}): Promise<SourceChapter[]> {
-    const manifest = await this.get<{ items: Array<SourceChapter & { kind: 'chapter' | 'page' }> }>(`/api/v1/sources/${encodeURIComponent(id)}/publications/${encodeURIComponent(ref)}/manifest`, options);
-    return manifest.items.filter(item => item.kind === 'chapter').sort((a, b) => a.seq - b.seq);
+    const manifest = await this.get<{ items: Array<SourceChapter & { kind: 'chapter' | 'page' }> }>(
+      `/api/v1/sources/${encodeURIComponent(id)}/publications/${encodeURIComponent(ref)}/manifest`,
+      options,
+    );
+    return manifest.items.filter((item) => item.kind === 'chapter').sort((a, b) => a.seq - b.seq);
   }
   async acquireSource(id: string, entryRef: string, optionId?: string): Promise<SourceAcquisition> {
-    return this.call(`/api/v1/sources/${encodeURIComponent(id)}/acquire`, 'POST', { entryRef, ...(optionId ? { optionId } : {}) });
+    return this.call(`/api/v1/sources/${encodeURIComponent(id)}/acquire`, 'POST', {
+      entryRef,
+      ...(optionId ? { optionId } : {}),
+    });
   }
   async subscriptions(): Promise<ChapterSubscription[]> {
     return (await this.get<{ subscriptions: ChapterSubscription[] }>('/api/v1/subscriptions')).subscriptions;
   }
-  async configureSubscription(id: string, patch: { enabled?: boolean; intervalMinutes?: number; acknowledge?: boolean }): Promise<void> {
+  async configureSubscription(
+    id: string,
+    patch: { enabled?: boolean; intervalMinutes?: number; acknowledge?: boolean },
+  ): Promise<void> {
     await this.call(`/api/v1/books/${encodeURIComponent(id)}/subscription`, 'PATCH', patch);
   }
 
@@ -419,6 +607,20 @@ export class ReaderApi {
     return this.get<Manifest>(`/api/v1/books/${encodeURIComponent(id)}/manifest`, options);
   }
 
+  /** How this reader sees this book, for a PDF: its pages or its text (and the site default). */
+  async viewMode(id: string, options: RequestOptions = {}): Promise<BookViewMode> {
+    return this.call<BookViewMode>(`/api/v1/books/${encodeURIComponent(id)}/view-mode`, 'GET', undefined, options);
+  }
+
+  /** Chooses how this reader sees this PDF; `null` returns it to the site default. */
+  async setViewMode(
+    id: string,
+    pdfMode: 'pdfjs' | 'enhanced' | null,
+    options: RequestOptions = {},
+  ): Promise<BookViewMode> {
+    return this.call<BookViewMode>(`/api/v1/books/${encodeURIComponent(id)}/view-mode`, 'PUT', { pdfMode }, options);
+  }
+
   async refreshPublication(id: string, options: RequestOptions = {}): Promise<BookContent> {
     return this.call<BookContent>(`/api/v1/books/${encodeURIComponent(id)}/refresh`, 'POST', undefined, options);
   }
@@ -434,7 +636,9 @@ export class ReaderApi {
   async asset(id: string, ref: string, options: RequestOptions = {}): Promise<Blob> {
     const response = await this.request(
       `/api/v1/books/${encodeURIComponent(id)}/assets?ref=${encodeURIComponent(ref)}`,
-      'GET', undefined, { ...options, binary: true },
+      'GET',
+      undefined,
+      { ...options, binary: true },
     );
     if (response.status >= 400) {
       throw new ApiError(errorForStatus(response.status), 'resource request failed', 'ASSET_FAILED', response.status);
@@ -459,9 +663,15 @@ export class ReaderApi {
     return this.get<BookContent>(`/api/v1/books/${encodeURIComponent(id)}/items${query}`, options);
   }
 
-  async searchBook(id: string, query: string, cursor: string | undefined, options: RequestOptions = {}): Promise<import('./types.ts').BookSearchPage> {
-    const params = new URLSearchParams({q:query}); if (cursor) params.set('cursor',cursor);
-    return this.get(`/api/v1/books/${encodeURIComponent(id)}/search?${params}`,options);
+  async searchBook(
+    id: string,
+    query: string,
+    cursor: string | undefined,
+    options: RequestOptions = {},
+  ): Promise<import('./types.ts').BookSearchPage> {
+    const params = new URLSearchParams({ q: query });
+    if (cursor) params.set('cursor', cursor);
+    return this.get(`/api/v1/books/${encodeURIComponent(id)}/search?${params}`, options);
   }
 
   /**
@@ -473,10 +683,7 @@ export class ReaderApi {
    * manifest is the mistake this endpoint exists to prevent.
    */
   async toc(id: string, options: RequestOptions = {}): Promise<TocEntry[]> {
-    const result = await this.get<{ toc: TocEntry[] }>(
-      `/api/v1/books/${encodeURIComponent(id)}/toc`,
-      options,
-    );
+    const result = await this.get<{ toc: TocEntry[] }>(`/api/v1/books/${encodeURIComponent(id)}/toc`, options);
     return result.toc;
   }
 
@@ -490,11 +697,21 @@ export class ReaderApi {
   }
 
   /** Whether this instance has a server-side speech engine, and what it offers. */
-  async readingOverrides(id: string, options: RequestOptions = {}): Promise<ReadingOverrides> { return this.get('/api/v1/books/' + encodeURIComponent(id) + '/reading-overrides', options); }
-  async saveReadingOverrides(id: string, value: ReadingOverrides): Promise<ReadingOverrides> { return this.call('/api/v1/books/' + encodeURIComponent(id) + '/reading-overrides','PUT',value); }
-  async undoReadingOverrides(id: string, version: number): Promise<ReadingOverrides> { return this.call('/api/v1/books/' + encodeURIComponent(id) + '/reading-overrides/undo','POST',{version}); }
+  async readingOverrides(id: string, options: RequestOptions = {}): Promise<ReadingOverrides> {
+    return this.get('/api/v1/books/' + encodeURIComponent(id) + '/reading-overrides', options);
+  }
+  async saveReadingOverrides(id: string, value: ReadingOverrides): Promise<ReadingOverrides> {
+    return this.call('/api/v1/books/' + encodeURIComponent(id) + '/reading-overrides', 'PUT', value);
+  }
+  async undoReadingOverrides(id: string, version: number): Promise<ReadingOverrides> {
+    return this.call('/api/v1/books/' + encodeURIComponent(id) + '/reading-overrides/undo', 'POST', { version });
+  }
 
-  async testSpeech(voice: string, speed: number, options: RequestOptions = {}): Promise<{ bytes: number; contentType: string; elapsedMs: number }> {
+  async testSpeech(
+    voice: string,
+    speed: number,
+    options: RequestOptions = {},
+  ): Promise<{ bytes: number; contentType: string; elapsedMs: number }> {
     return this.call('/api/v1/tts/test', 'POST', { voice, speed }, options);
   }
 
@@ -533,7 +750,8 @@ export class ReaderApi {
    */
   async continueReading(limit = 20, options: RequestOptions = {}): Promise<ContinueReadingItem[]> {
     const result = await this.get<{ items: Array<ContinueReadingItem & { bookId?: string }> }>(
-      `/api/v1/library/continue?limit=${limit}`, options,
+      `/api/v1/library/continue?limit=${limit}`,
+      options,
     );
     return result.items.flatMap((item) => {
       // `bookId` is the old spelling of `id`; `updatedAt` the old spelling of
@@ -567,7 +785,11 @@ export class ReaderApi {
     return this.get<BrowseListing>(`/api/v1/library/browse?${params.toString()}`, options);
   }
 
-  async browseMove(paths: string[], target: string, options: RequestOptions = {}): Promise<{ moved: number; target: string }> {
+  async browseMove(
+    paths: string[],
+    target: string,
+    options: RequestOptions = {},
+  ): Promise<{ moved: number; target: string }> {
     return this.call('/api/v1/library/browse/move', 'POST', { paths, target }, options);
   }
 
@@ -582,7 +804,6 @@ export class ReaderApi {
   async browseDelete(paths: string[], options: RequestOptions = {}): Promise<{ removed: number }> {
     return this.call('/api/v1/library/browse/delete', 'POST', { paths }, options);
   }
-
 
   /**
    * Applies one metadata patch to many paths.
@@ -637,10 +858,12 @@ export class ReaderApi {
    * to the server.
    */
   async refreshLibrary(scan: boolean, options: RequestOptions = {}): Promise<LibraryScanResult | null> {
-    if (scan) return (await this.call<{ result: LibraryScanResult }>('/api/v1/library/scan', 'POST', undefined, options)).result;
+    if (scan)
+      return (await this.call<{ result: LibraryScanResult }>('/api/v1/library/scan', 'POST', undefined, options))
+        .result;
     await this.queryClient.invalidateQueries({
       queryKey: ['reader'],
-      predicate: query => affectedNavigationQuery('/api/v1/library/scan', String(query.queryKey[4])),
+      predicate: (query) => affectedNavigationQuery('/api/v1/library/scan', String(query.queryKey[4])),
       refetchType: 'none',
     });
     return null;
@@ -695,7 +918,7 @@ export class ReaderApi {
     });
     void this.queryClient.invalidateQueries({
       queryKey: ['reader'],
-      predicate: query => affectedNavigationQuery('/api/v1/library/upload', String(query.queryKey[4])),
+      predicate: (query) => affectedNavigationQuery('/api/v1/library/upload', String(query.queryKey[4])),
       refetchType: 'none',
     });
     return response.json as UploadResult;
@@ -720,10 +943,16 @@ export class ReaderApi {
       readRange: async (begin, end, signal) => {
         this.assertSession(generation);
         const response = await this.request(path, 'GET', undefined, {
-          binary: true, signal, headers: { range: `bytes=${begin}-${end - 1}` },
+          binary: true,
+          signal,
+          headers: { range: `bytes=${begin}-${end - 1}` },
         });
         this.assertSession(generation);
-        if (response.status !== 206 || response.headers['content-range'] !== `bytes ${begin}-${end - 1}/${length}` || response.bytes?.byteLength !== end - begin) {
+        if (
+          response.status !== 206 ||
+          response.headers['content-range'] !== `bytes ${begin}-${end - 1}/${length}` ||
+          response.bytes?.byteLength !== end - begin
+        ) {
           throw new Error('服务器返回了无效的 PDF 字节范围');
         }
         return response.bytes;
@@ -733,16 +962,18 @@ export class ReaderApi {
 
   /** Authenticated book body. Not cacheable by the service worker: it needs a token. */
   async bookBytes(id: string, options: RequestOptions = {}): Promise<Uint8Array> {
-    const response = await this.request(
-      `/api/v1/books/${encodeURIComponent(id)}/content`,
-      'GET',
-      undefined,
-      { ...options, binary: true },
-    );
+    const response = await this.request(`/api/v1/books/${encodeURIComponent(id)}/content`, 'GET', undefined, {
+      ...options,
+      binary: true,
+    });
     return response.bytes ?? new Uint8Array();
   }
 
-  async coverBytes(coverUrl: string, options: RequestOptions = {}, onCached?: (bytes: Uint8Array) => void): Promise<Uint8Array> {
+  async coverBytes(
+    coverUrl: string,
+    options: RequestOptions = {},
+    onCached?: (bytes: Uint8Array) => void,
+  ): Promise<Uint8Array> {
     if (!this.session || !/^\/api\/v1\/books\/[^/?]+\/cover(?:\?|$)/.test(coverUrl)) {
       const response = await this.request(coverUrl, 'GET', undefined, { ...options, binary: true });
       return response.bytes ?? new Uint8Array();
@@ -758,18 +989,22 @@ export class ReaderApi {
     try {
       etag = await this.platform.kv.get(key);
       if (etag) cached = await this.platform.blobs.get(key + ':' + etag);
-    } catch { /* A cache failure must not prevent downloading a cover. */ }
+    } catch {
+      /* A cache failure must not prevent downloading a cover. */
+    }
     assertCurrent();
     // Display the account's saved image while its validator is checked in the background.
     if (cached?.byteLength) {
       onCached?.(cached);
-      const offline = await this.platform.connectivity() === 'offline';
+      const offline = (await this.platform.connectivity()) === 'offline';
       assertCurrent();
       if (offline) return cached;
     }
     try {
       const response = await this.request(coverUrl, 'GET', undefined, {
-        ...options, binary: true, cache: 'no-cache',
+        ...options,
+        binary: true,
+        cache: 'no-cache',
         ...(cached && etag ? { headers: { 'if-none-match': etag } } : {}),
       });
       assertCurrent();
@@ -782,7 +1017,9 @@ export class ReaderApi {
           await this.platform.blobs.put(key + ':' + nextEtag, bytes);
           await this.platform.kv.set(key, nextEtag);
           if (etag && etag !== nextEtag) await this.platform.blobs.remove(key + ':' + etag);
-        } catch { /* Storage quota/private browsing may disable persistence. */ }
+        } catch {
+          /* Storage quota/private browsing may disable persistence. */
+        }
       }
       assertCurrent();
       return bytes;
@@ -824,7 +1061,11 @@ export class ReaderApi {
   // ---- 时长统计 ----
 
   /** Active reading seconds per book per 15-minute slot; the server keeps the larger total per slot. */
-  async recordReadingTime(clientId: string, entries: ReadingTimeEntry[], options: RequestOptions = {}): Promise<{ accepted: number; rejected: number }> {
+  async recordReadingTime(
+    clientId: string,
+    entries: ReadingTimeEntry[],
+    options: RequestOptions = {},
+  ): Promise<{ accepted: number; rejected: number }> {
     return this.call('/api/v1/stats/reading-time', 'POST', { clientId, entries }, options);
   }
 
@@ -834,7 +1075,8 @@ export class ReaderApi {
 
   /** Administrators: every account's reading total in the range. */
   async readingStatsUsers(query: TimeStatsQuery, options: RequestOptions = {}): Promise<UserReadingTotal[]> {
-    return (await this.get<{ users: UserReadingTotal[] }>(`/api/v1/stats/reading/users?${statsParams(query)}`, options)).users;
+    return (await this.get<{ users: UserReadingTotal[] }>(`/api/v1/stats/reading/users?${statsParams(query)}`, options))
+      .users;
   }
 
   /** 读书笔记 across books: one server-filtered page, newest first. */
@@ -849,12 +1091,21 @@ export class ReaderApi {
 
   /** This account's 书评 of a book, or null. */
   async bookReview(bookId: string, options: RequestOptions = {}): Promise<BookReview | null> {
-    return (await this.get<{ review: BookReview | null }>(`/api/v1/notes/reviews/${encodeURIComponent(bookId)}`, options)).review;
+    return (
+      await this.get<{ review: BookReview | null }>(`/api/v1/notes/reviews/${encodeURIComponent(bookId)}`, options)
+    ).review;
   }
 
   /** Saves the 书评; an empty body removes it. Online only: reviews are not part of sync. */
   async saveBookReview(bookId: string, body: string, options: RequestOptions = {}): Promise<BookReview | null> {
-    return (await this.call<{ review: BookReview | null }>(`/api/v1/notes/reviews/${encodeURIComponent(bookId)}`, 'PUT', { body }, options)).review;
+    return (
+      await this.call<{ review: BookReview | null }>(
+        `/api/v1/notes/reviews/${encodeURIComponent(bookId)}`,
+        'PUT',
+        { body },
+        options,
+      )
+    ).review;
   }
 
   /** Every tag the account uses, most used first. */
@@ -863,9 +1114,15 @@ export class ReaderApi {
   }
 
   /** Everything the filter matches as one Markdown or JSON document. */
-  async notesExport(query: NotesFilter, format: 'markdown' | 'json', tz: number, options: RequestOptions = {}): Promise<NotesExport> {
+  async notesExport(
+    query: NotesFilter,
+    format: 'markdown' | 'json',
+    tz: number,
+    options: RequestOptions = {},
+  ): Promise<NotesExport> {
     const params = new URLSearchParams(notesParams(query));
-    params.set('format', format); params.set('tz', String(tz));
+    params.set('format', format);
+    params.set('tz', String(tz));
     return this.get<NotesExport>(`/api/v1/notes/export?${params.toString()}`, options);
   }
 
@@ -918,23 +1175,41 @@ export class ReaderApi {
     void this.queryClient.invalidateQueries({ queryKey: ['reader'], refetchType: 'none' });
   }
 
-  businessSettingsRequest<T>(path='',method='GET',body?:unknown,signal?:AbortSignal):Promise<T>{
-    const requestPath = '/api/v1/admin/settings'+(path?'/'+path:'');
+  businessSettingsRequest<T>(path = '', method = 'GET', body?: unknown, signal?: AbortSignal): Promise<T> {
+    const requestPath = '/api/v1/admin/settings' + (path ? '/' + path : '');
     const options = signal ? { signal } : {};
     return method === 'GET' && body === undefined
       ? this.get<T>(requestPath, options)
       : this.call<T>(requestPath, method, body, options);
   }
-  async businessTtsPreview(values:Record<string,unknown>,voice:string):Promise<Blob>{
-    const result=await this.request('/api/v1/admin/settings/tts/preview','POST',{values,voice},{binary:true});
-    return new Blob([new Uint8Array(result.bytes??[]).buffer],{type:result.headers['content-type']||'audio/mpeg'});
+  async businessTtsPreview(values: Record<string, unknown>, voice: string): Promise<Blob> {
+    const result = await this.request(
+      '/api/v1/admin/settings/tts/preview',
+      'POST',
+      { values, voice },
+      { binary: true },
+    );
+    return new Blob([new Uint8Array(result.bytes ?? []).buffer], {
+      type: result.headers['content-type'] || 'audio/mpeg',
+    });
   }
-  async businessAiModels(values?:{baseUrl?:string;apiKey?:string}):Promise<string[]> { return (await this.call<{models:string[]}>('/api/v1/admin/ai/models','POST',values??{})).models; }
+  async businessAiModels(values?: { baseUrl?: string; apiKey?: string }): Promise<string[]> {
+    return (await this.call<{ models: string[] }>('/api/v1/admin/ai/models', 'POST', values ?? {})).models;
+  }
   /** What the server's AI can do for a reader; older servers answer 404. */
-  async aiCapabilities(options: RequestOptions = {}): Promise<{ summary: boolean; scan?: boolean; assist?: boolean }> { return this.get('/api/v1/ai/capabilities', options); }
+  async aiCapabilities(options: RequestOptions = {}): Promise<{ summary: boolean; scan?: boolean; assist?: boolean }> {
+    return this.get('/api/v1/ai/capabilities', options);
+  }
   /** Translate, explain or answer a question about a passage the reader selected. */
-  async aiAssist(bookId: string, input: { action: 'translate' | 'explain' | 'ask'; text: string; context?: string; question?: string }): Promise<{ answer: string; cached: boolean }> { return this.call('/api/v1/ai/assist', 'POST', { bookId, ...input }); }
-  async aiSummary(bookId:string,chapterId:string,content:string):Promise<{summary:string;cached:boolean}>{ return this.call('/api/v1/ai/summary','POST',{bookId,chapterId,content}); }
+  async aiAssist(
+    bookId: string,
+    input: { action: 'translate' | 'explain' | 'ask'; text: string; context?: string; question?: string },
+  ): Promise<{ answer: string; cached: boolean }> {
+    return this.call('/api/v1/ai/assist', 'POST', { bookId, ...input });
+  }
+  async aiSummary(bookId: string, chapterId: string, content: string): Promise<{ summary: string; cached: boolean }> {
+    return this.call('/api/v1/ai/summary', 'POST', { bookId, chapterId, content });
+  }
 
   private async get<T>(path: string, options: RequestOptions = {}): Promise<T> {
     if (!isNavigationQuery(path)) return (await this.request(path, 'GET', undefined, options)).json as T;
@@ -947,16 +1222,21 @@ export class ReaderApi {
         // Keep the caller's AbortSignal semantics intact. These class-based
         // screens already abort requests when disposed; letting fetchQuery own the
         // signal would turn normal auth/session transitions into CancelledError.
-        queryFn: () => this.request(path, 'GET', undefined, options)
-          .then(response => response.json as T),
+        queryFn: () => this.request(path, 'GET', undefined, options).then((response) => response.json as T),
         // Availability-bearing media resources are shared while in flight but
         // always revalidated, so an explicit refresh reaches the server.
-        ...(options.fresh || /^\/api\/v1\/books\?/.test(path) && ['recent', 'updated'].includes(new URLSearchParams(path.split('?')[1]).get('sort') ?? '') || isLiveNavigationQuery(path) ? { staleTime: 0 } : {}),
+        ...(options.fresh ||
+        (/^\/api\/v1\/books\?/.test(path) &&
+          ['recent', 'updated'].includes(new URLSearchParams(path.split('?')[1]).get('sort') ?? '')) ||
+        isLiveNavigationQuery(path)
+          ? { staleTime: 0 }
+          : {}),
       });
     } catch (error) {
       // A QueryClient cancellation (cache cleared on account change) or a raw
       // AbortError is the same outcome as an aborted transport request.
-      const aborted = error instanceof ApiError ? error.kind === 'aborted' : isCancelledError(error) || isAbortError(error);
+      const aborted =
+        error instanceof ApiError ? error.kind === 'aborted' : isCancelledError(error) || isAbortError(error);
       if (!aborted) throw error;
       // fetchQuery shares one in-flight request per path, run with the *first*
       // caller's signal. When that caller goes away (a screen replaced right after
@@ -971,17 +1251,12 @@ export class ReaderApi {
     return result;
   }
 
-  private async call<T>(
-    path: string,
-    method: string,
-    body?: unknown,
-    options: RequestOptions = {},
-  ): Promise<T> {
+  private async call<T>(path: string, method: string, body?: unknown, options: RequestOptions = {}): Promise<T> {
     const response = await this.request(path, method, body, options);
     if (method !== 'GET') {
       void this.queryClient.invalidateQueries({
         queryKey: ['reader'],
-        predicate: query => affectedNavigationQuery(path, String(query.queryKey[4])),
+        predicate: (query) => affectedNavigationQuery(path, String(query.queryKey[4])),
         refetchType: 'none',
       });
     }
@@ -992,13 +1267,20 @@ export class ReaderApi {
     path: string,
     method: string,
     body: unknown,
-    options: RequestOptions & { binary?: boolean; stream?: boolean; cache?: RequestCache; headers?: Record<string, string> } = {},
+    options: RequestOptions & {
+      binary?: boolean;
+      stream?: boolean;
+      cache?: RequestCache;
+      headers?: Record<string, string>;
+    } = {},
   ): Promise<import('../core/platform.ts').HttpResponse> {
     const generation = this.sessionGeneration;
     const assertCurrent = (): void => this.assertSession(generation);
     const attempt = async (token: string | null) => {
       assertCurrent();
-      const headers: Record<string, string> = { accept: options.stream ? 'text/event-stream' : options.binary ? '*/*' : 'application/json' };
+      const headers: Record<string, string> = {
+        accept: options.stream ? 'text/event-stream' : options.binary ? '*/*' : 'application/json',
+      };
       Object.assign(headers, options.headers);
       const multipart = typeof FormData !== 'undefined' && body instanceof FormData;
       if (body !== undefined && !multipart) headers['content-type'] = 'application/json';
@@ -1007,7 +1289,7 @@ export class ReaderApi {
         url: path,
         method,
         headers,
-        ...(body !== undefined ? { body: multipart ? body as FormData : JSON.stringify(body) } : {}),
+        ...(body !== undefined ? { body: multipart ? (body as FormData) : JSON.stringify(body) } : {}),
         ...(options.binary ? { binary: true } : {}),
         ...(options.cache ? { cache: options.cache } : {}),
         ...(options.stream ? { stream: true } : {}),
@@ -1016,11 +1298,17 @@ export class ReaderApi {
     };
 
     if (!path.startsWith('/api/v1/auth/') && path !== '/api/v1/instance') {
-      try { await this.renewSessionIfNeeded(); }
-      catch (error) {
+      try {
+        await this.renewSessionIfNeeded();
+      } catch (error) {
         if (error instanceof ApiError && error.isAuthFailure) throw error;
         assertCurrent();
-        if (!(error instanceof ApiError) || error.isAuthFailure || (this.session?.accessTokenExpiresAt ?? 0) <= Date.now()) throw error;
+        if (
+          !(error instanceof ApiError) ||
+          error.isAuthFailure ||
+          (this.session?.accessTokenExpiresAt ?? 0) <= Date.now()
+        )
+          throw error;
       }
       assertCurrent();
     }
@@ -1034,7 +1322,7 @@ export class ReaderApi {
       assertCurrent();
       // Transports other than FetchTransport may still reject with the signal's
       // raw reason; callers only ever see ApiError('aborted') for cancellation.
-      const err = caught instanceof ApiError ? caught : abortFailure(caught, options.signal) ?? caught;
+      const err = caught instanceof ApiError ? caught : (abortFailure(caught, options.signal) ?? caught);
       if (!(err instanceof ApiError)) throw err;
       if (err.kind === 'aborted') throw err;
       this.platform.reportError?.(err);
@@ -1083,9 +1371,15 @@ export class ReaderApi {
         this.assertSession(generation);
         const session = response.json as Session;
         if (!session?.accessToken) throw new ApiError('unauthorized', 'refresh returned no session');
-        if (session.user.id !== this.session?.user.id) throw new ApiError('unauthorized', 'refresh returned another account');
-        const previous=this.session?.user;
-        if(previous?.features)session.user={...session.user,features:previous.features,...(previous.mediaState?{mediaState:previous.mediaState}:{})};
+        if (session.user.id !== this.session?.user.id)
+          throw new ApiError('unauthorized', 'refresh returned another account');
+        const previous = this.session?.user;
+        if (previous?.features)
+          session.user = {
+            ...session.user,
+            features: previous.features,
+            ...(previous.mediaState ? { mediaState: previous.mediaState } : {}),
+          };
         await this.setSession(session, true);
         this.assertSession(generation);
         return session;
@@ -1120,24 +1414,77 @@ export class ReaderApi {
 
 export { ApiError, errorForStatus, parseErrorBody };
 
-export interface ReadingTimeEntry { bookId: string; slot: number; seconds: number }
+export interface ReadingTimeEntry {
+  bookId: string;
+  slot: number;
+  seconds: number;
+}
 export type TimeStatsGroup = 'day' | 'month' | 'year';
-export interface TimeStatsQuery { from: number; to: number; tz: number; timeZone?: string; group: TimeStatsGroup }
+export interface TimeStatsQuery {
+  from: number;
+  to: number;
+  tz: number;
+  timeZone?: string;
+  group: TimeStatsGroup;
+}
 export interface ReadingStats {
   series: Array<{ key: string; seconds: number }>;
   works: Array<{ id: string; title: string; author: string; coverUrl: string | null; seconds: number; lastAt: number }>;
   total: number;
 }
-export interface UserReadingTotal { userId: string; username: string; displayName: string; seconds: number }
+export interface UserReadingTotal {
+  userId: string;
+  username: string;
+  displayName: string;
+  seconds: number;
+}
 
-export interface NotesFilter { q?: string; type?: NoteType | ''; bookId?: string; tag?: string }
-export interface NotesTag { tag: string; count: number }
-export interface NotesLibraryQuery extends NotesFilter { page?: number; pageSize?: number }
-export interface LibraryNote extends Note { chapterTitle: string; tags: string[]; bookTitle: string; bookAuthor: string }
-export interface NotesLibraryPage { items: LibraryNote[]; total: number; page: number; pageSize: number }
-export interface NotesBook { bookId: string; title: string; author: string; count: number; lastAt: number; reviewed: boolean }
-export interface BookReview { bookId: string; body: string; updatedAt: number }
-export interface NotesExport { filename: string; mime: string; content: string; count: number; reviews: number }
+export interface NotesFilter {
+  q?: string;
+  type?: NoteType | '';
+  bookId?: string;
+  tag?: string;
+}
+export interface NotesTag {
+  tag: string;
+  count: number;
+}
+export interface NotesLibraryQuery extends NotesFilter {
+  page?: number;
+  pageSize?: number;
+}
+export interface LibraryNote extends Note {
+  chapterTitle: string;
+  tags: string[];
+  bookTitle: string;
+  bookAuthor: string;
+}
+export interface NotesLibraryPage {
+  items: LibraryNote[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+export interface NotesBook {
+  bookId: string;
+  title: string;
+  author: string;
+  count: number;
+  lastAt: number;
+  reviewed: boolean;
+}
+export interface BookReview {
+  bookId: string;
+  body: string;
+  updatedAt: number;
+}
+export interface NotesExport {
+  filename: string;
+  mime: string;
+  content: string;
+  count: number;
+  reviews: number;
+}
 
 /** Only what is set goes on the wire, so one view has one address (and one cache key). */
 export function notesParams(query: NotesLibraryQuery): string {
@@ -1151,8 +1498,19 @@ export function notesParams(query: NotesLibraryQuery): string {
   return params.toString();
 }
 
+export interface BookViewMode {
+  pdfMode: 'pdfjs' | 'enhanced';
+  chosen: 'pdfjs' | 'enhanced' | null;
+  defaultPdfMode: 'pdfjs' | 'enhanced';
+}
+
 export function statsParams(query: TimeStatsQuery): string {
-  const params = new URLSearchParams({ from: String(query.from), to: String(query.to), tz: String(query.tz), group: query.group });
+  const params = new URLSearchParams({
+    from: String(query.from),
+    to: String(query.to),
+    tz: String(query.tz),
+    group: query.group,
+  });
   if (query.timeZone) params.set('timeZone', query.timeZone);
   return params.toString();
 }

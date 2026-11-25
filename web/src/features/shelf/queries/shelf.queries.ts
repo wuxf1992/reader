@@ -11,9 +11,19 @@ import { combineAbortSignals } from '../../../core/abort.ts';
  * What narrows the shelf besides the search: 在读 / 想读 / 已读, and one 分组 — a
  * series or a tag, the two groupings the books themselves carry.
  */
-export interface ShelfFilters { status?: ReadingState; series?: string; tag?: string }
+export interface ShelfFilters {
+  status?: ReadingState;
+  series?: string;
+  tag?: string;
+}
 
-export function shelfQuery(runtime: AppRuntime, page = 1, sort: 'recent' | 'added' | 'title' | 'author' = 'recent', search = '', filters: ShelfFilters = {}) {
+export function shelfQuery(
+  runtime: AppRuntime,
+  page = 1,
+  sort: 'recent' | 'added' | 'title' | 'author' = 'recent',
+  search = '',
+  filters: ShelfFilters = {},
+) {
   const baseUrl = runtime.api.baseUrl;
   const userId = runtime.api.currentSession()?.user.id;
   const cachedShelf = () => {
@@ -21,17 +31,31 @@ export function shelfQuery(runtime: AppRuntime, page = 1, sort: 'recent' | 'adde
     const all = runtime.offline.books();
     if (!all.length) return;
     const term = search.trim().toLocaleLowerCase();
-    const books = all.filter(book => `${book.title} ${book.author}`.toLocaleLowerCase().includes(term)
-      && (!filters.status || book.readingState === filters.status)
-      && (!filters.series || book.series === filters.series)
-      && (!filters.tag || book.tags?.includes(filters.tag)));
-    const times = new Map(books.map(book => [book.id, runtime.offline.progressFor(book.id)?.updatedAt ?? 0]));
-    for (const item of runtime.offline.current?.continueReading ?? []) times.set(item.id, Math.max(times.get(item.id) ?? 0, item.lastReadAt ?? 0));
+    const books = all.filter(
+      (book) =>
+        `${book.title} ${book.author}`.toLocaleLowerCase().includes(term) &&
+        (!filters.status || book.readingState === filters.status) &&
+        (!filters.series || book.series === filters.series) &&
+        (!filters.tag || book.tags?.includes(filters.tag)),
+    );
+    const times = new Map(books.map((book) => [book.id, runtime.offline.progressFor(book.id)?.updatedAt ?? 0]));
+    for (const item of runtime.offline.current?.continueReading ?? [])
+      times.set(item.id, Math.max(times.get(item.id) ?? 0, item.lastReadAt ?? 0));
     const sorted = sortBooks(books, sort, times);
     return { items: sorted.slice((page - 1) * 60, page * 60), total: books.length, page, pageSize: 60 };
   };
   return queryOptions({
-    queryKey: ['shelf', baseUrl, userId, page, sort, search, filters.status ?? '', filters.series ?? '', filters.tag ?? ''],
+    queryKey: [
+      'shelf',
+      baseUrl,
+      userId,
+      page,
+      sort,
+      search,
+      filters.status ?? '',
+      filters.series ?? '',
+      filters.tag ?? '',
+    ],
     staleTime: sort === 'recent' ? 0 : 60_000,
     refetchOnMount: 'always',
     refetchOnWindowFocus: true,
@@ -41,32 +65,63 @@ export function shelfQuery(runtime: AppRuntime, page = 1, sort: 'recent' | 'adde
       const controller = new AbortController();
       const combined = combineAbortSignals([signal, controller.signal]);
       try {
-        const response = await withOfflineTimeout(runtime.api.listBooks({
-      scope: 'shelf', page, pageSize: 60, sort, order: sort === 'title' || sort === 'author' ? 'asc' : 'desc', search: search.trim(),
-      ...(filters.status ? { status: filters.status } : {}), ...(filters.series ? { series: filters.series } : {}), ...(filters.tag ? { tag: filters.tag } : {}),
-        }, { signal: combined.signal, fresh: true }), runtime.offline.books().length > 0);
+        const response = await withOfflineTimeout(
+          runtime.api.listBooks(
+            {
+              scope: 'shelf',
+              page,
+              pageSize: 60,
+              sort,
+              order: sort === 'title' || sort === 'author' ? 'asc' : 'desc',
+              search: search.trim(),
+              ...(filters.status ? { status: filters.status } : {}),
+              ...(filters.series ? { series: filters.series } : {}),
+              ...(filters.tag ? { tag: filters.tag } : {}),
+            },
+            { signal: combined.signal, fresh: true },
+          ),
+          runtime.offline.books().length > 0,
+        );
         // replaceBooks upserts by id, so filtered pages preserve other cached books.
         if (runtime.api.baseUrl === baseUrl && runtime.api.currentSession()?.user.id === userId) {
           void runtime.offline.replaceBooks(response.items).catch(() => undefined);
         }
         return response;
       } catch (error) {
-        if (!(error instanceof ApiError) || (!error.isConnectivity && error.kind !== 'server') || runtime.api.baseUrl !== baseUrl || runtime.api.currentSession()?.user.id !== userId) throw error;
+        if (
+          !(error instanceof ApiError) ||
+          (!error.isConnectivity && error.kind !== 'server') ||
+          runtime.api.baseUrl !== baseUrl ||
+          runtime.api.currentSession()?.user.id !== userId
+        )
+          throw error;
         const cached = cachedShelf();
         if (!cached) throw error;
         return cached;
-      } finally { controller.abort(); combined.dispose(); }
+      } finally {
+        controller.abort();
+        combined.dispose();
+      }
     },
     placeholderData: (previousData, previousQuery) => {
-      if (previousQuery) return previousQuery.queryKey[1] === baseUrl
-        && previousQuery.queryKey[2] === userId && previousQuery.queryKey[3] === page ? previousData : undefined;
+      if (previousQuery)
+        return previousQuery.queryKey[1] === baseUrl &&
+          previousQuery.queryKey[2] === userId &&
+          previousQuery.queryKey[3] === page
+          ? previousData
+          : undefined;
       const cached = cachedShelf();
       return cached?.items.length ? cached : undefined;
     },
   });
 }
 
-export function useShelf(page = 1, sort: 'recent' | 'added' | 'title' | 'author' = 'recent', search = '', filters: ShelfFilters = {}) {
+export function useShelf(
+  page = 1,
+  sort: 'recent' | 'added' | 'title' | 'author' = 'recent',
+  search = '',
+  filters: ShelfFilters = {},
+) {
   return useQuery(shelfQuery(useRuntime(), page, sort, search, filters));
 }
 

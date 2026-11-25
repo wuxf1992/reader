@@ -5,7 +5,15 @@ import type { KeyValueStore } from '../src/core/platform.ts';
 /** A KeyValueStore over a Map, for SettingsStore.load(). */
 function memory(initial: Record<string, string>): KeyValueStore {
   const values = new Map(Object.entries(initial));
-  return { get: async (key: string) => values.get(key) ?? null, set: async (key: string, value: string) => { values.set(key, value); }, remove: async (key: string) => { values.delete(key); } };
+  return {
+    get: async (key: string) => values.get(key) ?? null,
+    set: async (key: string, value: string) => {
+      values.set(key, value);
+    },
+    remove: async (key: string) => {
+      values.delete(key);
+    },
+  };
 }
 const load = (stored: object) => new SettingsStore(memory({ 'reader.settings.v1': JSON.stringify(stored) })).load();
 
@@ -32,23 +40,55 @@ describe('reading paper setting', () => {
 
 it('preserves custom palette paper, brightness and day/night memory across upgrades', async () => {
   const settings = await load({ theme: 'nord-night', lastDayTheme: 'kraft-day', brightness: 0.6 });
-  expect(settings).toMatchObject({ theme: 'nord-night', paper: 'theme', readingTheme: 'local-nord-night', paperFollowsDark: false, lastDayTheme: 'kraft-day', lastNightTheme: 'nord-night', brightness: 0.6 });
+  expect(settings).toMatchObject({
+    theme: 'nord-night',
+    paper: 'theme',
+    readingTheme: 'local-nord-night',
+    paperFollowsDark: false,
+    lastDayTheme: 'kraft-day',
+    lastNightTheme: 'nord-night',
+    brightness: 0.6,
+  });
 });
 
 it('keeps the unified theme after saving and does not restore the stale paper', async () => {
-  const kv = memory({ 'reader.settings.v1': JSON.stringify({ theme: 'wechat-night', paper: 'local-wechat-night', fontScale: 1.2, brightness: .6, pageInsets: { bottom: 18 } }) });
+  const kv = memory({
+    'reader.settings.v1': JSON.stringify({
+      theme: 'wechat-night',
+      paper: 'local-wechat-night',
+      fontScale: 1.2,
+      brightness: 0.6,
+      pageInsets: { bottom: 18 },
+    }),
+  });
   const store = new SettingsStore(kv);
-  expect(await store.load()).toMatchObject({ readingTheme: 'local-wechat-night', paper: 'theme', fontScale: 1.2, brightness: .6, pageInsets: { bottom: 18 } });
+  expect(await store.load()).toMatchObject({
+    readingTheme: 'local-wechat-night',
+    paper: 'theme',
+    fontScale: 1.2,
+    brightness: 0.6,
+    pageInsets: { bottom: 18 },
+  });
   await store.update({ readingTheme: 'app', paper: 'theme' });
-  expect(await new SettingsStore(kv).load()).toMatchObject({ readingTheme: 'app', paper: 'theme', fontScale: 1.2, brightness: .6 });
+  expect(await new SettingsStore(kv).load()).toMatchObject({
+    readingTheme: 'app',
+    paper: 'theme',
+    fontScale: 1.2,
+    brightness: 0.6,
+  });
 });
 
-it('keeps liquid glass opt-in, validates the stored switch and preserves the reading theme', async () => {
-  expect((await new SettingsStore(memory({})).load()).liquidGlass).toBe(false);
-  for (const value of ['true', 1, null, {}]) expect((await load({ liquidGlass: value })).liquidGlass).toBe(false);
-  const kv = memory({ 'reader.settings.v1': JSON.stringify({ theme: 'wechat-night', liquidGlass: true, brightness: .6 }) });
+it('ignores the retired glass switch while preserving the saved palette and brightness', async () => {
+  const kv = memory({
+    'reader.settings.v1': JSON.stringify({ theme: 'wechat-night', liquidGlass: true, brightness: 0.6 }),
+  });
   const store = new SettingsStore(kv);
-  expect(await store.load()).toMatchObject({ liquidGlass: true, readingTheme: 'local-wechat-night', brightness: .6 });
-  await store.update({ liquidGlass: false });
-  expect(await new SettingsStore(kv).load()).toMatchObject({ liquidGlass: false, readingTheme: 'local-wechat-night', brightness: .6 });
+  expect(await store.load()).toMatchObject({ readingTheme: 'local-wechat-night', brightness: 0.6 });
+  expect(await store.load()).not.toHaveProperty('liquidGlass');
+  await store.update({ fontScale: 1.2 });
+  expect(await new SettingsStore(kv).load()).toMatchObject({
+    readingTheme: 'local-wechat-night',
+    brightness: 0.6,
+    fontScale: 1.2,
+  });
 });

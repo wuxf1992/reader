@@ -9,7 +9,11 @@ let serviceWorker: ServiceWorkerContainer;
 let dispose: (() => void) | undefined;
 const register = vi.fn();
 beforeEach(() => {
-  registration = Object.assign(new EventTarget(), { waiting: null, installing: null, update: vi.fn().mockResolvedValue(undefined) }) as unknown as ServiceWorkerRegistration;
+  registration = Object.assign(new EventTarget(), {
+    waiting: null,
+    installing: null,
+    update: vi.fn().mockResolvedValue(undefined),
+  }) as unknown as ServiceWorkerRegistration;
   serviceWorker = Object.assign(new EventTarget(), { register, controller: {} }) as unknown as ServiceWorkerContainer;
   register.mockResolvedValue(registration);
   vi.useFakeTimers();
@@ -20,7 +24,8 @@ beforeEach(() => {
   vi.spyOn(document, 'readyState', 'get').mockReturnValue('complete');
 });
 afterEach(() => {
-  dispose?.(); dispose = undefined;
+  dispose?.();
+  dispose = undefined;
   document.body.replaceChildren();
   vi.clearAllTimers();
   vi.useRealTimers();
@@ -39,7 +44,12 @@ function pendingUpdate() {
 it('waits for successful persistence before activating and reloads only once after control changes', async () => {
   const postMessage = pendingUpdate();
   let saved!: () => void;
-  const save = vi.fn(() => new Promise<void>((resolve) => { saved = resolve; }));
+  const save = vi.fn(
+    () =>
+      new Promise<void>((resolve) => {
+        saved = resolve;
+      }),
+  );
   const reload = vi.fn();
   dispose = watchPwaUpdates(registration, save, reload);
   document.querySelector<HTMLButtonElement>('.pwa-update button')!.click();
@@ -93,7 +103,8 @@ it('offers updates that finish downloading after registration', () => {
 
 it('does not reload when another tab activates, and saves before manual refresh', async () => {
   pendingUpdate();
-  const save = vi.fn().mockResolvedValue(undefined), reload = vi.fn();
+  const save = vi.fn().mockResolvedValue(undefined),
+    reload = vi.fn();
   dispose = watchPwaUpdates(registration, save, reload);
   Object.defineProperty(registration, 'waiting', { value: null, configurable: true });
   serviceWorker.dispatchEvent(new Event('controllerchange'));
@@ -108,7 +119,8 @@ it('allows retry if worker activation times out', async () => {
   pendingUpdate();
   dispose = watchPwaUpdates(registration, async () => {}, vi.fn());
   const button = document.querySelector<HTMLButtonElement>('.pwa-update button')!;
-  button.click(); await Promise.resolve();
+  button.click();
+  await Promise.resolve();
   await vi.advanceTimersByTimeAsync(15_000);
   expect(button.disabled).toBe(false);
   expect(button.textContent).toBe('重试更新');
@@ -118,7 +130,8 @@ it('registers the worker relative to the deployed document and bypasses the HTTP
   registerPwa();
   const base = new URL('./', document.baseURI);
   expect(register).toHaveBeenCalledWith(new URL('sw.js', base), {
-    scope: base.pathname, updateViaCache: 'none',
+    scope: base.pathname,
+    updateViaCache: 'none',
   });
 });
 
@@ -175,7 +188,6 @@ it('reports failed registration without an unhandled rejection', async () => {
   await vi.waitFor(() => expect(warn).toHaveBeenCalledWith('离线应用缓存注册失败', error));
 });
 
-
 function manualUpdate() {
   const reload = vi.fn();
   vi.stubGlobal('location', { reload });
@@ -198,7 +210,12 @@ it('manual update waits for download and local save before activation', async ()
   const worker = Object.assign(new EventTarget(), { state: 'installing' });
   Object.defineProperty(registration, 'installing', { value: worker, configurable: true });
   let saved!: () => void;
-  saveBeforeUpdate.mockImplementation(() => new Promise<void>(resolve => { saved = resolve; }));
+  saveBeforeUpdate.mockImplementation(
+    () =>
+      new Promise<void>((resolve) => {
+        saved = resolve;
+      }),
+  );
   const updating = updatePwa();
   await vi.waitFor(() => expect(registration.update).toHaveBeenCalledTimes(1));
   expect(saveBeforeUpdate).not.toHaveBeenCalled();
@@ -239,20 +256,26 @@ it('manual update refreshes an old page after another tab has activated the work
   expect(reload).toHaveBeenCalledTimes(1);
 });
 
-it.each(['redundant', 'timeout'])('manual download %s keeps the current page and removes its listener', async state => {
-  const { reload, saveBeforeUpdate } = manualUpdate();
-  const worker = Object.assign(new EventTarget(), { state: 'installing' });
-  const removed = vi.spyOn(worker, 'removeEventListener');
-  Object.defineProperty(registration, 'installing', { value: worker, configurable: true });
-  const result = expect(updatePwa()).rejects.toThrow(/新版下载/);
-  await vi.waitFor(() => expect(registration.update).toHaveBeenCalledTimes(1));
-  if (state === 'timeout') await vi.advanceTimersByTimeAsync(60_000);
-  else { worker.state = 'redundant'; worker.dispatchEvent(new Event('statechange')); }
-  await result;
-  expect(removed).toHaveBeenCalledWith('statechange', expect.any(Function));
-  expect(saveBeforeUpdate).not.toHaveBeenCalled();
-  expect(reload).not.toHaveBeenCalled();
-});
+it.each(['redundant', 'timeout'])(
+  'manual download %s keeps the current page and removes its listener',
+  async (state) => {
+    const { reload, saveBeforeUpdate } = manualUpdate();
+    const worker = Object.assign(new EventTarget(), { state: 'installing' });
+    const removed = vi.spyOn(worker, 'removeEventListener');
+    Object.defineProperty(registration, 'installing', { value: worker, configurable: true });
+    const result = expect(updatePwa()).rejects.toThrow(/新版下载/);
+    await vi.waitFor(() => expect(registration.update).toHaveBeenCalledTimes(1));
+    if (state === 'timeout') await vi.advanceTimersByTimeAsync(60_000);
+    else {
+      worker.state = 'redundant';
+      worker.dispatchEvent(new Event('statechange'));
+    }
+    await result;
+    expect(removed).toHaveBeenCalledWith('statechange', expect.any(Function));
+    expect(saveBeforeUpdate).not.toHaveBeenCalled();
+    expect(reload).not.toHaveBeenCalled();
+  },
+);
 
 it('manual update reports offline, unsupported and unready environments without resetting caches', async () => {
   const { reload } = manualUpdate();
@@ -267,7 +290,6 @@ it('manual update reports offline, unsupported and unready environments without 
   await expect(updatePwa()).resolves.toBe('请通过安装包更新应用');
   expect(reload).not.toHaveBeenCalled();
 });
-
 
 it('manual check times out a stalled network request without saving or reloading', async () => {
   const { reload, saveBeforeUpdate } = manualUpdate();

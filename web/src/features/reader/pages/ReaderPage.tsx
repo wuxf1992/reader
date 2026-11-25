@@ -15,18 +15,34 @@ export function ReaderPage() {
   // A deep link or a cold PWA start has no entry to go back to: 返回 goes to the shelf instead of leaving the app.
   const firstEntry = location.key === 'default';
   const back = useRef<() => void>(() => undefined);
-  back.current = () => { if (firstEntry) navigate('/shelf', { replace: true }); else navigate(-1); };
+  back.current = () => {
+    if (firstEntry) navigate('/shelf', { replace: true });
+    else navigate(-1);
+  };
   // 读书笔记 opens a book at one note: the place rides in the navigation state, read once.
-  const openAt = useRef(typeof location.state?.openAt === 'string' ? location.state.openAt as string : '');
+  const openAt = useRef(typeof location.state?.openAt === 'string' ? (location.state.openAt as string) : '');
   const host = useRef<HTMLDivElement>(null);
   const [book, setBook] = useState<Book | null>(null);
   const [error, setError] = useState<unknown>(null);
   useEffect(() => {
     let live = true;
-    setBook(null); setError(null);
-    const cache = new PublicationCache(runtime.platform.kv, runtime.platform.blobs, publicationScope(runtime.api.baseUrl || window.location.origin, runtime.api.currentSession()?.user.id ?? ''));
-    void resolveReaderBook(runtime.api, runtime.offline, decodeURIComponent(bookId), cache).then(result => { if (live) setBook(result); }).catch(reason => { if (live) setError(reason); });
-    return () => { live = false; };
+    setBook(null);
+    setError(null);
+    const cache = new PublicationCache(
+      runtime.platform.kv,
+      runtime.platform.blobs,
+      publicationScope(runtime.api.baseUrl || window.location.origin, runtime.api.currentSession()?.user.id ?? ''),
+    );
+    void resolveReaderBook(runtime.api, runtime.offline, decodeURIComponent(bookId), cache)
+      .then((result) => {
+        if (live) setBook(result);
+      })
+      .catch((reason) => {
+        if (live) setError(reason);
+      });
+    return () => {
+      live = false;
+    };
   }, [runtime, bookId]);
   useEffect(() => {
     if (!host.current || !book) return;
@@ -41,8 +57,12 @@ export function ReaderPage() {
       ...(runtime.pageHost ? { pageHost: runtime.pageHost } : {}),
       ...(runtime.speechBridge ? { speechBridge: runtime.speechBridge } : {}),
       onBack: () => back.current(),
-      onSettingsChange: patch => { void runtime.updateSettings(patch); },
-      onSignedOut: () => { void runtime.api.signOut(); },
+      onSettingsChange: (patch) => {
+        void runtime.updateSettings(patch);
+      },
+      onSignedOut: () => {
+        void runtime.api.signOut();
+      },
     });
     host.current.replaceChildren(screen.element);
     // Register the reader's own persistence hook. Calling runtime.flush() here
@@ -59,17 +79,31 @@ export function ReaderPage() {
       // Leaving the reader is when 首页's 继续阅读 and the shelf's 最近阅读 are looked at
       // next. Push the position now rather than after the sync debounce, then re-read
       // both instead of showing the cached answer for up to a minute (#663).
-      void saved.catch(() => undefined)
-        .then(() => runtime.offline.flush()).then(() => runtime.sync.flush()).catch(() => undefined)
+      void saved
+        .catch(() => undefined)
+        .then(() => runtime.offline.flush())
+        .then(() => runtime.sync.flush())
+        .catch(() => undefined)
         .finally(() => {
           void runtime.queryClient.invalidateQueries({ queryKey: ['home'] });
           void runtime.queryClient.invalidateQueries({ queryKey: ['shelf'] });
         });
     };
   }, [runtime, book, navigate]);
-  if (error) return <div className="page-state" role="alert"><h2>无法打开这本书</h2><p>{error instanceof Error ? error.message : '请求失败'}</p><Button onClick={() => back.current()}>返回</Button></div>;
-  if (!book) return <div className="page-state" role="status"><div className="spinner" aria-hidden="true" /><p>正在打开书籍…</p></div>;
+  if (error)
+    return (
+      <div className="page-state" role="alert">
+        <h2>无法打开这本书</h2>
+        <p>{error instanceof Error ? error.message : '请求失败'}</p>
+        <Button onClick={() => back.current()}>返回</Button>
+      </div>
+    );
+  if (!book)
+    return (
+      <div className="page-state" role="status">
+        <div className="spinner" aria-hidden="true" />
+        <p>正在打开书籍…</p>
+      </div>
+    );
   return <div ref={host} className="reader-route-host" />;
 }
-
-

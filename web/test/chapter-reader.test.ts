@@ -22,22 +22,48 @@ import { openPdf } from './helpers/pdf-renderer.ts';
 vi.mock('../src/formats/pdf-renderer.ts', () => import('./helpers/pdf-renderer.ts'));
 
 const book: Book = {
-  id: 'book-1', title: '远程小说', author: '作者', publisher: '', language: 'zh', isbn: '',
-  description: '', series: '', seriesIndex: null, tags: [], pubdate: '', format: 'chapters',
-  coverUrl: null, fileSize: 0, pageCount: null, source: '', manualFields: [], updatedAt: 1,
+  id: 'book-1',
+  title: '远程小说',
+  author: '作者',
+  publisher: '',
+  language: 'zh',
+  isbn: '',
+  description: '',
+  series: '',
+  seriesIndex: null,
+  tags: [],
+  pubdate: '',
+  format: 'chapters',
+  coverUrl: null,
+  fileSize: 0,
+  pageCount: null,
+  source: '',
+  manualFields: [],
+  updatedAt: 1,
 };
 const session: Session = {
   user: { id: 'u1', username: 'one', displayName: '一', role: 'member', createdAt: 0 },
-  accessToken: 'access', accessTokenExpiresAt: 9e15, refreshToken: 'refresh', refreshTokenExpiresAt: 9e15,
+  accessToken: 'access',
+  accessTokenExpiresAt: 9e15,
+  refreshToken: 'refresh',
+  refreshTokenExpiresAt: 9e15,
 };
 
 function content(ids: string[], revision = 'r1'): BookContent {
   return {
-    kind: 'text', total: ids.length, revision,
+    kind: 'text',
+    total: ids.length,
+    revision,
     groups: [{ id: 'all', seq: 0, offset: 0, count: ids.length, title: '全部章节' }],
     items: ids.map((id, seq) => ({
-      id, seq, title: `章节 ${id}`, href: `chapter:${id}`, resourceRef: `resource:${revision}:${id}`,
-      kind: 'chapter', format: 'html', mediaType: 'text/plain; charset=utf-8',
+      id,
+      seq,
+      title: `章节 ${id}`,
+      href: `chapter:${id}`,
+      resourceRef: `resource:${revision}:${id}`,
+      kind: 'chapter',
+      format: 'html',
+      mediaType: 'text/plain; charset=utf-8',
     })),
   };
 }
@@ -47,10 +73,15 @@ function manifest(value: BookContent): Manifest {
 }
 
 beforeAll(() => {
-  window.matchMedia ??= () => ({matches:false,addEventListener(){},removeEventListener(){}} as unknown as MediaQueryList);
+  window.matchMedia ??= () =>
+    ({ matches: false, addEventListener() {}, removeEventListener() {} }) as unknown as MediaQueryList;
   window.scrollTo = () => {};
-  HTMLDialogElement.prototype.showModal ??= function() { this.setAttribute('open', ''); };
-  HTMLDialogElement.prototype.close ??= function() { this.removeAttribute('open'); };
+  HTMLDialogElement.prototype.showModal ??= function () {
+    this.setAttribute('open', '');
+  };
+  HTMLDialogElement.prototype.close ??= function () {
+    this.removeAttribute('open');
+  };
   vi.stubGlobal('Blob', NodeBlob);
   globalThis.ResizeObserver ??= class {
     observe(): void {}
@@ -68,12 +99,21 @@ afterEach(() => {
   localStorage.clear();
 });
 
-async function setup(kv = new MemoryKv(), blobs = new MemoryBlobs(), userId = 'u1', server = 'http://one.test', settings: Partial<AppSettings> = {}) {
+async function setup(
+  kv = new MemoryKv(),
+  blobs = new MemoryBlobs(),
+  userId = 'u1',
+  server = 'http://one.test',
+  settings: Partial<AppSettings> = {},
+) {
   const transport = new FakeTransport();
   const platform = makePlatform(transport, kv, blobs);
   const api = new ReaderApi(platform, {
-    async load() { return { ...session, user: { ...session.user, id: userId } }; },
-    async save() {}, async clear() {},
+    async load() {
+      return { ...session, user: { ...session.user, id: userId } };
+    },
+    async save() {},
+    async clear() {},
   });
   api.setBaseUrl(server);
   await api.restore();
@@ -86,8 +126,24 @@ async function setup(kv = new MemoryKv(), blobs = new MemoryBlobs(), userId = 'u
     schedule: vi.fn(),
   } as unknown as SyncEngine;
   const onSettingsChange = vi.fn();
-  const screen = new ReaderScreen({ api, offline, sync, platform, downloads: new OfflineDownloads(api, platform), settings: { ...DEFAULT_APP_SETTINGS, autoCache: false, ...settings, ...(settings.theme && !settings.paper ? { paper: `local-${settings.theme}` as const, paperFollowsDark: false } : {}) },
-    onBack() {}, onSettingsChange, onSignedOut });
+  const screen = new ReaderScreen({
+    api,
+    offline,
+    sync,
+    platform,
+    downloads: new OfflineDownloads(api, platform),
+    settings: {
+      ...DEFAULT_APP_SETTINGS,
+      autoCache: false,
+      ...settings,
+      ...(settings.theme && !settings.paper
+        ? { paper: `local-${settings.theme}` as const, paperFollowsDark: false }
+        : {}),
+    },
+    onBack() {},
+    onSettingsChange,
+    onSignedOut,
+  });
   screens.push(screen);
   document.body.append(screen.element);
   return { screen, api, offline, transport, platform, onSignedOut, onSettingsChange, sync };
@@ -96,7 +152,22 @@ async function setup(kv = new MemoryKv(), blobs = new MemoryBlobs(), userId = 'u
 function serve(transport: FakeTransport, current: BookContent, next = current) {
   transport.respondWith((request) => {
     if (request.url.endsWith('/manifest')) return { status: 200, headers: {}, json: manifest(current) };
-    if (request.url.includes('/search?')) return { status:200,headers:{},json:{hits:current.items.map(item=>({title:item.title,excerpt:'正文',anchor:{sectionId:item.href,start:0,end:2,quote:'正文',prefix:'',suffix:''}})),scanned:current.total,total:current.total,failures:[],limited:false} };
+    if (request.url.includes('/search?'))
+      return {
+        status: 200,
+        headers: {},
+        json: {
+          hits: current.items.map((item) => ({
+            title: item.title,
+            excerpt: '正文',
+            anchor: { sectionId: item.href, start: 0, end: 2, quote: '正文', prefix: '', suffix: '' },
+          })),
+          scanned: current.total,
+          total: current.total,
+          failures: [],
+          limited: false,
+        },
+      };
     if (request.url.endsWith('/refresh')) return { status: 200, headers: {}, json: next };
     if (request.url.includes('/assets?')) {
       const ref = new URL(request.url, 'http://test').searchParams.get('ref');
@@ -107,47 +178,57 @@ function serve(transport: FakeTransport, current: BookContent, next = current) {
 }
 
 it('typesets HTML source chapters without stripping decoded text or changing raw offline cache', async () => {
-  const kv = new MemoryKv(), blobs = new MemoryBlobs();
+  const kv = new MemoryKv(),
+    blobs = new MemoryBlobs();
   const raw = '<p>第一章 标签</p><p>他说 &lt;b&gt; 是标签，&amp;lt; 是实体。</p>';
-  const current = content(['a']); current.items[0]!.mediaType = 'text/html';
+  const current = content(['a']);
+  current.items[0]!.mediaType = 'text/html';
   const env = await setup(kv, blobs);
-  env.transport.respondWith(request => request.url.endsWith('/manifest')
-    ? { status: 200, headers: {}, json: manifest(current) }
-    : request.url.includes('/assets?')
-      ? { status: 200, headers: {}, bytes: new TextEncoder().encode(raw) }
-      : { status: 200, headers: {}, json: { progress: null } });
+  env.transport.respondWith((request) =>
+    request.url.endsWith('/manifest')
+      ? { status: 200, headers: {}, json: manifest(current) }
+      : request.url.includes('/assets?')
+        ? { status: 200, headers: {}, bytes: new TextEncoder().encode(raw) }
+        : { status: 200, headers: {}, json: { progress: null } },
+  );
   await env.screen.open(book);
   expect(body(env.screen)?.textContent).toContain('他说 <b> 是标签，&lt; 是实体。');
   expect(body(env.screen)?.querySelector('b')).toBeNull();
   const cache = new PublicationCache(env.platform.kv, env.platform.blobs, publicationScope(env.api.baseUrl, 'u1'));
   expect(new TextDecoder().decode((await cache.resource(book.id, 'resource:r1:a'))!)).toBe(raw);
   env.screen.dispose();
-  const restored = await setup(kv, blobs); restored.platform.setOnline(false);
+  const restored = await setup(kv, blobs);
+  restored.platform.setOnline(false);
   restored.transport.failWith(new ApiError('offline', 'offline'));
   await restored.screen.open(book);
   expect(body(restored.screen)?.textContent).toContain('他说 <b> 是标签，&lt; 是实体。');
 });
 
 it('keeps image and table content in HTML source chapters', async () => {
-  const current = content(['a']); current.items[0]!.mediaType = 'text/html';
-  const raw = '<p>正文</p><img src="data:image/png;base64,iVBORw0KGgo=" alt="插图"><table><tr><td>表格内容</td></tr></table>';
+  const current = content(['a']);
+  current.items[0]!.mediaType = 'text/html';
+  const raw =
+    '<p>正文</p><img src="data:image/png;base64,iVBORw0KGgo=" alt="插图"><table><tr><td>表格内容</td></tr></table>';
   const env = await setup();
-  env.transport.respondWith(request => request.url.endsWith('/manifest')
-    ? { status: 200, headers: {}, json: manifest(current) }
-    : request.url.includes('/assets?')
-      ? { status: 200, headers: {}, bytes: new TextEncoder().encode(raw) }
-      : { status: 200, headers: {}, json: { progress: null } });
+  env.transport.respondWith((request) =>
+    request.url.endsWith('/manifest')
+      ? { status: 200, headers: {}, json: manifest(current) }
+      : request.url.includes('/assets?')
+        ? { status: 200, headers: {}, bytes: new TextEncoder().encode(raw) }
+        : { status: 200, headers: {}, json: { progress: null } },
+  );
   await env.screen.open(book);
   expect(body(env.screen)?.querySelector('img')?.getAttribute('alt')).toBe('插图');
   expect(body(env.screen)?.querySelector('td')?.textContent).toBe('表格内容');
 });
 
 it('applies the global text choice immediately, preserves the chapter, TTS and raw cached text, and survives another book and offline reload', async () => {
-  const kv = new MemoryKv(), blobs = new MemoryBlobs();
+  const kv = new MemoryKv(),
+    blobs = new MemoryBlobs();
   const env = await setup(kv, blobs);
   const current = content(['a', 'b']);
   const raw = '头发发展，干净干活，皇后后来。';
-  env.transport.respondWith(request => {
+  env.transport.respondWith((request) => {
     if (request.url.endsWith('/manifest')) return { status: 200, headers: {}, json: manifest(current) };
     if (request.url.includes('/assets?')) return { status: 200, headers: {}, bytes: new TextEncoder().encode(raw) };
     return { status: 200, headers: {}, json: { progress: null } };
@@ -158,19 +239,25 @@ it('applies the global text choice immediately, preserves the chapter, TTS and r
   await act(() => click(env.screen, '设置'));
   await act(() => click(env.screen, '字体与间距'));
   await act(() => click(env.screen, '繁体'));
-  await vi.waitFor(() => expect(body(env.screen)?.querySelector('.book-flow')?.textContent).toContain('頭髮發展，乾淨幹活，皇后後來。'));
+  await vi.waitFor(() =>
+    expect(body(env.screen)?.querySelector('.book-flow')?.textContent).toContain('頭髮發展，乾淨幹活，皇后後來。'),
+  );
   expect(reader.view.position().sectionId).toBe('chapter:b');
-  expect(reader.view.speechChunks.map(chunk => chunk.text).join('')).toContain('頭髮發展');
+  expect(reader.view.speechChunks.map((chunk) => chunk.text).join('')).toContain('頭髮發展');
   expect(reader.view.showTextAnchor(anchorFor('chapter:b', raw, 0, 4))).toBe(true);
   expect(env.onSettingsChange).toHaveBeenLastCalledWith({ chineseVariant: 'traditional' });
-  const store = new SettingsStore(kv); await store.load(); await store.update(env.onSettingsChange.mock.calls.at(-1)![0]);
+  const store = new SettingsStore(kv);
+  await store.load();
+  await store.update(env.onSettingsChange.mock.calls.at(-1)![0]);
   const cache = new PublicationCache(kv, blobs, publicationScope('http://one.test', 'u1'));
   expect(new TextDecoder().decode((await cache.resource(book.id, current.items[1]!.resourceRef!))!)).toBe(raw);
   await env.screen.open({ ...book, id: 'another-book' });
   expect(body(env.screen)?.querySelector('.book-flow')?.textContent).toContain('頭髮發展');
-  env.screen.dispose(); screens.splice(screens.indexOf(env.screen), 1);
+  env.screen.dispose();
+  screens.splice(screens.indexOf(env.screen), 1);
   const restored = await setup(kv, blobs, 'u1', 'http://one.test', await new SettingsStore(kv).load());
-  restored.transport.failWith(new Error('offline')); await restored.screen.open(book);
+  restored.transport.failWith(new Error('offline'));
+  await restored.screen.open(book);
   expect(body(restored.screen)?.querySelector('.book-flow')?.textContent).toContain('頭髮發展');
   await act(() => click(restored.screen, '设置'));
   await act(() => click(restored.screen, '字体与间距'));
@@ -183,21 +270,41 @@ it('searches the source in both scripts, displays converted results and navigate
   const current = content(['a']);
   const raw = '头发发展，干净干活。';
   const anchor = anchorFor('chapter:a', raw, 0, 2);
-  env.transport.respondWith(request => {
+  env.transport.respondWith((request) => {
     if (request.url.endsWith('/manifest')) return { status: 200, headers: {}, json: manifest(current) };
     if (request.url.includes('/assets?')) return { status: 200, headers: {}, bytes: new TextEncoder().encode(raw) };
     if (request.url.includes('/search?')) {
       const query = new URL(request.url, 'http://test').searchParams.get('q');
-      return { status: 200, headers: {}, json: { hits: query === '头发' ? [{ title: '头发章节', excerpt: raw, anchor }] : [], scanned: 1, total: 1, failures: [], limited: false } };
+      return {
+        status: 200,
+        headers: {},
+        json: {
+          hits: query === '头发' ? [{ title: '头发章节', excerpt: raw, anchor }] : [],
+          scanned: 1,
+          total: 1,
+          failures: [],
+          limited: false,
+        },
+      };
     }
     return { status: 200, headers: {}, json: { progress: null } };
   });
-  await env.screen.open(book); await act(() => click(env.screen, '工具'));
+  await env.screen.open(book);
+  await act(() => click(env.screen, '工具'));
   const input = env.screen.element.querySelector<HTMLInputElement>('input[placeholder="输入要查找的文字"]')!;
-  await act(() => { input.value = '頭髮'; input.dispatchEvent(new Event('input', { bubbles: true })); });
+  await act(() => {
+    input.value = '頭髮';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
   await act(() => click(env.screen, '搜索全文'));
-  await vi.waitFor(() => expect(env.screen.element.querySelector('.reading-tool-results')?.textContent).toContain('頭髮發展'));
-  expect(env.transport.requests.filter(request => request.url.includes('/search?')).map(request => new URL(request.url, 'http://test').searchParams.get('q'))).toEqual(['頭髮', '头发']);
+  await vi.waitFor(() =>
+    expect(env.screen.element.querySelector('.reading-tool-results')?.textContent).toContain('頭髮發展'),
+  );
+  expect(
+    env.transport.requests
+      .filter((request) => request.url.includes('/search?'))
+      .map((request) => new URL(request.url, 'http://test').searchParams.get('q')),
+  ).toEqual(['頭髮', '头发']);
   expect(env.screen.element.querySelectorAll('.reading-tool-results li')).toHaveLength(1);
   const view = (env.screen as unknown as { view: ReaderView }).view;
   const show = vi.spyOn(view, 'showTextAnchor');
@@ -212,24 +319,91 @@ function body(screen: ReaderScreen): ShadowRoot | null | undefined {
 
 describe('PDF reading', () => {
   function servePdf(transport: FakeTransport) {
-    transport.respondWith(request => {
-      if (request.url.endsWith('/manifest')) return {
-        status: 200, headers: {}, json: {
-          book: { ...book, format: 'pdf' }, files: [], contentUrl: '', coverUrl: null,
-          content: { kind: 'document', total: 1, items: [], groups: [] },
-        },
-      };
-      if (request.method === 'HEAD') return { status: 200, headers: { 'content-length': '1000000', 'accept-ranges': 'bytes' } };
+    transport.respondWith((request) => {
+      if (request.url.endsWith('/manifest'))
+        return {
+          status: 200,
+          headers: {},
+          json: {
+            book: { ...book, format: 'pdf' },
+            files: [],
+            contentUrl: '',
+            coverUrl: null,
+            content: { kind: 'document', total: 1, items: [], groups: [] },
+          },
+        };
+      if (request.method === 'HEAD')
+        return { status: 200, headers: { 'content-length': '1000000', 'accept-ranges': 'bytes' } };
       return { status: 200, headers: {}, json: { progress: null } };
     });
   }
+
+  it('clears PDF controls when opening a chapter book after a PDF', async () => {
+    const env = await setup();
+    servePdf(env.transport);
+    await env.screen.open({ ...book, format: 'pdf' });
+    const screen = env.screen as unknown as { chrome: { pdfMode: string } };
+    expect(screen.chrome.pdfMode).toBe('pdfjs');
+    serve(env.transport, content(['a']));
+    await env.screen.open(book);
+    expect(screen.chrome.pdfMode).toBe('none');
+  });
+
+  it('does not reopen an old PDF when its mode save finishes after switching books', async () => {
+    const env = await setup();
+    servePdf(env.transport);
+    await env.screen.open({ ...book, format: 'pdf' });
+    let finish!: () => void;
+    const save = vi.spyOn(env.api, 'setViewMode').mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = () => resolve({ pdfMode: 'enhanced', chosen: 'enhanced', defaultPdfMode: 'pdfjs' });
+        }),
+    );
+    const screen = env.screen as unknown as { switchPdfMode(mode: 'enhanced'): Promise<void> };
+    const changing = screen.switchPdfMode('enhanced');
+    await vi.waitFor(() => expect(save).toHaveBeenCalledOnce());
+    serve(env.transport, content(['a']));
+    await env.screen.open(book);
+    const reopen = vi.spyOn(env.screen, 'open');
+    finish();
+    await changing;
+    expect(reopen).not.toHaveBeenCalled();
+  });
+
+  it('keeps the current PDF open when saving progress before a mode switch fails', async () => {
+    const env = await setup();
+    servePdf(env.transport);
+    await env.screen.open({ ...book, format: 'pdf' });
+    vi.spyOn(env.api, 'setViewMode').mockResolvedValue({
+      pdfMode: 'enhanced',
+      chosen: 'enhanced',
+      defaultPdfMode: 'pdfjs',
+    });
+    const screen = env.screen as unknown as {
+      switchPdfMode(mode: 'enhanced'): Promise<void>;
+      flushProgress(): Promise<void>;
+      chrome: { pdfModeBusy: boolean };
+    };
+    vi.spyOn(screen, 'flushProgress').mockRejectedValue(new Error('progress storage is full'));
+    const reopen = vi.spyOn(env.screen, 'open');
+    await screen.switchPdfMode('enhanced');
+    expect(reopen).not.toHaveBeenCalled();
+    expect(screen.chrome.pdfModeBusy).toBe(false);
+    expect(noticeText()).toContain('progress storage is full');
+  });
 
   it('uses a range source rather than downloading or caching the complete file for online reading', async () => {
     const env = await setup(new MemoryKv(), new MemoryBlobs(), 'u1', 'http://one.test', { mode: 'paged' });
     servePdf(env.transport);
     await act(async () => env.screen.open({ ...book, format: 'pdf' }));
-    expect(env.transport.requests.filter(request => request.url.endsWith('/content')).map(request => request.method)).toEqual(['HEAD']);
-    expect(openPdf).toHaveBeenLastCalledWith(expect.objectContaining({ length: 1000000, readRange: expect.any(Function) }), expect.any(AbortSignal));
+    expect(
+      env.transport.requests.filter((request) => request.url.endsWith('/content')).map((request) => request.method),
+    ).toEqual(['HEAD']);
+    expect(openPdf).toHaveBeenLastCalledWith(
+      expect.objectContaining({ length: 1000000, readRange: expect.any(Function) }),
+      expect.any(AbortSignal),
+    );
     expect(body(env.screen)?.querySelector('canvas')).not.toBeNull();
     expect(env.screen.element.querySelector('book-content')?.getAttribute('data-page-layout')).toBe('screens');
     const cache = new PublicationCache(env.platform.kv, env.platform.blobs, publicationScope('http://one.test', 'u1'));
@@ -240,6 +414,144 @@ describe('PDF reading', () => {
     expect(document.renderer.dispose).toHaveBeenCalled();
   });
 
+  it('as pages, its bookmarks are the table of contents and each page is searched in its own text', async () => {
+    const env = await setup();
+    servePdf(env.transport);
+    await act(async () => env.screen.open({ ...book, format: 'pdf' }));
+    const screen = env.screen as unknown as {
+      chrome: { toc: Array<{ id: string; label: string; depth: number }>; pdfMode: string };
+      searchSections(signal: AbortSignal): AsyncGenerator<{ id: string; title: string; text: string }>;
+    };
+    await vi.waitFor(() =>
+      expect(screen.chrome.toc.map((entry) => [entry.id, entry.label, entry.depth])).toEqual([
+        ['pdf', '序', 0],
+        ['pdf:2', '第一章', 0],
+        ['pdf:3', '第一节', 1],
+      ]),
+    );
+    expect(screen.chrome.pdfMode).toBe('pdfjs');
+    const pages = [];
+    for await (const section of screen.searchSections(new AbortController().signal)) pages.push(section);
+    expect(pages.map((page) => [page.id, page.title])).toEqual([
+      ['pdf', '第 1 页'],
+      ['pdf:2', '第 2 页'],
+      ['pdf:3', '第 3 页'],
+    ]);
+    expect(pages[1]!.text).toContain('要找的词');
+  });
+
+  it('switches between pages and text on the same page, saving the choice for this book', async () => {
+    const env = await setup();
+    let mode: 'pdfjs' | 'enhanced' = 'pdfjs';
+    const viewModes: unknown[] = [];
+    const chapters = {
+      kind: 'reflowable',
+      total: 2,
+      revision: 'pdf-text:k',
+      groups: [{ id: 'spine:0', seq: 0, offset: 0, count: 2, title: '一 – 二' }],
+      items: [
+        {
+          id: 'pdf/part0000.xhtml',
+          seq: 0,
+          title: '一',
+          kind: 'chapter',
+          mediaType: 'text/html',
+          href: 'xhtml:pdf/part0000.xhtml',
+          page: 1,
+        },
+        {
+          id: 'pdf/part0001.xhtml',
+          seq: 1,
+          title: '二',
+          kind: 'chapter',
+          mediaType: 'text/html',
+          href: 'xhtml:pdf/part0001.xhtml',
+          page: 3,
+        },
+      ],
+    };
+    env.transport.respondWith((request) => {
+      if (request.url.endsWith('/view-mode')) {
+        const body = JSON.parse(String(request.body)) as { pdfMode: 'pdfjs' | 'enhanced' };
+        viewModes.push(body.pdfMode);
+        mode = body.pdfMode;
+        return { status: 200, headers: {}, json: { pdfMode: mode, chosen: mode, defaultPdfMode: 'pdfjs' } };
+      }
+      if (request.url.endsWith('/manifest'))
+        return {
+          status: 200,
+          headers: {},
+          json: {
+            book: { ...book, format: 'pdf' },
+            files: [],
+            contentUrl: '',
+            coverUrl: null,
+            content: mode === 'pdfjs' ? { kind: 'document', total: 1, items: [], groups: [] } : chapters,
+          },
+        };
+      if (request.method === 'HEAD')
+        return { status: 200, headers: { 'content-length': '1000000', 'accept-ranges': 'bytes' } };
+      if (request.url.includes('/assets?')) {
+        const ref = new URL(request.url, 'http://one.test').searchParams.get('ref')!;
+        const html = ref.includes('part0001')
+          ? '<p><span class="pdf-page" id="pdf-page-3"></span>第二章从第三页开始。</p>'
+          : '<p><span class="pdf-page" id="pdf-page-1"></span>第一章。</p>';
+        return { status: 200, headers: {}, bytes: new TextEncoder().encode(html) };
+      }
+      return { status: 200, headers: {}, json: { progress: null } };
+    });
+    const screen = env.screen as unknown as {
+      goToChapterRef(ref: string): Promise<void>;
+      switchPdfMode(mode: 'pdfjs' | 'enhanced'): Promise<void>;
+      chrome: { pdfMode: string };
+    };
+    await act(async () => env.screen.open({ ...book, format: 'pdf' }));
+    await act(async () => screen.goToChapterRef('pdf:3'));
+    await act(async () => screen.switchPdfMode('enhanced'));
+    expect(viewModes).toEqual(['enhanced']);
+    expect(screen.chrome.pdfMode).toBe('enhanced');
+    // Page 3 is in the second chapter.
+    expect(body(env.screen)?.textContent).toContain('第二章从第三页开始');
+    const document = await openPdf.mock.results.at(-1)!.value;
+    document.renderer.render.mockClear();
+    await act(async () => screen.switchPdfMode('pdfjs'));
+    expect(viewModes).toEqual(['enhanced', 'pdfjs']);
+    expect(screen.chrome.pdfMode).toBe('pdfjs');
+    const reopened = await openPdf.mock.results.at(-1)!.value;
+    expect(reopened.renderer.render.mock.calls.at(-1)?.[0]).toBe(3);
+  });
+
+  it('asked for as text, a scan opens as pages and says why', async () => {
+    const env = await setup();
+    env.transport.respondWith((request) => {
+      if (request.url.endsWith('/manifest'))
+        return {
+          status: 200,
+          headers: {},
+          json: {
+            book: { ...book, format: 'pdf' },
+            files: [],
+            contentUrl: '',
+            coverUrl: null,
+            content: {
+              kind: 'document',
+              total: 1,
+              items: [],
+              groups: [],
+              notice: '这本 PDF 没有文字层（可能是扫描版），已按原版页面打开。',
+            },
+          },
+        };
+      if (request.method === 'HEAD')
+        return { status: 200, headers: { 'content-length': '1000000', 'accept-ranges': 'bytes' } };
+      return { status: 200, headers: {}, json: { progress: null } };
+    });
+    await act(async () => env.screen.open({ ...book, format: 'pdf' }));
+    expect((env.screen as unknown as { chrome: { pdfMode: string } }).chrome.pdfMode).toBe('enhanced');
+    expect(body(env.screen)?.querySelector('canvas')).not.toBeNull();
+    expect(document.body.textContent).toContain('没有文字层');
+  });
+
   it('opens an explicitly downloaded PDF from cache without requesting its network content', async () => {
     const env = await setup();
     servePdf(env.transport);
@@ -248,17 +560,22 @@ describe('PDF reading', () => {
     await cache.putResource(book.id, OFFLINE_FILE, bytes);
     await act(async () => env.screen.open({ ...book, format: 'pdf' }));
     expect(openPdf).toHaveBeenLastCalledWith(bytes, expect.any(AbortSignal));
-    expect(env.transport.requests.filter(request => request.url.endsWith('/content'))).toHaveLength(0);
+    expect(env.transport.requests.filter((request) => request.url.endsWith('/content'))).toHaveLength(0);
   });
 });
 
 async function click(screen: ReaderScreen, label: string): Promise<void> {
   if (label === '工具') {
     if (!screen.element.querySelector('.reader-settings')) await click(screen, '设置');
-    await click(screen, '阅读工具'); return;
+    await click(screen, '阅读工具');
+    return;
   }
-  const button = [...screen.element.querySelectorAll('button')].find((candidate) =>
-    candidate.getAttribute('aria-label') === label || candidate.textContent?.trim().endsWith(label) || candidate.textContent?.trim().startsWith(label));
+  const button = [...screen.element.querySelectorAll('button')].find(
+    (candidate) =>
+      candidate.getAttribute('aria-label') === label ||
+      candidate.textContent?.trim().endsWith(label) ||
+      candidate.textContent?.trim().startsWith(label),
+  );
   expect(button, label).toBeDefined();
   button!.click();
   await Promise.resolve();
@@ -266,61 +583,130 @@ async function click(screen: ReaderScreen, label: string): Promise<void> {
 
 describe('chapter publication reading', () => {
   it('ignores an old progress response after the reader closes and the offline account changes', async () => {
-    const env = await setup(); serve(env.transport, content(['a', 'b']));
-    let finish!: (value: { bookId: string; locator: string; percentage: number; chapterTitle: string; device: string; updatedAt: number }) => void;
-    vi.spyOn(env.api, 'getProgress').mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    const env = await setup();
+    serve(env.transport, content(['a', 'b']));
+    let finish!: (value: {
+      bookId: string;
+      locator: string;
+      percentage: number;
+      chapterTitle: string;
+      device: string;
+      updatedAt: number;
+    }) => void;
+    vi.spyOn(env.api, 'getProgress').mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
     const opening = env.screen.open(book);
     await vi.waitFor(() => expect(finish).toBeDefined());
-    env.screen.dispose(); screens.splice(screens.indexOf(env.screen), 1);
+    env.screen.dispose();
+    screens.splice(screens.indexOf(env.screen), 1);
     await env.offline.setScope('another-account');
-    finish({ bookId: book.id, locator: 'r1:0.0000:chapter:b', percentage: 0.5, chapterTitle: 'private chapter', device: 'phone', updatedAt: 10 });
+    finish({
+      bookId: book.id,
+      locator: 'r1:0.0000:chapter:b',
+      percentage: 0.5,
+      chapterTitle: 'private chapter',
+      device: 'phone',
+      updatedAt: 10,
+    });
     await opening;
     expect(env.offline.progressFor(book.id)).toBeUndefined();
     expect(env.offline.outbox().progress).toEqual([]);
   });
 
-  it.each(['chapters', 'epub'] as const)('asks before moving to the newer rereading position from another device in %s', async format => {
-    const env = await setup(); serve(env.transport, content(['a', 'b']));
-    const local = { bookId: book.id, locator: 'r1:0.0000:chapter:b', percentage: 0.5,
-      chapterTitle: 'b', device: 'phone', updatedAt: 10 };
-    const remote = { ...local, locator: 'r1:0.0000:chapter:a', percentage: 0, device: 'other phone', updatedAt: 20 };
-    await env.offline.setProgress(local);
-    await env.offline.markDelivered(env.offline.outbox(), 1);
-    vi.spyOn(env.api, 'getProgress').mockResolvedValue(remote);
-    await env.screen.open({ ...book, format });
-    expect(body(env.screen)?.textContent).toContain('resource:r1:b');
-    expect(env.offline.progressFor(book.id)).toEqual(local);
-    expect(env.screen.element.querySelector('[role=alertdialog]')?.textContent).toContain('是否跳到最新位置');
-    await click(env.screen, '跳到最新位置');
-    await vi.waitFor(() => expect(body(env.screen)?.textContent).toContain('resource:r1:a'));
-    expect(env.offline.progressFor(book.id)!.updatedAt).toBeGreaterThan(remote.updatedAt);
-  });
+  it.each(['chapters', 'epub'] as const)(
+    'asks before moving to the newer rereading position from another device in %s',
+    async (format) => {
+      const env = await setup();
+      serve(env.transport, content(['a', 'b']));
+      const local = {
+        bookId: book.id,
+        locator: 'r1:0.0000:chapter:b',
+        percentage: 0.5,
+        chapterTitle: 'b',
+        device: 'phone',
+        updatedAt: 10,
+      };
+      const remote = { ...local, locator: 'r1:0.0000:chapter:a', percentage: 0, device: 'other phone', updatedAt: 20 };
+      await env.offline.setProgress(local);
+      await env.offline.markDelivered(env.offline.outbox(), 1);
+      vi.spyOn(env.api, 'getProgress').mockResolvedValue(remote);
+      await env.screen.open({ ...book, format });
+      expect(body(env.screen)?.textContent).toContain('resource:r1:b');
+      expect(env.offline.progressFor(book.id)).toEqual(local);
+      expect(env.screen.element.querySelector('[role=alertdialog]')?.textContent).toContain('是否跳到最新位置');
+      await click(env.screen, '跳到最新位置');
+      await vi.waitFor(() => expect(body(env.screen)?.textContent).toContain('resource:r1:a'));
+      expect(env.offline.progressFor(book.id)!.updatedAt).toBeGreaterThan(remote.updatedAt);
+    },
+  );
 
   it('does not save a temporary opening position while waiting for remote progress', async () => {
-    const env = await setup(); serve(env.transport, content(['a', 'b']));
-    const old = { bookId: book.id, locator: 'r1:0.0000:chapter:b', percentage: 0.5,
-      chapterTitle: 'b', device: 'phone', updatedAt: 10 };
+    const env = await setup();
+    serve(env.transport, content(['a', 'b']));
+    const old = {
+      bookId: book.id,
+      locator: 'r1:0.0000:chapter:b',
+      percentage: 0.5,
+      chapterTitle: 'b',
+      device: 'phone',
+      updatedAt: 10,
+    };
     await env.offline.setProgress(old);
     let finish!: (value: typeof old) => void;
-    vi.spyOn(env.api, 'getProgress').mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    vi.spyOn(env.api, 'getProgress').mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
     const opening = env.screen.open(book);
     await vi.waitFor(() => expect(finish).toBeDefined());
-    await new Promise(resolve => setTimeout(resolve, 1700));
+    await new Promise((resolve) => setTimeout(resolve, 1700));
     const duringOpen = env.offline.progressFor(book.id);
-    finish({ ...old, updatedAt: 20 }); await opening;
+    finish({ ...old, updatedAt: 20 });
+    await opening;
     expect(duringOpen).toEqual(old);
   });
 
-  it.each([{ localTime: 10, chapter: 'b' }, { localTime: 30, chapter: 'a' }])(
-    'opens the latest position when the local timestamp is $localTime', async ({ localTime, chapter }) => {
+  it.each([
+    { localTime: 10, chapter: 'b' },
+    { localTime: 30, chapter: 'a' },
+  ])('opens the latest position when the local timestamp is $localTime', async ({ localTime, chapter }) => {
     const env = await setup();
-    await env.offline.setProgress({ bookId: book.id, locator: 'r1:0.0000:chapter:a', percentage: 0,
-      chapterTitle: 'a', device: 'phone', updatedAt: localTime });
-    env.transport.respondWith(request => {
+    await env.offline.setProgress({
+      bookId: book.id,
+      locator: 'r1:0.0000:chapter:a',
+      percentage: 0,
+      chapterTitle: 'a',
+      device: 'phone',
+      updatedAt: localTime,
+    });
+    env.transport.respondWith((request) => {
       if (request.url.endsWith('/manifest')) return { status: 200, headers: {}, json: manifest(content(['a', 'b'])) };
-      if (request.url.includes('/assets?')) return { status: 200, headers: {}, bytes: new TextEncoder().encode(new URL(request.url, 'http://one.test').searchParams.get('ref')!) };
-      return { status: 200, headers: {}, json: { progress: { bookId: book.id, locator: 'r1:0.0000:chapter:b', percentage: 0.5,
-        chapterTitle: 'b', device: 'new phone', updatedAt: 20 } } };
+      if (request.url.includes('/assets?'))
+        return {
+          status: 200,
+          headers: {},
+          bytes: new TextEncoder().encode(new URL(request.url, 'http://one.test').searchParams.get('ref')!),
+        };
+      return {
+        status: 200,
+        headers: {},
+        json: {
+          progress: {
+            bookId: book.id,
+            locator: 'r1:0.0000:chapter:b',
+            percentage: 0.5,
+            chapterTitle: 'b',
+            device: 'new phone',
+            updatedAt: 20,
+          },
+        },
+      };
     });
     await env.screen.open(book);
     expect(body(env.screen)?.textContent).toContain('resource:r1:a');
@@ -336,11 +722,13 @@ describe('chapter publication reading', () => {
     await env.screen.open(book);
     // Exercise the actual App lifecycle flush and actual ReaderScreen/OfflineStore.
     let savedLocator: string | undefined;
-    const sync = { flush: vi.fn(async () => {
-      const persisted = new OfflineStore(env.platform.kv);
-      await persisted.setScope(publicationScope(env.api.baseUrl, 'u1'));
-      savedLocator = persisted.current.progress[book.id]?.locator;
-    }) };
+    const sync = {
+      flush: vi.fn(async () => {
+        const persisted = new OfflineStore(env.platform.kv);
+        await persisted.setScope(publicationScope(env.api.baseUrl, 'u1'));
+        savedLocator = persisted.current.progress[book.id]?.locator;
+      }),
+    };
     await App.prototype.flush.call({ reader: env.screen, offline: env.offline, sync } as unknown as App);
     expect(sync.flush).toHaveBeenCalledOnce();
     expect(savedLocator).toContain('chapter:a');
@@ -348,84 +736,190 @@ describe('chapter publication reading', () => {
   });
 
   it('keeps the local reading position when the progress service is unavailable', async () => {
-    const env = await setup(); serve(env.transport, content(['a', 'b']));
-    await env.offline.setProgress({ bookId: book.id, locator: 'r1:0.0000:chapter:b', percentage: 0.5,
-      chapterTitle: 'b', device: 'phone', updatedAt: 10 });
+    const env = await setup();
+    serve(env.transport, content(['a', 'b']));
+    await env.offline.setProgress({
+      bookId: book.id,
+      locator: 'r1:0.0000:chapter:b',
+      percentage: 0.5,
+      chapterTitle: 'b',
+      device: 'phone',
+      updatedAt: 10,
+    });
     vi.spyOn(env.api, 'getProgress').mockRejectedValue(new ApiError('offline', 'offline'));
     await env.screen.open(book);
     expect(body(env.screen)?.textContent).toContain('resource:r1:b');
   });
 
   it('opens at the place it was asked for (a note from 读书笔记) instead of the saved position', async () => {
-    const env = await setup(); serve(env.transport, content(['a', 'b']));
-    await env.offline.setProgress({ bookId: book.id, locator: 'r1:0.0000:chapter:a', percentage: 0,
-      chapterTitle: 'a', device: 'phone', updatedAt: 10 });
+    const env = await setup();
+    serve(env.transport, content(['a', 'b']));
+    await env.offline.setProgress({
+      bookId: book.id,
+      locator: 'r1:0.0000:chapter:a',
+      percentage: 0,
+      chapterTitle: 'a',
+      device: 'phone',
+      updatedAt: 10,
+    });
     await env.screen.open(book, 'r1:0.0000:chapter:b');
     expect(body(env.screen)?.textContent).toContain('resource:r1:b');
   });
 
   it('stays at the saved position, and says why, when the requested place is gone', async () => {
-    const env = await setup(); serve(env.transport, content(['a', 'b']));
-    await env.offline.setProgress({ bookId: book.id, locator: 'r1:0.0000:chapter:b', percentage: 0.5,
-      chapterTitle: 'b', device: 'phone', updatedAt: 10 });
-    await env.screen.open(book, 'rt1:' + JSON.stringify({ sectionId: 'chapter:b', start: 0, end: 4, quote: '不在书里', prefix: '', suffix: '' }));
+    const env = await setup();
+    serve(env.transport, content(['a', 'b']));
+    await env.offline.setProgress({
+      bookId: book.id,
+      locator: 'r1:0.0000:chapter:b',
+      percentage: 0.5,
+      chapterTitle: 'b',
+      device: 'phone',
+      updatedAt: 10,
+    });
+    await env.screen.open(
+      book,
+      'rt1:' + JSON.stringify({ sectionId: 'chapter:b', start: 0, end: 4, quote: '不在书里', prefix: '', suffix: '' }),
+    );
     expect(body(env.screen)?.textContent).toContain('resource:r1:b');
     expect(document.body.textContent).toContain('原文位置已变化');
   });
 
   it('switches from the contents panel only after chapter selection and preserves the old view on failure', async () => {
-    const env = await setup(); let failSwitch = true;
-    env.transport.respondWith(request => {
+    const env = await setup();
+    let failSwitch = true;
+    env.transport.respondWith((request) => {
       if (request.url.endsWith('/source-options')) return { status: 200, headers: {}, json: { canSwitch: true } };
       if (request.url.endsWith('/manifest')) return { status: 200, headers: {}, json: manifest(content(['a', 'b'])) };
-      if (request.url.endsWith('/alternatives')) return { status: 200, headers: {}, stream: new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode('event: results\ndata: ' + JSON.stringify({ items: [{ ref: 'other-book', title: '同一本书', authors: ['作者'], sourceName: '其它书源', latestChapter: '最新章节' }] }) + '\n\nevent: done\ndata: {}\n\n')); controller.close(); } }) };
-      if (request.url.endsWith('/switch-preview')) return { status: 200, headers: {}, json: { chapters: [{ id: 'x', title: '另一个章节' }] } };
-      if (request.url.endsWith('/switch-source')) return failSwitch
-        ? { status: 502, headers: {}, json: { error: { code: 'SOURCE_ERROR', message: '正文获取失败' } } }
-        : { status: 200, headers: {}, json: { content: content(['x', 'y'], 'r2'), href: 'chapter:x' } };
-      if (request.url.includes('/assets?')) return { status: 200, headers: {}, bytes: new TextEncoder().encode(new URL(request.url, 'http://test').searchParams.get('ref')!) };
+      if (request.url.endsWith('/alternatives'))
+        return {
+          status: 200,
+          headers: {},
+          stream: new ReadableStream({
+            start(controller) {
+              controller.enqueue(
+                new TextEncoder().encode(
+                  'event: results\ndata: ' +
+                    JSON.stringify({
+                      items: [
+                        {
+                          ref: 'other-book',
+                          title: '同一本书',
+                          authors: ['作者'],
+                          sourceName: '其它书源',
+                          latestChapter: '最新章节',
+                        },
+                      ],
+                    }) +
+                    '\n\nevent: done\ndata: {}\n\n',
+                ),
+              );
+              controller.close();
+            },
+          }),
+        };
+      if (request.url.endsWith('/switch-preview'))
+        return { status: 200, headers: {}, json: { chapters: [{ id: 'x', title: '另一个章节' }] } };
+      if (request.url.endsWith('/switch-source'))
+        return failSwitch
+          ? { status: 502, headers: {}, json: { error: { code: 'SOURCE_ERROR', message: '正文获取失败' } } }
+          : { status: 200, headers: {}, json: { content: content(['x', 'y'], 'r2'), href: 'chapter:x' } };
+      if (request.url.includes('/assets?'))
+        return {
+          status: 200,
+          headers: {},
+          bytes: new TextEncoder().encode(new URL(request.url, 'http://test').searchParams.get('ref')!),
+        };
       return { status: 200, headers: {}, json: { progress: null } };
     });
-    await env.screen.open(book); await click(env.screen, '目录'); await click(env.screen, '切换书源');
-    await vi.waitFor(() => expect(env.screen.element.querySelector('.source-switch-card')?.textContent).toContain('其它书源')); await click(env.screen, '查看此源目录：其它书源');
-    await vi.waitFor(() => expect(env.screen.element.querySelector('section[aria-label="切换书源"] select')).not.toBeNull());
-    const submit = [...env.screen.element.querySelectorAll('button')].find(button => button.textContent === '确认换源并阅读')!;
+    await env.screen.open(book);
+    await click(env.screen, '目录');
+    await click(env.screen, '切换书源');
+    await vi.waitFor(() =>
+      expect(env.screen.element.querySelector('.source-switch-card')?.textContent).toContain('其它书源'),
+    );
+    await click(env.screen, '查看此源目录：其它书源');
+    await vi.waitFor(() =>
+      expect(env.screen.element.querySelector('section[aria-label="切换书源"] select')).not.toBeNull(),
+    );
+    const submit = [...env.screen.element.querySelectorAll('button')].find(
+      (button) => button.textContent === '确认换源并阅读',
+    )!;
     expect(submit.disabled).toBe(true);
     const select = env.screen.element.querySelector<HTMLSelectElement>('section[aria-label="切换书源"] select')!;
-    select.value = 'x'; select.dispatchEvent(new Event('change', { bubbles: true }));
+    select.value = 'x';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
     const quality = vi.spyOn(env.api, 'switchQuality');
     quality.mockRejectedValueOnce(new ApiError('bad_request', '空章不能读取', 'EMPTY_CHAPTER', 400));
     await click(env.screen, '检测所选章节 / 重试');
     await vi.waitFor(() => expect(env.screen.element.textContent).toContain('空章不能读取'));
-    quality.mockResolvedValueOnce({ chapterId: 'x', title: '另一个章节', latestChapter: '末章', characters: 100, images: 0, bytes: 300, elapsedMs: 10 });
+    quality.mockResolvedValueOnce({
+      chapterId: 'x',
+      title: '另一个章节',
+      latestChapter: '末章',
+      characters: 100,
+      images: 0,
+      bytes: 300,
+      elapsedMs: 10,
+    });
     await click(env.screen, '检测所选章节 / 重试');
     await vi.waitFor(() => expect(env.screen.element.textContent).toContain('100 字符'));
     expect(body(env.screen)?.textContent).toContain('resource:r1:a');
     select.dispatchEvent(new Event('change', { bubbles: true }));
-    expect(env.screen.element.querySelector('dialog[aria-label="选择阅读章节"]')?.textContent).not.toContain('100 字符');
-    let finish!: (value: {chapterId:string;title:string;latestChapter:string;characters:number;images:number;bytes:number;elapsedMs:number}) => void;
-    quality.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    expect(env.screen.element.querySelector('dialog[aria-label="选择阅读章节"]')?.textContent).not.toContain(
+      '100 字符',
+    );
+    let finish!: (value: {
+      chapterId: string;
+      title: string;
+      latestChapter: string;
+      characters: number;
+      images: number;
+      bytes: number;
+      elapsedMs: number;
+    }) => void;
+    quality.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
     await click(env.screen, '检测所选章节 / 重试');
     select.dispatchEvent(new Event('change', { bubbles: true }));
     expect(quality.mock.calls.at(-1)?.[3]?.signal?.aborted).toBe(true);
-    finish({chapterId:'x',title:'迟到结果',latestChapter:'末章',characters:999,images:0,bytes:999,elapsedMs:1});
-    await new Promise(resolve => setTimeout(resolve, 0));
-    expect(env.screen.element.querySelector('dialog[aria-label="选择阅读章节"]')?.textContent).not.toContain('999 字符');
+    finish({
+      chapterId: 'x',
+      title: '迟到结果',
+      latestChapter: '末章',
+      characters: 999,
+      images: 0,
+      bytes: 999,
+      elapsedMs: 1,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(env.screen.element.querySelector('dialog[aria-label="选择阅读章节"]')?.textContent).not.toContain(
+      '999 字符',
+    );
     await click(env.screen, '确认换源并阅读');
     await vi.waitFor(() => expect(noticeText()).toContain('正文获取失败'));
     expect(body(env.screen)?.textContent).toContain('resource:r1:a');
     expect(env.screen.element.querySelector('section[aria-label="切换书源"]')?.textContent).toContain('最新章节');
-    failSwitch = false; await click(env.screen, '确认换源并阅读');
+    failSwitch = false;
+    await click(env.screen, '确认换源并阅读');
     await vi.waitFor(() => expect(body(env.screen)?.textContent).toContain('resource:r2:x'));
     await vi.waitFor(() => expect(env.offline.current.progress[book.id]?.locator).toContain('chapter:x'));
     expect(noticeText()).toContain('已切换书源');
   });
   it('renders cached rich chapters with images without requesting an external origin, including offline reopening', async () => {
-    const kv = new MemoryKv(); const blobs = new MemoryBlobs();
+    const kv = new MemoryKv();
+    const blobs = new MemoryBlobs();
     const first = await setup(kv, blobs);
-    const rich = content(['rich']); rich.kind = 'reflowable';
-    delete rich.items[0]!.format; rich.items[0]!.mediaType = 'text/html; charset=utf-8';
-    const html = '<h2>插图章节</h2><p>含有<strong>强调</strong>的正文。</p><img alt="插图" src="data:image/png;base64,iVBORw0KGgo=">';
+    const rich = content(['rich']);
+    rich.kind = 'reflowable';
+    delete rich.items[0]!.format;
+    rich.items[0]!.mediaType = 'text/html; charset=utf-8';
+    const html =
+      '<h2>插图章节</h2><p>含有<strong>强调</strong>的正文。</p><img alt="插图" src="data:image/png;base64,iVBORw0KGgo=">';
     first.transport.respondWith((request) => {
       if (request.url.endsWith('/manifest')) return { status: 200, headers: {}, json: manifest(rich) };
       if (request.url.includes('/assets?')) return { status: 200, headers: {}, bytes: new TextEncoder().encode(html) };
@@ -434,8 +928,11 @@ describe('chapter publication reading', () => {
     await first.screen.open(book);
     expect(body(first.screen)?.querySelector('strong')?.textContent).toBe('强调');
     expect(body(first.screen)?.querySelector('img')?.getAttribute('src')).toMatch(/^data:image\/png/);
-    first.screen.dispose(); screens.splice(screens.indexOf(first.screen), 1); await first.offline.flush();
-    const second = await setup(kv, blobs); second.transport.failWith(new ApiError('offline', 'offline'));
+    first.screen.dispose();
+    screens.splice(screens.indexOf(first.screen), 1);
+    await first.offline.flush();
+    const second = await setup(kv, blobs);
+    second.transport.failWith(new ApiError('offline', 'offline'));
     await second.screen.open(book);
     expect(body(second.screen)?.querySelector('h2')?.textContent).toBe('插图章节');
     expect(body(second.screen)?.querySelector('img')?.getAttribute('src')).toMatch(/^data:image\/png/);
@@ -443,31 +940,46 @@ describe('chapter publication reading', () => {
   });
   it('opens cached EPUB text immediately while refreshing its styles in the background', async () => {
     const epub: Book = { ...book, format: 'epub' };
-    const kv = new MemoryKv(); const blobs = new MemoryBlobs();
-    const styled = content(['styled']); styled.kind = 'reflowable';
-    delete styled.items[0]!.format; styled.items[0]!.mediaType = 'application/xhtml+xml';
+    const kv = new MemoryKv();
+    const blobs = new MemoryBlobs();
+    const styled = content(['styled']);
+    styled.kind = 'reflowable';
+    delete styled.items[0]!.format;
+    styled.items[0]!.mediaType = 'application/xhtml+xml';
     const ref = styled.items[0]!.resourceRef!;
-    const stale = '<html><head><link rel="stylesheet" href="/api/v1/books/b/assets?__reader-book-resource__=1&amp;ref=book.css"/></head><body><p>旧的缓存</p></body></html>';
+    const stale =
+      '<html><head><link rel="stylesheet" href="/api/v1/books/b/assets?__reader-book-resource__=1&amp;ref=book.css"/></head><body><p>旧的缓存</p></body></html>';
     const cache = new PublicationCache(kv, blobs, publicationScope('http://one.test', 'u1'));
     // Offline first: the stale copy is still the chapter.
     await cache.putResource(book.id, ref, new TextEncoder().encode(stale));
     const offline = await setup(kv, blobs);
     offline.transport.respondWith((request) => {
-      if (request.url.endsWith('/manifest')) return { status: 200, headers: {}, json: { ...manifest(styled), book: epub } };
+      if (request.url.endsWith('/manifest'))
+        return { status: 200, headers: {}, json: { ...manifest(styled), book: epub } };
       if (request.url.includes('/assets?')) throw new ApiError('offline', 'offline');
       return { status: 200, headers: {}, json: { progress: null } };
     });
     await offline.screen.open(epub);
     expect(body(offline.screen)?.textContent).toContain('旧的缓存');
-    offline.screen.dispose(); screens.splice(screens.indexOf(offline.screen), 1);
+    offline.screen.dispose();
+    screens.splice(screens.indexOf(offline.screen), 1);
     const online = await setup(kv, blobs);
     let release!: () => void;
-    const network = new Promise<void>(resolve => { release = resolve; });
+    const network = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     online.transport.respondWith(async (request) => {
-      if (request.url.endsWith('/manifest')) return { status: 200, headers: {}, json: { ...manifest(styled), book: epub } };
+      if (request.url.endsWith('/manifest'))
+        return { status: 200, headers: {}, json: { ...manifest(styled), book: epub } };
       if (request.url.includes('/assets?')) {
         await network;
-        return { status: 200, headers: {}, bytes: new TextEncoder().encode('<html><head><style data-href="book.css">p { color: red; }</style></head><body><p>新的正文</p></body></html>') };
+        return {
+          status: 200,
+          headers: {},
+          bytes: new TextEncoder().encode(
+            '<html><head><style data-href="book.css">p { color: red; }</style></head><body><p>新的正文</p></body></html>',
+          ),
+        };
       }
       return { status: 200, headers: {}, json: { progress: null } };
     });
@@ -480,12 +992,15 @@ describe('chapter publication reading', () => {
     expect(body(online.screen)?.textContent).toContain('旧的缓存');
   });
   it('opens and marks a Kindle chapter cached by a background download while offline', async () => {
-    const kv = new MemoryKv(), blobs = new MemoryBlobs();
+    const kv = new MemoryKv(),
+      blobs = new MemoryBlobs();
     const kindle: Book = { ...book, format: 'mobi' };
-    const staged = content(['kindle']); staged.kind = 'reflowable';
+    const staged = content(['kindle']);
+    staged.kind = 'reflowable';
     const item = staged.items[0]!;
     item.href = 'xhtml:text/part0000.xhtml';
-    delete item.resourceRef; delete item.format;
+    delete item.resourceRef;
+    delete item.format;
     item.mediaType = 'text/html';
     const cache = new PublicationCache(kv, blobs, publicationScope('http://one.test', 'u1'));
     await cache.putManifest(kindle.id, { ...manifest(staged), book: kindle });
@@ -495,14 +1010,18 @@ describe('chapter publication reading', () => {
     offline.transport.failWith(new ApiError('offline', 'offline'));
     await offline.screen.open(kindle);
     expect(body(offline.screen)?.textContent).toContain('离线正文');
-    expect(offline.transport.requests.some(request => request.url.includes('/assets?'))).toBe(false);
+    expect(offline.transport.requests.some((request) => request.url.includes('/assets?'))).toBe(false);
   });
   it('ignores delayed chapter callbacks after disposal and an offline account switch', async () => {
     const env = await setup();
     let release!: () => void;
     let started!: () => void;
-    const bodyGate = new Promise<void>((resolve) => { release = resolve; });
-    const bodyStarted = new Promise<void>((resolve) => { started = resolve; });
+    const bodyGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const bodyStarted = new Promise<void>((resolve) => {
+      started = resolve;
+    });
     env.transport.respondWith(async (request) => {
       if (request.url.endsWith('/manifest')) return { status: 200, headers: {}, json: manifest(content(['a'])) };
       if (request.url.includes('/assets?')) {
@@ -549,23 +1068,30 @@ describe('chapter publication reading', () => {
   });
 
   it('opens cached text immediately without spending a network timeout budget', async () => {
-    const kv = new MemoryKv(), blobs = new MemoryBlobs();
+    const kv = new MemoryKv(),
+      blobs = new MemoryBlobs();
     const first = await setup(kv, blobs);
     serve(first.transport, content(['a']));
     await first.screen.open(book);
-    first.screen.dispose(); screens.splice(screens.indexOf(first.screen), 1);
+    first.screen.dispose();
+    screens.splice(screens.indexOf(first.screen), 1);
     await first.offline.flush();
     const second = await setup(kv, blobs);
     second.transport.respondWith(() => new Promise(() => {}));
     vi.useFakeTimers();
     try {
       const opening = second.screen.open(book);
-      let opened = false; void opening.then(() => { opened = true; });
+      let opened = false;
+      void opening.then(() => {
+        opened = true;
+      });
       await vi.waitFor(() => expect(opened).toBe(true), { timeout: 200, interval: 5 });
       await opening;
       expect(body(second.screen)?.textContent).toContain('resource:r1:a');
       expect(second.onSignedOut).not.toHaveBeenCalled();
-    } finally { vi.useRealTimers(); }
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('uses matching cached windows without waiting for the server and rejects mismatched revisions', async () => {
@@ -573,7 +1099,10 @@ describe('chapter publication reading', () => {
     const value = content(['a']);
     const cache = new PublicationCache(env.platform.kv, env.platform.blobs, publicationScope(env.api.baseUrl, 'u1'));
     await cache.putWindow(book.id, 1, value);
-    const reader = env.screen as unknown as { manifest: Manifest; readWindow(bookId: string, group: number, signal?: AbortSignal): Promise<BookContent> };
+    const reader = env.screen as unknown as {
+      manifest: Manifest;
+      readWindow(bookId: string, group: number, signal?: AbortSignal): Promise<BookContent>;
+    };
     reader.manifest = manifest(value);
     const request = vi.spyOn(env.api, 'items').mockRejectedValue(new ApiError('offline', 'unreachable'));
     expect(await reader.readWindow(book.id, 1)).toEqual(value);
@@ -581,20 +1110,28 @@ describe('chapter publication reading', () => {
     reader.manifest = manifest(content(['a'], 'new-revision'));
     await expect(reader.readWindow(book.id, 1)).rejects.toMatchObject({ kind: 'offline' });
     expect(request).toHaveBeenCalledTimes(1);
-    const legacy = content(['a']); delete legacy.revision;
+    const legacy = content(['a']);
+    delete legacy.revision;
     await cache.putWindow(book.id, 1, legacy);
     reader.manifest = manifest(legacy);
     expect(await reader.readWindow(book.id, 1)).toEqual(legacy);
     request.mockRejectedValueOnce(new ApiError('unauthorized', 'revoked'));
     await expect(reader.readWindow(book.id, 1)).rejects.toMatchObject({ kind: 'unauthorized' });
-    const cancelled = new AbortController(); cancelled.abort();
+    const cancelled = new AbortController();
+    cancelled.abort();
     await expect(reader.readWindow(book.id, 1, cancelled.signal)).rejects.toMatchObject({ name: 'AbortError' });
   });
 
   it('refreshes by stable href, preserving the chapter after insertion and keeping old content on failure', async () => {
     const { screen, offline, transport } = await setup();
-    await offline.setProgress({ bookId: book.id, locator: 'r1:0.2500:chapter:b', chapterTitle: '章节 b',
-      percentage: 0.6, device: 'test', updatedAt: Date.now() });
+    await offline.setProgress({
+      bookId: book.id,
+      locator: 'r1:0.2500:chapter:b',
+      chapterTitle: '章节 b',
+      percentage: 0.6,
+      device: 'test',
+      updatedAt: Date.now(),
+    });
     serve(transport, content(['a', 'b']), content(['new', 'a', 'b'], 'r2'));
     await screen.open(book);
     expect(body(screen)?.textContent).toContain('resource:r1:b');
@@ -602,7 +1139,9 @@ describe('chapter publication reading', () => {
     await click(screen, '刷新目录');
     await vi.waitFor(() => expect(noticeText()).toContain('新增 1 章'));
     expect(body(screen)?.textContent).toContain('resource:r2:b');
-    expect(screen.element.querySelector('[aria-current="true"]')?.closest('li')?.getAttribute('data-section')).toBe('chapter:b');
+    expect(screen.element.querySelector('[aria-current="true"]')?.closest('li')?.getAttribute('data-section')).toBe(
+      'chapter:b',
+    );
     expect(screen.element.querySelectorAll('.toc-list li')).toHaveLength(3);
 
     transport.failWith(new ApiError('server', 'plugin unavailable', 'PLUGIN_DISABLED', 503));
@@ -618,36 +1157,42 @@ describe('chapter publication reading', () => {
     await screen.open(book);
     await click(screen, '目录');
     const view = screen.element.querySelector('book-content');
-    const requestsBefore = transport.requests.filter(request => request.url.includes('/assets?')).length;
+    const requestsBefore = transport.requests.filter((request) => request.url.includes('/assets?')).length;
     await click(screen, '刷新目录');
     await vi.waitFor(() => expect(noticeText()).toContain('暂无新章节'));
     expect(screen.element.querySelector('book-content')).toBe(view);
-    expect(transport.requests.filter(request => request.url.includes('/assets?'))).toHaveLength(requestsBefore);
+    expect(transport.requests.filter((request) => request.url.includes('/assets?'))).toHaveLength(requestsBefore);
     expect(body(screen)?.textContent).toContain('resource:r1:a');
   });
 
-  it.each([400, 401, 403, 404])('stops displaying cached content once background validation answers HTTP %i', async (status) => {
-    const env = await setup();
-    const cache = new PublicationCache(env.platform.kv, env.platform.blobs, publicationScope(env.api.baseUrl, 'u1'));
-    await cache.putManifest(book.id, manifest(content(['a'])));
-    await cache.putResource(book.id, 'resource:r1:a', new TextEncoder().encode('private chapter'));
-    env.transport.json({ error: { code: 'DENIED', message: 'Denied' } }, status);
-    await env.screen.open(book);
-    await vi.waitFor(() => expect(body(env.screen)?.textContent ?? '').not.toContain('private chapter'));
-    expect(env.transport.requests.some((request) => request.url.includes('/assets?'))).toBe(false);
-    if (status === 401) expect(env.onSignedOut).toHaveBeenCalled();
-  });
+  it.each([400, 401, 403, 404])(
+    'stops displaying cached content once background validation answers HTTP %i',
+    async (status) => {
+      const env = await setup();
+      const cache = new PublicationCache(env.platform.kv, env.platform.blobs, publicationScope(env.api.baseUrl, 'u1'));
+      await cache.putManifest(book.id, manifest(content(['a'])));
+      await cache.putResource(book.id, 'resource:r1:a', new TextEncoder().encode('private chapter'));
+      env.transport.json({ error: { code: 'DENIED', message: 'Denied' } }, status);
+      await env.screen.open(book);
+      await vi.waitFor(() => expect(body(env.screen)?.textContent ?? '').not.toContain('private chapter'));
+      expect(env.transport.requests.some((request) => request.url.includes('/assets?'))).toBe(false);
+      if (status === 401) expect(env.onSignedOut).toHaveBeenCalled();
+    },
+  );
 
   it('reads actual scoped cache on every directory open, including downloads and clearing', async () => {
-    const env = await setup(); serve(env.transport, content(['a', 'b', 'c']));
+    const env = await setup();
+    serve(env.transport, content(['a', 'b', 'c']));
     const cache = new PublicationCache(env.platform.kv, env.platform.blobs, publicationScope(env.api.baseUrl, 'u1'));
     const other = new PublicationCache(env.platform.kv, env.platform.blobs, publicationScope(env.api.baseUrl, 'u2'));
     await other.putResource(book.id, 'resource:r1:c', new TextEncoder().encode('另一账号正文'));
     await cache.putResource('another-book', 'resource:r1:c', new TextEncoder().encode('另一本书正文'));
     await cache.putResource(book.id, 'resource:old:c', new TextEncoder().encode('旧版本正文'));
     await env.screen.open(book);
-    const cached = () => [...env.screen.element.querySelectorAll('.toc-list li')]
-      .filter(row => row.querySelector('.toc-cached')).map(row => row.getAttribute('data-section'));
+    const cached = () =>
+      [...env.screen.element.querySelectorAll('.toc-list li')]
+        .filter((row) => row.querySelector('.toc-cached'))
+        .map((row) => row.getAttribute('data-section'));
     await click(env.screen, '目录');
     await vi.waitFor(() => expect(cached()).toEqual(['chapter:a']));
     await click(env.screen, '目录');
@@ -662,7 +1207,8 @@ describe('chapter publication reading', () => {
   });
 
   it('does not mark displayed chapters when the cache write fails', async () => {
-    const env = await setup(); serve(env.transport, content(['a', 'b']));
+    const env = await setup();
+    serve(env.transport, content(['a', 'b']));
     vi.spyOn(env.platform.blobs, 'put').mockRejectedValueOnce(new Error('storage full'));
     await env.screen.open(book);
     await click(env.screen, '目录');
@@ -677,14 +1223,24 @@ describe('chapter publication reading', () => {
     const one = new PublicationCache(kv, blobs, publicationScope('http://one.test/', 'u1'));
     await one.putManifest(book.id, manifest(content(['a'])));
     await one.putResource(book.id, 'ref', new TextEncoder().encode('private'));
-    for (const [server, user] of [['http://one.test', 'u2'], ['http://two.test', 'u1']]) {
+    for (const [server, user] of [
+      ['http://one.test', 'u2'],
+      ['http://two.test', 'u1'],
+    ]) {
       const other = new PublicationCache(kv, blobs, publicationScope(server!, user!));
       expect(await other.manifest(book.id)).toBeNull();
       expect(await other.resource(book.id, 'ref')).toBeNull();
     }
     const scope = new OfflineStore(kv);
     await scope.setScope(publicationScope('http://one.test', 'u1'));
-    await scope.setProgress({ bookId: book.id, locator: 'chapter:a', percentage: 0.2, chapterTitle: '', device: '', updatedAt: 1 });
+    await scope.setProgress({
+      bookId: book.id,
+      locator: 'chapter:a',
+      percentage: 0.2,
+      chapterTitle: '',
+      device: '',
+      updatedAt: 1,
+    });
     await scope.setScope(publicationScope('http://one.test', 'u2'));
     expect(await scope.getProgress(book.id)).toBeUndefined();
     await scope.setScope(publicationScope('http://one.test', 'u1'));
@@ -693,66 +1249,105 @@ describe('chapter publication reading', () => {
 });
 
 it('refreshes only the current chapter, updates offline cache and preserves text after errors', async () => {
-  const env = await setup(); const value = content(['a']); value.sourceName = '示例源'; value.items[0]!.sourceUrl = 'https://example.test/a';
-  let fail = false, refreshes = 0;
-  env.transport.respondWith(request => {
+  const env = await setup();
+  const value = content(['a']);
+  value.sourceName = '示例源';
+  value.items[0]!.sourceUrl = 'https://example.test/a';
+  let fail = false,
+    refreshes = 0;
+  env.transport.respondWith((request) => {
     if (request.url.endsWith('/manifest')) return { status: 200, headers: {}, json: manifest(value) };
     if (request.url.endsWith('/refresh-chapter')) {
       refreshes++;
-      return fail ? { status: 502, headers: {}, json: { error: { code: 'SOURCE_ERROR', message: 'offline' } } }
+      return fail
+        ? { status: 502, headers: {}, json: { error: { code: 'SOURCE_ERROR', message: 'offline' } } }
         : { status: 200, headers: {}, bytes: new TextEncoder().encode('已更新的章节正文') };
     }
-    if (request.url.includes('/assets?')) return { status: 200, headers: {}, bytes: new TextEncoder().encode('原来的正文') };
+    if (request.url.includes('/assets?'))
+      return { status: 200, headers: {}, bytes: new TextEncoder().encode('原来的正文') };
     return { status: 200, headers: {}, json: {} };
   });
   await env.screen.open(book);
   expect(body(env.screen)?.textContent).toContain('原来的正文');
   expect(env.screen.element.querySelector('.reader-source-info')?.textContent).toContain('示例源');
-  expect(env.screen.element.querySelector('.reader-source-info a')?.getAttribute('href')).toBe('https://example.test/a');
+  expect(env.screen.element.querySelector('.reader-source-info a')?.getAttribute('href')).toBe(
+    'https://example.test/a',
+  );
   await click(env.screen, '刷新当前章节');
   await vi.waitFor(() => expect(body(env.screen)?.textContent).toContain('已更新的章节正文'));
-  fail = true; await click(env.screen, '刷新当前章节');
+  fail = true;
+  await click(env.screen, '刷新当前章节');
   await vi.waitFor(() => expect(noticeText()).toContain('刷新正文失败'));
-  expect(body(env.screen)?.textContent).toContain('已更新的章节正文'); expect(refreshes).toBe(2);
+  expect(body(env.screen)?.textContent).toContain('已更新的章节正文');
+  expect(refreshes).toBe(2);
   const cache = new PublicationCache(env.platform.kv, env.platform.blobs, publicationScope(env.api.baseUrl, 'u1'));
   expect(new TextDecoder().decode((await cache.resource(book.id, 'resource:r1:a'))!)).toContain('已更新的章节正文');
 });
 
 it('defaults manual caching to the current chapter and preserves an edited range across tab changes', async () => {
-  const env = await setup(); serve(env.transport, content(['a', 'b', 'c']));
+  const env = await setup();
+  serve(env.transport, content(['a', 'b', 'c']));
   await env.screen.open(book);
   await click(env.screen, '下一章');
   await vi.waitFor(() => expect(body(env.screen)?.textContent).toContain('resource:r1:b'));
-  await click(env.screen, '工具'); await click(env.screen, '离线缓存');
+  await click(env.screen, '工具');
+  await click(env.screen, '离线缓存');
   const fields = () => env.screen.element.querySelectorAll<HTMLInputElement>('.reading-tool-range input');
   await vi.waitFor(() => expect(fields()[0]?.value).toBe('2'));
   expect(fields()[1]?.value).toBe('3');
-  await act(() => { fields()[0]!.value = '3'; fields()[0]!.dispatchEvent(new Event('input', { bubbles: true })); });
-  await click(env.screen, '书内搜索'); await click(env.screen, '离线缓存');
+  await act(() => {
+    fields()[0]!.value = '3';
+    fields()[0]!.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await click(env.screen, '书内搜索');
+  await click(env.screen, '离线缓存');
   expect(fields()[0]?.value).toBe('3');
 });
 
-it.each(['complete', 'cancelled', 'paused', 'error'] as const)('uses the current chapter for a new download and retains unfinished ranges: %s', async status => {
-  const env = await setup(); serve(env.transport, content(['a', 'b', 'c']));
-  const cache = new PublicationCache(env.platform.kv, env.platform.blobs, publicationScope(env.api.baseUrl, 'u1'));
-  await cache.putTask(book.id, JSON.stringify({ status, completed: 1, total: 2, from: 1, to: 2, message: '', revision: 'r1' }));
-  await env.screen.open(book);
-  await click(env.screen, '下一章');
-  await vi.waitFor(() => expect(body(env.screen)?.textContent).toContain('resource:r1:b'));
-  await click(env.screen, '工具'); await click(env.screen, '离线缓存');
-  await vi.waitFor(() => expect([...env.screen.element.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === '下载 / 继续')?.disabled).toBe(false));
-  const fields = env.screen.element.querySelectorAll<HTMLInputElement>('.reading-tool-range input');
-  const resume = status === 'paused' || status === 'error';
-  expect(fields[0]?.value).toBe(resume ? '1' : '2');
-  expect(fields[1]?.value).toBe(resume ? '2' : '3');
-});
+it.each(['complete', 'cancelled', 'paused', 'error'] as const)(
+  'uses the current chapter for a new download and retains unfinished ranges: %s',
+  async (status) => {
+    const env = await setup();
+    serve(env.transport, content(['a', 'b', 'c']));
+    const cache = new PublicationCache(env.platform.kv, env.platform.blobs, publicationScope(env.api.baseUrl, 'u1'));
+    await cache.putTask(
+      book.id,
+      JSON.stringify({ status, completed: 1, total: 2, from: 1, to: 2, message: '', revision: 'r1' }),
+    );
+    await env.screen.open(book);
+    await click(env.screen, '下一章');
+    await vi.waitFor(() => expect(body(env.screen)?.textContent).toContain('resource:r1:b'));
+    await click(env.screen, '工具');
+    await click(env.screen, '离线缓存');
+    await vi.waitFor(() =>
+      expect(
+        [...env.screen.element.querySelectorAll<HTMLButtonElement>('button')].find(
+          (button) => button.textContent === '下载 / 继续',
+        )?.disabled,
+      ).toBe(false),
+    );
+    const fields = env.screen.element.querySelectorAll<HTMLInputElement>('.reading-tool-range input');
+    const resume = status === 'paused' || status === 'error';
+    expect(fields[0]?.value).toBe(resume ? '1' : '2');
+    expect(fields[1]?.value).toBe(resume ? '2' : '3');
+  },
+);
 
 describe('legacy offline migration', () => {
   it('claims a restored session once and preserves pending progress, notes, deletes and the original backup', async () => {
     const kv = new MemoryKv();
     const legacy = new OfflineStore(kv);
-    await legacy.setProgress({ bookId: 'b', locator: 'r1:0.5000:chapter:a', percentage: 0.5, chapterTitle: '', device: '', updatedAt: 1 });
-    await legacy.upsertNotes([{ id: 'n', bookId: 'b', locator: 'x', type: 'note', text: '待同步', comment: '', color: '', updatedAt: 1 }]);
+    await legacy.setProgress({
+      bookId: 'b',
+      locator: 'r1:0.5000:chapter:a',
+      percentage: 0.5,
+      chapterTitle: '',
+      device: '',
+      updatedAt: 1,
+    });
+    await legacy.upsertNotes([
+      { id: 'n', bookId: 'b', locator: 'x', type: 'note', text: '待同步', comment: '', color: '', updatedAt: 1 },
+    ]);
     await legacy.deleteNote('old');
     const backup = await kv.get('reader.offline.v1');
     const migrated = new OfflineStore(kv);
@@ -775,59 +1370,109 @@ describe('legacy offline migration', () => {
   });
 });
 
+it.each([undefined, null])('opens tools with %s manifest metadata', async (metadata) => {
+  const env = await setup();
+  const incomplete = manifest(content(['a']));
+  (incomplete as unknown as { book?: Book | null | undefined }).book = metadata;
+  const cache = new PublicationCache(env.platform.kv, env.platform.blobs, publicationScope(env.api.baseUrl, 'u1'));
+  env.transport.respondWith((request) => {
+    if (request.url.endsWith('/manifest')) return { status: 200, headers: {}, json: incomplete };
+    if (request.url.includes('/assets?')) return { status: 200, headers: {}, bytes: new TextEncoder().encode('正文') };
+    return { status: 200, headers: {}, json: { progress: null } };
+  });
+  await env.screen.open(book);
+  expect(body(env.screen)?.textContent).toContain('正文');
+  await click(env.screen, '工具');
+  await vi.waitFor(() => expect(env.screen.element.textContent).toContain('搜索全文'));
+  await click(env.screen, '笔记');
+  expect(env.offline.notesFor(book.id)).toEqual([]);
+  await click(env.screen, '添加当前位置书签');
+  await vi.waitFor(() => expect(env.offline.notesFor(book.id)).toHaveLength(1));
+  expect(env.offline.notesFor(book.id)[0]).toMatchObject({ bookId: book.id, text: book.title, type: 'bookmark' });
+  expect((await cache.manifest(book.id))?.book).toEqual(book);
+});
+
 it('opens tools, searches the whole book, navigates and returns, and persists a bookmark', async () => {
- const env = await setup(); serve(env.transport,content(['a','b'])); await env.screen.open(book);
- await click(env.screen,'工具'); await vi.waitFor(()=>expect(env.screen.element.textContent).toContain('搜索全文'));
- const input = env.screen.element.querySelector<HTMLInputElement>('input[maxlength="200"]')!;
- input.value = '正文'; input.dispatchEvent(new Event('input',{bubbles:true}));
- await vi.waitFor(()=>expect(env.screen.element.querySelector<HTMLButtonElement>('form button')?.disabled).toBe(false));
- await click(env.screen,'搜索全文');
- await vi.waitFor(()=>expect(env.screen.element.querySelectorAll('.reading-tool-results li')).toHaveLength(2));
- const results = env.screen.element.querySelectorAll<HTMLButtonElement>('.reading-tool-results li button'); results[1]!.click();
- await vi.waitFor(()=>expect(body(env.screen)?.textContent).toContain('resource:r1:b'));
- await vi.waitFor(()=>expect(env.screen.element.querySelector('dialog')).toBeNull());
- await click(env.screen,'工具'); await click(env.screen,'返回原阅读位置');
- await vi.waitFor(()=>expect(body(env.screen)?.textContent).toContain('resource:r1:a'));
- await vi.waitFor(()=>expect(env.screen.element.querySelector('dialog')).toBeNull());
- await click(env.screen,'工具'); await click(env.screen,'笔记');
- expect(env.screen.element.querySelector('.reading-note-editor')).toBeNull();
- await click(env.screen,'添加当前位置书签');
- await vi.waitFor(()=>expect(env.offline.notesFor(book.id)).toHaveLength(1));
- expect(env.offline.notesFor(book.id)[0]?.type).toBe('bookmark');
- await vi.waitFor(()=>expect(env.screen.element.querySelectorAll('.reading-note-list li')).toHaveLength(1));
- await click(env.screen,'编辑');
- await vi.waitFor(()=>expect(env.screen.element.querySelector('textarea[aria-label="批注"]')).not.toBeNull());
- const comment=env.screen.element.querySelector<HTMLTextAreaElement>('textarea[aria-label="批注"]')!;
- await act(() => { comment.value='稍后再读';comment.dispatchEvent(new Event('input',{bubbles:true})); });
- await click(env.screen,'保存修改');
- await vi.waitFor(()=>expect(env.offline.notesFor(book.id)[0]?.comment).toBe('稍后再读'));
- await vi.waitFor(()=>expect(env.screen.element.querySelector('.reading-note-editor')).toBeNull());
- await act(() => click(env.screen,'删除笔记'));
- expect(env.offline.notesFor(book.id)).toHaveLength(1);
- await act(() => document.querySelector<HTMLButtonElement>('dialog[role=alertdialog] .sheet-cancel')!.click());
- await vi.waitFor(()=>expect(document.querySelector('dialog[role=alertdialog]')).toBeNull());
- expect(env.offline.notesFor(book.id)).toHaveLength(1);
- await act(() => click(env.screen,'删除笔记'));await act(() => document.querySelector<HTMLButtonElement>('dialog[role=alertdialog] .sheet-footer .primary')!.click());
- await vi.waitFor(()=>expect(env.offline.notesFor(book.id)).toHaveLength(0));
+  const env = await setup();
+  serve(env.transport, content(['a', 'b']));
+  await env.screen.open(book);
+  await click(env.screen, '工具');
+  await vi.waitFor(() => expect(env.screen.element.textContent).toContain('搜索全文'));
+  const input = env.screen.element.querySelector<HTMLInputElement>('input[maxlength="200"]')!;
+  input.value = '正文';
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  await vi.waitFor(() =>
+    expect(env.screen.element.querySelector<HTMLButtonElement>('form button')?.disabled).toBe(false),
+  );
+  await click(env.screen, '搜索全文');
+  await vi.waitFor(() => expect(env.screen.element.querySelectorAll('.reading-tool-results li')).toHaveLength(2));
+  const results = env.screen.element.querySelectorAll<HTMLButtonElement>('.reading-tool-results li button');
+  results[1]!.click();
+  await vi.waitFor(() => expect(body(env.screen)?.textContent).toContain('resource:r1:b'));
+  await vi.waitFor(() => expect(env.screen.element.querySelector('dialog')).toBeNull());
+  await click(env.screen, '工具');
+  await click(env.screen, '返回原阅读位置');
+  await vi.waitFor(() => expect(body(env.screen)?.textContent).toContain('resource:r1:a'));
+  await vi.waitFor(() => expect(env.screen.element.querySelector('dialog')).toBeNull());
+  await click(env.screen, '工具');
+  await click(env.screen, '笔记');
+  expect(env.screen.element.querySelector('.reading-note-editor')).toBeNull();
+  await click(env.screen, '添加当前位置书签');
+  await vi.waitFor(() => expect(env.offline.notesFor(book.id)).toHaveLength(1));
+  expect(env.offline.notesFor(book.id)[0]?.type).toBe('bookmark');
+  await vi.waitFor(() => expect(env.screen.element.querySelectorAll('.reading-note-list li')).toHaveLength(1));
+  await click(env.screen, '编辑');
+  await vi.waitFor(() => expect(env.screen.element.querySelector('textarea[aria-label="批注"]')).not.toBeNull());
+  const comment = env.screen.element.querySelector<HTMLTextAreaElement>('textarea[aria-label="批注"]')!;
+  await act(() => {
+    comment.value = '稍后再读';
+    comment.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await click(env.screen, '保存修改');
+  await vi.waitFor(() => expect(env.offline.notesFor(book.id)[0]?.comment).toBe('稍后再读'));
+  await vi.waitFor(() => expect(env.screen.element.querySelector('.reading-note-editor')).toBeNull());
+  await act(() => click(env.screen, '删除笔记'));
+  expect(env.offline.notesFor(book.id)).toHaveLength(1);
+  await act(() => document.querySelector<HTMLButtonElement>('dialog[role=alertdialog] .sheet-cancel')!.click());
+  await vi.waitFor(() => expect(document.querySelector('dialog[role=alertdialog]')).toBeNull());
+  expect(env.offline.notesFor(book.id)).toHaveLength(1);
+  await act(() => click(env.screen, '删除笔记'));
+  await act(() =>
+    document.querySelector<HTMLButtonElement>('dialog[role=alertdialog] .sheet-footer .primary')!.click(),
+  );
+  await vi.waitFor(() => expect(env.offline.notesFor(book.id)).toHaveLength(0));
 });
 
 it('persists a deliberate page turn before the idle-save timer', async () => {
   const kv = new MemoryKv();
-  const env = await setup(kv, undefined, 'u1', 'http://one.test', { mode: 'paged' }); serve(env.transport, content(['a'])); await env.screen.open(book);
-  const reader = env.screen as unknown as { view: ReaderView; turnPage(direction: 'next'): Promise<void>; onPosition(position: ReturnType<ReaderView['position']>): void };
+  const env = await setup(kv, undefined, 'u1', 'http://one.test', { mode: 'paged' });
+  serve(env.transport, content(['a']));
+  await env.screen.open(book);
+  const reader = env.screen as unknown as {
+    view: ReaderView;
+    turnPage(direction: 'next'): Promise<void>;
+    onPosition(position: ReturnType<ReaderView['position']>): void;
+  };
   const position = { ...reader.view.position(), within: 0.6, percentage: 0.6, locator: 'r1:0.6000@1200:chapter:a' };
-  const next = vi.spyOn(reader.view, 'next').mockImplementation(async () => { reader.onPosition(position); return true; });
+  const next = vi.spyOn(reader.view, 'next').mockImplementation(async () => {
+    reader.onPosition(position);
+    return true;
+  });
   try {
     await reader.turnPage('next');
     const reloaded = new OfflineStore(kv);
     await reloaded.setScope(publicationScope('http://one.test', 'u1'));
     expect(reloaded.progressFor(book.id)?.locator).toBe(position.locator);
-  } finally { next.mockRestore(); }
+  } finally {
+    next.mockRestore();
+  }
 });
 
 it('samples the latest scroll position when saving before a pending scroll event', async () => {
   const kv = new MemoryKv();
-  const env = await setup(kv); serve(env.transport, content(['a'])); await env.screen.open(book);
+  const env = await setup(kv);
+  serve(env.transport, content(['a']));
+  await env.screen.open(book);
   const reader = env.screen as unknown as { view: ReaderView };
   const position = { ...reader.view.position(), within: 0.6, percentage: 0.6, locator: 'r1:0.6000@1200:chapter:a' };
   const sample = vi.spyOn(reader.view, 'position').mockReturnValue(position);
@@ -836,63 +1481,122 @@ it('samples the latest scroll position when saving before a pending scroll event
     const reloaded = new OfflineStore(kv);
     await reloaded.setScope(publicationScope('http://one.test', 'u1'));
     expect(reloaded.progressFor(book.id)?.locator).toBe(position.locator);
-  } finally { sample.mockRestore(); }
+  } finally {
+    sample.mockRestore();
+  }
 });
 
 it('preserves page-turn order while a chapter is still loading', async () => {
-  const env = await setup(); serve(env.transport, content(['a','b'])); await env.screen.open(book);
-  const reader = env.screen as unknown as { view: ReaderView; turnPage(direction:'next'|'previous'):Promise<void> };
-  let finish!: (moved:boolean) => void;
+  const env = await setup();
+  serve(env.transport, content(['a', 'b']));
+  await env.screen.open(book);
+  const reader = env.screen as unknown as { view: ReaderView; turnPage(direction: 'next' | 'previous'): Promise<void> };
+  let finish!: (moved: boolean) => void;
   const order: string[] = [];
-  const next = vi.spyOn(reader.view,'next').mockImplementation(() => {order.push('next');return new Promise(resolve => {finish=resolve;});});
-  const previous = vi.spyOn(reader.view,'previous').mockImplementation(async () => {order.push('previous');return true;});
+  const next = vi.spyOn(reader.view, 'next').mockImplementation(() => {
+    order.push('next');
+    return new Promise((resolve) => {
+      finish = resolve;
+    });
+  });
+  const previous = vi.spyOn(reader.view, 'previous').mockImplementation(async () => {
+    order.push('previous');
+    return true;
+  });
   try {
-    const first=reader.turnPage('next'); await vi.waitFor(()=>expect(next).toHaveBeenCalledOnce());
-    const second=reader.turnPage('previous'); await Promise.resolve();
+    const first = reader.turnPage('next');
+    await vi.waitFor(() => expect(next).toHaveBeenCalledOnce());
+    const second = reader.turnPage('previous');
+    await Promise.resolve();
     expect(previous).not.toHaveBeenCalled();
-    finish(true);await Promise.all([first,second]);expect(order).toEqual(['next','previous']);
-  } finally { next.mockRestore();previous.mockRestore(); }
+    finish(true);
+    await Promise.all([first, second]);
+    expect(order).toEqual(['next', 'previous']);
+  } finally {
+    next.mockRestore();
+    previous.mockRestore();
+  }
 });
 it('allows a queued reverse turn after a chapter load fails', async () => {
-  const env = await setup(); serve(env.transport, content(['a','b'])); await env.screen.open(book);
-  const reader = env.screen as unknown as { view: ReaderView; turnPage(direction:'next'|'previous'):Promise<void> };
-  const next=vi.spyOn(reader.view,'next').mockRejectedValue(new Error('Chapter unavailable'));
-  const previous=vi.spyOn(reader.view,'previous').mockResolvedValue(true);
-  try {await Promise.all([reader.turnPage('next'),reader.turnPage('previous')]);expect(previous).toHaveBeenCalledOnce();}
-  finally {next.mockRestore();previous.mockRestore();}
+  const env = await setup();
+  serve(env.transport, content(['a', 'b']));
+  await env.screen.open(book);
+  const reader = env.screen as unknown as { view: ReaderView; turnPage(direction: 'next' | 'previous'): Promise<void> };
+  const next = vi.spyOn(reader.view, 'next').mockRejectedValue(new Error('Chapter unavailable'));
+  const previous = vi.spyOn(reader.view, 'previous').mockResolvedValue(true);
+  try {
+    await Promise.all([reader.turnPage('next'), reader.turnPage('previous')]);
+    expect(previous).toHaveBeenCalledOnce();
+  } finally {
+    next.mockRestore();
+    previous.mockRestore();
+  }
 });
 
 it('cancels queued page turns after an explicit chapter selection', async () => {
-  const env=await setup();serve(env.transport,content(['a','b','c']));await env.screen.open(book);
-  const reader=env.screen as unknown as {view:ReaderView;turnPage(direction:'next'|'previous'):Promise<void>;goToSection(index:number):Promise<void>};
-  let finish!:(moved:boolean)=>void;
-  const next=vi.spyOn(reader.view,'next').mockImplementation(()=>new Promise(resolve=>{finish=resolve;}));
-  const previous=vi.spyOn(reader.view,'previous').mockResolvedValue(true);
+  const env = await setup();
+  serve(env.transport, content(['a', 'b', 'c']));
+  await env.screen.open(book);
+  const reader = env.screen as unknown as {
+    view: ReaderView;
+    turnPage(direction: 'next' | 'previous'): Promise<void>;
+    goToSection(index: number): Promise<void>;
+  };
+  let finish!: (moved: boolean) => void;
+  const next = vi.spyOn(reader.view, 'next').mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const previous = vi.spyOn(reader.view, 'previous').mockResolvedValue(true);
   try {
-    const first=reader.turnPage('next');await vi.waitFor(()=>expect(finish).toBeDefined());
-    const queued=reader.turnPage('previous');await reader.goToSection(1);
-    finish(true);await Promise.all([first,queued]);
-    expect(previous).not.toHaveBeenCalled();expect(reader.view.position().sectionId).toBe('chapter:b');
-  }finally{next.mockRestore();previous.mockRestore();}
+    const first = reader.turnPage('next');
+    await vi.waitFor(() => expect(finish).toBeDefined());
+    const queued = reader.turnPage('previous');
+    await reader.goToSection(1);
+    finish(true);
+    await Promise.all([first, queued]);
+    expect(previous).not.toHaveBeenCalled();
+    expect(reader.view.position().sectionId).toBe('chapter:b');
+  } finally {
+    next.mockRestore();
+    previous.mockRestore();
+  }
 });
 
 it('keeps the latest directory selection busy when an earlier local chapter finishes', async () => {
-  const env = await setup(); serve(env.transport, content(['a', 'b', 'c'])); await env.screen.open(book);
-  const reader = env.screen as unknown as { view: ReaderView; chrome: { pendingChapterRef?: string; tocOpen: boolean }; goToChapterRef(ref: string): Promise<void> };
+  const env = await setup();
+  serve(env.transport, content(['a', 'b', 'c']));
+  await env.screen.open(book);
+  const reader = env.screen as unknown as {
+    view: ReaderView;
+    chrome: { pendingChapterRef?: string; tocOpen: boolean };
+    goToChapterRef(ref: string): Promise<void>;
+  };
   const finish: Array<() => void> = [];
-  const open = vi.spyOn(reader.view, 'open').mockImplementation(() => new Promise<void>(resolve => { finish.push(resolve); }));
+  const open = vi.spyOn(reader.view, 'open').mockImplementation(
+    () =>
+      new Promise<void>((resolve) => {
+        finish.push(resolve);
+      }),
+  );
   try {
     reader.chrome.tocOpen = true;
     const first = reader.goToChapterRef('chapter:b');
     const second = reader.goToChapterRef('chapter:c');
     expect(open).toHaveBeenCalledTimes(2);
-    finish[0]!(); await first;
+    finish[0]!();
+    await first;
     expect(reader.chrome.pendingChapterRef).toBe('chapter:c');
     expect(reader.chrome.tocOpen).toBe(true);
-    finish[1]!(); await second;
+    finish[1]!();
+    await second;
     expect(reader.chrome.pendingChapterRef).toBeUndefined();
     expect(reader.chrome.tocOpen).toBe(false);
-  } finally { open.mockRestore(); }
+  } finally {
+    open.mockRestore();
+  }
 });
 
 describe('automatic chapter caching', () => {
@@ -901,20 +1605,41 @@ describe('automatic chapter caching', () => {
     serve(env.transport, content(['a', 'b', 'c', 'd', 'e']));
     const cache = new PublicationCache(env.platform.kv, env.platform.blobs, publicationScope(env.api.baseUrl, 'u1'));
     await env.screen.open(book);
-    await vi.waitFor(async () => expect((await cache.entries()).map(item => item.ref)).toEqual(['resource:r1:a', 'resource:r1:b', 'resource:r1:c', 'resource:r1:d']));
+    await vi.waitFor(async () =>
+      expect((await cache.entries()).map((item) => item.ref)).toEqual([
+        'resource:r1:a',
+        'resource:r1:b',
+        'resource:r1:c',
+        'resource:r1:d',
+      ]),
+    );
     expect(body(env.screen)?.textContent).toContain('resource:r1:a');
     await click(env.screen, '目录');
     await vi.waitFor(() => expect(env.screen.element.querySelectorAll('.toc-cached')).toHaveLength(4));
-    expect(env.transport.countMatching(request => request.url.includes('/assets?'))).toBe(4);
-    expect(await new PublicationCache(env.platform.kv, env.platform.blobs, publicationScope(env.api.baseUrl, 'u2')).entries()).toEqual([]);
+    expect(env.transport.countMatching((request) => request.url.includes('/assets?'))).toBe(4);
+    expect(
+      await new PublicationCache(
+        env.platform.kv,
+        env.platform.blobs,
+        publicationScope(env.api.baseUrl, 'u2'),
+      ).entries(),
+    ).toEqual([]);
   });
 
   it('continues outside the tools panel and stops a pending write when disabled', async () => {
-    const env = await setup(); serve(env.transport, content(['a', 'b', 'c'])); await env.screen.open(book);
+    const env = await setup();
+    serve(env.transport, content(['a', 'b', 'c']));
+    await env.screen.open(book);
     const cache = new PublicationCache(env.platform.kv, env.platform.blobs, publicationScope(env.api.baseUrl, 'u1'));
     let finish!: (value: Blob) => void;
-    const asset = vi.spyOn(env.api, 'asset').mockImplementation(() => new Promise(resolve => { finish = resolve; }));
-    await click(env.screen, '工具'); await click(env.screen, '离线缓存');
+    const asset = vi.spyOn(env.api, 'asset').mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await click(env.screen, '工具');
+    await click(env.screen, '离线缓存');
     const toggle = () => env.screen.element.querySelector<HTMLInputElement>('.reading-cache-auto input')!;
     await act(() => toggle().click());
     await vi.waitFor(() => expect(asset).toHaveBeenCalledOnce());
@@ -922,11 +1647,13 @@ describe('automatic chapter caching', () => {
     finish(new Blob(['chapter b']));
     await vi.waitFor(() => expect(asset).toHaveBeenCalledTimes(2));
     expect(await cache.resource(book.id, 'resource:r1:b')).toBeTruthy();
-    await click(env.screen, '工具'); await click(env.screen, '离线缓存');
+    await click(env.screen, '工具');
+    await click(env.screen, '离线缓存');
     expect(toggle().checked).toBe(true);
     await act(() => toggle().click());
     expect(asset.mock.calls[1]![2]?.signal?.aborted).toBe(true);
-    finish(new Blob(['chapter c'])); await new Promise(resolve => setTimeout(resolve, 20));
+    finish(new Blob(['chapter c']));
+    await new Promise((resolve) => setTimeout(resolve, 20));
     expect(await cache.resource(book.id, 'resource:r1:c')).toBeNull();
     expect(body(env.screen)?.textContent).toContain('resource:r1:a');
   });
@@ -936,63 +1663,88 @@ describe('automatic chapter caching', () => {
     serve(env.transport, content(['a', 'b', 'c', 'd']));
     let finish!: (value: Blob) => void;
     const realAsset = env.api.asset.bind(env.api);
-    const asset = vi.spyOn(env.api, 'asset').mockImplementation((id, ref, options) => ref === 'resource:r1:b'
-      ? new Promise(resolve => { finish = resolve; }) : realAsset(id, ref, options));
+    const asset = vi.spyOn(env.api, 'asset').mockImplementation((id, ref, options) =>
+      ref === 'resource:r1:b'
+        ? new Promise((resolve) => {
+            finish = resolve;
+          })
+        : realAsset(id, ref, options),
+    );
     await env.screen.open(book);
     await vi.waitFor(() => expect(finish).toBeDefined());
-    const old = asset.mock.calls.find(call => call[1] === 'resource:r1:b')![2]!.signal!;
-    await click(env.screen, '目录'); await click(env.screen, '章节 c');
+    const old = asset.mock.calls.find((call) => call[1] === 'resource:r1:b')![2]!.signal!;
+    await click(env.screen, '目录');
+    await click(env.screen, '章节 c');
     await vi.waitFor(() => expect(body(env.screen)?.textContent).toContain('resource:r1:c'));
     expect(old.aborted).toBe(true);
     finish(new Blob(['obsolete']));
     const cache = new PublicationCache(env.platform.kv, env.platform.blobs, publicationScope(env.api.baseUrl, 'u1'));
     await vi.waitFor(async () => expect(await cache.resource(book.id, 'resource:r1:d')).toBeTruthy());
     expect(await cache.resource(book.id, 'resource:r1:b')).toBeNull();
-    await click(env.screen, '工具'); await click(env.screen, '离线缓存');
+    await click(env.screen, '工具');
+    await click(env.screen, '离线缓存');
     const select = env.screen.element.querySelector<HTMLSelectElement>('.reading-cache-auto select')!;
-    select.value = '3'; await act(() => { select.dispatchEvent(new Event('change', { bubbles: true })); });
+    select.value = '3';
+    await act(() => {
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
     env.screen.dispose();
-    for (const call of asset.mock.calls.filter(call => call[2]?.signal)) expect(call[2]!.signal!.aborted).toBe(true);
+    for (const call of asset.mock.calls.filter((call) => call[2]?.signal)) expect(call[2]!.signal!.aborted).toBe(true);
     screens.splice(screens.indexOf(env.screen), 1);
   });
 
   it('stops on a failed cache write and preserves the current text', async () => {
-    const blobs = new MemoryBlobs(); const env = await setup(undefined, blobs, undefined, undefined, { autoCache: true });
+    const blobs = new MemoryBlobs();
+    const env = await setup(undefined, blobs, undefined, undefined, { autoCache: true });
     serve(env.transport, content(['a', 'b', 'c']));
     const realPut = blobs.put.bind(blobs);
-    vi.spyOn(blobs, 'put').mockImplementation((key, bytes) => decodeURIComponent(key).includes('resource:r1:b') ? Promise.reject(new Error('quota full')) : realPut(key, bytes));
-    await env.screen.open(book); await click(env.screen, '工具'); await click(env.screen, '离线缓存');
+    vi.spyOn(blobs, 'put').mockImplementation((key, bytes) =>
+      decodeURIComponent(key).includes('resource:r1:b') ? Promise.reject(new Error('quota full')) : realPut(key, bytes),
+    );
+    await env.screen.open(book);
+    await click(env.screen, '工具');
+    await click(env.screen, '离线缓存');
     await vi.waitFor(() => expect(env.screen.element.textContent).toContain('预缓存暂停：quota full'));
-    expect(env.transport.countMatching(request => request.url.includes('/assets?'))).toBe(2);
+    expect(env.transport.countMatching((request) => request.url.includes('/assets?'))).toBe(2);
     expect(body(env.screen)?.textContent).toContain('resource:r1:a');
-    await click(env.screen, '关闭'); await click(env.screen, '目录');
+    await click(env.screen, '关闭');
+    await click(env.screen, '目录');
     await vi.waitFor(() => expect(env.screen.element.querySelectorAll('.toc-cached')).toHaveLength(1));
   });
 
   it('skips prefetch while offline', async () => {
     const env = await setup(undefined, undefined, undefined, undefined, { autoCache: true });
-    serve(env.transport, content(['a', 'b'])); env.platform.setOnline(false);
-    await env.screen.open(book); await click(env.screen, '工具'); await click(env.screen, '离线缓存');
+    serve(env.transport, content(['a', 'b']));
+    env.platform.setOnline(false);
+    await env.screen.open(book);
+    await click(env.screen, '工具');
+    await click(env.screen, '离线缓存');
     await vi.waitFor(() => expect(env.screen.element.textContent).toContain('当前网络下暂停预缓存'));
-    expect(env.transport.countMatching(request => request.url.includes('/assets?'))).toBe(1);
+    expect(env.transport.countMatching((request) => request.url.includes('/assets?'))).toBe(1);
   });
 });
 
 it('pre-caches across metadata windows without moving the reader, skips saved bodies, and resumes online', async () => {
   const env = await setup(undefined, undefined, undefined, undefined, { autoCache: true });
   const value = content(['a', 'b', 'c', 'd']);
-  value.groups = [{ id: 'one', seq: 0, offset: 0, count: 2, title: '一' }, { id: 'two', seq: 1, offset: 2, count: 2, title: '二' }];
-  const first = { ...value, items: value.items.slice(0, 2) }, second = { ...value, items: value.items.slice(2) };
+  value.groups = [
+    { id: 'one', seq: 0, offset: 0, count: 2, title: '一' },
+    { id: 'two', seq: 1, offset: 2, count: 2, title: '二' },
+  ];
+  const first = { ...value, items: value.items.slice(0, 2) },
+    second = { ...value, items: value.items.slice(2) };
   const cache = new PublicationCache(env.platform.kv, env.platform.blobs, publicationScope(env.api.baseUrl, 'u1'));
   await cache.putResource(book.id, 'resource:r1:b', new TextEncoder().encode('already saved'));
   serve(env.transport, first);
   const items = vi.spyOn(env.api, 'items').mockResolvedValue(second);
-  env.platform.setOnline(false); await env.screen.open(book);
-  expect(env.transport.countMatching(request => request.url.includes('/assets?'))).toBe(1);
+  env.platform.setOnline(false);
+  await env.screen.open(book);
+  expect(env.transport.countMatching((request) => request.url.includes('/assets?'))).toBe(1);
   env.platform.setOnline(true);
   await vi.waitFor(async () => expect(await cache.resource(book.id, 'resource:r1:d')).toBeTruthy());
-  expect(items).toHaveBeenCalledOnce(); expect(items.mock.calls[0]![1]).toBe(1);
-  expect(env.transport.countMatching(request => request.url.includes('/assets?'))).toBe(3);
+  expect(items).toHaveBeenCalledOnce();
+  expect(items.mock.calls[0]![1]).toBe(1);
+  expect(env.transport.countMatching((request) => request.url.includes('/assets?'))).toBe(3);
   expect(body(env.screen)?.textContent).toContain('resource:r1:a');
   expect(await cache.window(book.id, 1)).toEqual(second);
 });
@@ -1002,49 +1754,71 @@ it('cancels pending pre-cache before clearing the current book', async () => {
   serve(env.transport, content(['a', 'b']));
   const realAsset = env.api.asset.bind(env.api);
   let finish!: (value: Blob) => void;
-  const asset = vi.spyOn(env.api, 'asset').mockImplementation((id, ref, options) => ref === 'resource:r1:b'
-    ? new Promise(resolve => { finish = resolve; }) : realAsset(id, ref, options));
-  await env.screen.open(book); await vi.waitFor(() => expect(finish).toBeDefined());
-  await click(env.screen, '工具'); await click(env.screen, '离线缓存');
+  const asset = vi.spyOn(env.api, 'asset').mockImplementation((id, ref, options) =>
+    ref === 'resource:r1:b'
+      ? new Promise((resolve) => {
+          finish = resolve;
+        })
+      : realAsset(id, ref, options),
+  );
+  await env.screen.open(book);
+  await vi.waitFor(() => expect(finish).toBeDefined());
+  await click(env.screen, '工具');
+  await click(env.screen, '离线缓存');
   await vi.waitFor(() => expect(env.screen.element.textContent).toContain('清理缓存'));
   await click(env.screen, '清理缓存');
   await vi.waitFor(() => expect(document.querySelector('dialog[aria-label="清理缓存"]')).toBeTruthy());
-  const confirm = [...document.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent?.trim() === '确认清理')!;
+  const confirm = [...document.querySelectorAll<HTMLButtonElement>('button')].find(
+    (button) => button.textContent?.trim() === '确认清理',
+  )!;
   await act(() => confirm.click());
   const cache = new PublicationCache(env.platform.kv, env.platform.blobs, publicationScope(env.api.baseUrl, 'u1'));
   await vi.waitFor(async () => expect(await cache.entries()).toEqual([]));
-  expect(asset.mock.calls.find(call => call[1] === 'resource:r1:b')![2]!.signal!.aborted).toBe(true);
-  finish(new Blob(['late body'])); await new Promise(resolve => setTimeout(resolve, 20));
+  expect(asset.mock.calls.find((call) => call[1] === 'resource:r1:b')![2]!.signal!.aborted).toBe(true);
+  finish(new Blob(['late body']));
+  await new Promise((resolve) => setTimeout(resolve, 20));
   expect(await cache.entries()).toEqual([]);
   expect(body(env.screen)?.textContent).toContain('resource:r1:a');
 });
 
 it('updates cache markers when the directory opens before the visible chapter finishes saving', async () => {
-  const env = await setup(); serve(env.transport, content(['a', 'b']));
+  const env = await setup();
+  serve(env.transport, content(['a', 'b']));
   let finish!: (value: Blob) => void;
-  vi.spyOn(env.api, 'asset').mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  vi.spyOn(env.api, 'asset').mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
   const opening = env.screen.open(book);
   await vi.waitFor(() => expect(finish).toBeDefined());
   await click(env.screen, '目录');
   await vi.waitFor(() => expect(env.screen.element.querySelectorAll('.toc-list button')).toHaveLength(2));
   expect(env.screen.element.querySelectorAll('.toc-cached')).toHaveLength(0);
-  finish(new Blob(['visible body'])); await opening;
+  finish(new Blob(['visible body']));
+  await opening;
   await vi.waitFor(() => expect(env.screen.element.querySelectorAll('.toc-cached')).toHaveLength(1));
   expect(env.screen.element.querySelector('.toc-cached')?.closest('button')?.textContent).toContain('章节 a');
 });
 
-
 it('applies brightness to the whole reading screen on load and slider updates', async () => {
   const env = await setup(undefined, undefined, 'u1', 'http://one.test', { brightness: 0 });
-  serve(env.transport, content(['a'])); await env.screen.open(book);
+  serve(env.transport, content(['a']));
+  await env.screen.open(book);
   expect(env.screen.element.style.getPropertyValue('--reader-brightness')).toBe('0.5');
   expect(document.documentElement.dataset.readerBrightness).toBe('0.5');
   await click(env.screen, '设置');
   const slider = env.screen.element.querySelector<HTMLInputElement>('[aria-label="页面亮度"]')!;
-  await act(() => { slider.value = '0.75'; slider.dispatchEvent(new Event('input', { bubbles: true })); });
+  await act(() => {
+    slider.value = '0.75';
+    slider.dispatchEvent(new Event('input', { bubbles: true }));
+  });
   expect(env.screen.element.style.getPropertyValue('--reader-brightness')).toBe('0.75');
   expect(document.documentElement.dataset.readerBrightness).toBe('0.75');
-  expect(env.screen.element.querySelector<HTMLElement>('.stage')?.style.getPropertyValue('--reader-brightness')).toBe('');
+  expect(env.screen.element.querySelector<HTMLElement>('.stage')?.style.getPropertyValue('--reader-brightness')).toBe(
+    '',
+  );
   env.screen.dispose();
   screens.splice(screens.indexOf(env.screen), 1);
   expect(document.documentElement.dataset.readerBrightness).toBeUndefined();
@@ -1053,7 +1827,9 @@ it('applies brightness to the whole reading screen on load and slider updates', 
 
 it('matches the saved page theme and system tint before the first content loads', async () => {
   const root = document.documentElement;
-  const meta = document.createElement('meta'); meta.name = 'theme-color'; document.head.append(meta);
+  const meta = document.createElement('meta');
+  meta.name = 'theme-color';
+  document.head.append(meta);
   const appTheme = new ThemeController('default');
   const env = await setup(undefined, undefined, 'u1', 'http://one.test', { theme: 'dark', brightness: 0.5 });
   try {
@@ -1067,38 +1843,46 @@ it('matches the saved page theme and system tint before the first content loads'
     await reader.updateSetting({ theme: 'green' });
     expect(env.screen.element.style.getPropertyValue('--color-surface')).toBe('#e8f2e8');
     expect(meta.content).toBe('#6b766c');
-  } finally { appTheme.dispose(); meta.remove(); }
-});
-
-it('toggles glass without reapplying body settings or changing its saved palette', async () => {
-  const env = await setup(undefined, undefined, 'u1', 'http://one.test', { theme: 'wechat-night' });
-  serve(env.transport, content(['a'])); await env.screen.open(book);
-  const reader = env.screen as unknown as { view: { applySettings(settings: unknown): void }; updateSetting(patch: Partial<AppSettings>): Promise<void> };
-  const apply = vi.spyOn(reader.view, 'applySettings');
-  await reader.updateSetting({ liquidGlass: true });
-  expect(apply).not.toHaveBeenCalled();
-  expect(env.onSettingsChange).toHaveBeenLastCalledWith({ liquidGlass: true });
-  expect(env.screen.element.dataset.readingTheme).toBe('local-wechat-night');
-  await click(env.screen, '设置'); await click(env.screen, '显示设置');
-  expect(env.screen.element.querySelector('[aria-label="液态玻璃"]')?.getAttribute('aria-pressed')).toBe('true');
+  } finally {
+    appTheme.dispose();
+    meta.remove();
+  }
 });
 
 it('dismisses visible controls on a body tap before turning pages; swipes and keys still navigate', async () => {
   const env = await setup(undefined, undefined, 'u1', 'http://one.test', { mode: 'paged' });
-  serve(env.transport, content(['a', 'b'])); await env.screen.open(book);
-  const reader = env.screen as unknown as { turnPage(direction: 'next' | 'previous'): Promise<void>; onTapZone(column: number, row: number): void };
+  serve(env.transport, content(['a', 'b']));
+  await env.screen.open(book);
+  const reader = env.screen as unknown as {
+    turnPage(direction: 'next' | 'previous'): Promise<void>;
+    onTapZone(column: number, row: number): void;
+  };
   expect(env.screen.element.dataset.chrome).toBe('hidden');
   expect(document.activeElement).toBe(env.screen.element);
   const turn = vi.spyOn(reader, 'turnPage').mockResolvedValue();
   const stage = env.screen.element.querySelector<HTMLElement>('.stage')!;
-  stage.getBoundingClientRect = () => ({ x: 0, y: 0, left: 0, top: 0, right: 300, bottom: 600, width: 300, height: 600, toJSON() {} });
-  reader.onTapZone(1, 1); reader.onTapZone(2, 1);
+  stage.getBoundingClientRect = () => ({
+    x: 0,
+    y: 0,
+    left: 0,
+    top: 0,
+    right: 300,
+    bottom: 600,
+    width: 300,
+    height: 600,
+    toJSON() {},
+  });
+  reader.onTapZone(1, 1);
+  reader.onTapZone(2, 1);
   expect(env.screen.element.dataset.chrome).toBe('hidden');
   expect(turn).not.toHaveBeenCalled();
   reader.onTapZone(2, 1);
   expect(turn).toHaveBeenLastCalledWith('next');
   reader.onTapZone(1, 1);
-  for (const [type, x] of [['pointerdown', 250], ['pointerup', 50]] as const) {
+  for (const [type, x] of [
+    ['pointerdown', 250],
+    ['pointerup', 50],
+  ] as const) {
     const event = new Event(type, { bubbles: true });
     Object.assign(event, { clientX: x, clientY: 300, pointerType: 'touch', button: 0 });
     stage.dispatchEvent(event);
@@ -1118,11 +1902,17 @@ it('dismisses visible controls on a body tap before turning pages; swipes and ke
 });
 
 it('hides controls on a scroll drag without consuming the browser scroll', async () => {
-  const env = await setup(); serve(env.transport, content(['a'])); await env.screen.open(book);
+  const env = await setup();
+  serve(env.transport, content(['a']));
+  await env.screen.open(book);
   const reader = env.screen as unknown as { onTapZone(column: number, row: number): void };
   reader.onTapZone(1, 1);
   const stage = env.screen.element.querySelector<HTMLElement>('.stage')!;
-  for (const [type, y] of [['pointerdown', 400], ['pointermove', 300], ['pointercancel', 300]] as const) {
+  for (const [type, y] of [
+    ['pointerdown', 400],
+    ['pointermove', 300],
+    ['pointercancel', 300],
+  ] as const) {
     const event = new Event(type, { bubbles: true, cancelable: true });
     Object.assign(event, { clientX: 100, clientY: y, pointerType: 'touch', button: 0 });
     stage.dispatchEvent(event);
@@ -1132,11 +1922,17 @@ it('hides controls on a scroll drag without consuming the browser scroll', async
 });
 
 it('updates system tint as controls open and close, including theme and brightness changes and leaving the reader', async () => {
-  const meta = document.createElement('meta'); meta.name = 'theme-color'; document.head.append(meta);
+  const meta = document.createElement('meta');
+  meta.name = 'theme-color';
+  document.head.append(meta);
   const env = await setup(undefined, undefined, 'u1', 'http://one.test', { theme: 'green', brightness: 0.5 });
-  const reader = env.screen as unknown as { setChromeVisible(visible: boolean): void; updateSetting(patch: Partial<AppSettings>): Promise<void> };
+  const reader = env.screen as unknown as {
+    setChromeVisible(visible: boolean): void;
+    updateSetting(patch: Partial<AppSettings>): Promise<void>;
+  };
   try {
-    serve(env.transport, content(['a'])); await env.screen.open(book);
+    serve(env.transport, content(['a']));
+    await env.screen.open(book);
     expect(env.screen.element.dataset.chrome).toBe('hidden');
     reader.setChromeVisible(false);
     expect(meta.content).toBe('#6b766c');
@@ -1146,87 +1942,124 @@ it('updates system tint as controls open and close, including theme and brightne
     expect(meta.content).toBe('#e8f2e8');
     await reader.updateSetting({ theme: 'dark' });
     expect(meta.content).toBe('#1e2024');
-    env.screen.dispose(); screens.splice(screens.indexOf(env.screen), 1);
+    env.screen.dispose();
+    screens.splice(screens.indexOf(env.screen), 1);
     expect(document.documentElement.dataset.readerChrome).toBeUndefined();
     expect(meta.content).toBe('#16171a');
-  } finally { meta.remove(); }
+  } finally {
+    meta.remove();
+  }
 });
 
-it.each(['sepia', 'green'] as const)('restores %s after a global night toggle and reopening the reader without reflow', async theme => {
-  const env = await setup(undefined, undefined, 'u1', 'http://one.test', { theme });
-  serve(env.transport, content(['a'])); await env.screen.open(book);
-  const reader = env.screen as unknown as { view: ReaderView };
-  const apply = vi.spyOn(reader.view, 'applySettings'), position = reader.view.position();
-  await click(env.screen, '夜间');
-  expect(readThemePreference('default').theme).toBe('local-dark');
-  expect(apply).not.toHaveBeenCalled();
-  expect(reader.view.position()).toEqual(position);
-  const next = await setup(undefined, undefined, 'u1', 'http://one.test', { theme });
-  serve(next.transport, content(['a'])); await next.screen.open(book);
-  expect(next.screen.element.dataset.readingTheme).toBe('local-dark');
-  await click(next.screen, '日间');
-  expect(readThemePreference('default').theme).toBe(`local-${theme}`);
-  expect(env.screen.element.dataset.readingTheme).toBe(`local-${theme}`);
-});
+it.each(['sepia', 'green'] as const)(
+  'restores %s after a global night toggle and reopening the reader without reflow',
+  async (theme) => {
+    const env = await setup(undefined, undefined, 'u1', 'http://one.test', { theme });
+    serve(env.transport, content(['a']));
+    await env.screen.open(book);
+    const reader = env.screen as unknown as { view: ReaderView };
+    const apply = vi.spyOn(reader.view, 'applySettings'),
+      position = reader.view.position();
+    await click(env.screen, '夜间');
+    expect(readThemePreference('default').theme).toBe('local-dark');
+    expect(apply).not.toHaveBeenCalled();
+    expect(reader.view.position()).toEqual(position);
+    const next = await setup(undefined, undefined, 'u1', 'http://one.test', { theme });
+    serve(next.transport, content(['a']));
+    await next.screen.open(book);
+    expect(next.screen.element.dataset.readingTheme).toBe('local-dark');
+    await click(next.screen, '日间');
+    expect(readThemePreference('default').theme).toBe(`local-${theme}`);
+    expect(env.screen.element.dataset.readingTheme).toBe(`local-${theme}`);
+  },
+);
 
 it('applies global settings to an open reader and keeps the location, pagination and device typography', async () => {
   const env = await setup(undefined, undefined, 'u1', 'http://one.test', { theme: 'kraft-day', fontScale: 1.2 });
-  serve(env.transport, content(['a'])); await env.screen.open(book);
+  serve(env.transport, content(['a']));
+  await env.screen.open(book);
   const reader = env.screen as unknown as { view: ReaderView };
-  const apply = vi.spyOn(reader.view, 'applySettings'), position = reader.view.position();
+  const apply = vi.spyOn(reader.view, 'applySettings'),
+    position = reader.view.position();
   await act(() => saveThemePreference('default', selectTheme(readThemePreference('default'), 'local-wechat-night')));
   expect(env.screen.element.dataset.readingTheme).toBe('local-wechat-night');
-  expect(apply).not.toHaveBeenCalled(); expect(reader.view.position()).toEqual(position);
+  expect(apply).not.toHaveBeenCalled();
+  expect(reader.view.position()).toEqual(position);
   expect(env.onSettingsChange).not.toHaveBeenCalled();
 });
 
 it('keeps automatic sync quiet while preserving failures and offline feedback', async () => {
-  const env = await setup(); serve(env.transport, content(['a'])); await env.screen.open(book);
+  const env = await setup();
+  serve(env.transport, content(['a']));
+  await env.screen.open(book);
   const update = vi.mocked(env.sync.onStatus).mock.calls[0]![0];
   const status = { state: 'syncing' as const, pending: true, message: '', lastSyncAt: null };
-  vi.spyOn(env.sync, 'status').mockReturnValue(status); update(status);
+  vi.spyOn(env.sync, 'status').mockReturnValue(status);
+  update(status);
   expect(noticeText()).not.toContain('同步中');
-  vi.mocked(env.sync.status).mockReturnValue({ ...status, state: 'error', message: '同步失败' }); update(env.sync.status());
+  vi.mocked(env.sync.status).mockReturnValue({ ...status, state: 'error', message: '同步失败' });
+  update(env.sync.status());
   expect(noticeText()).toContain('同步失败');
-  vi.mocked(env.sync.status).mockReturnValue({ ...status, state: 'offline' }); update(env.sync.status());
+  vi.mocked(env.sync.status).mockReturnValue({ ...status, state: 'offline' });
+  update(env.sync.status());
   expect(noticeText()).toContain('进度待同步');
 });
 
-
 it('keeps reading preferences across settings pages, reopening and device reload', async () => {
-  const env = await setup(); serve(env.transport, content(['a'])); await env.screen.open(book);
-  await click(env.screen, '设置'); await click(env.screen, '显示设置');
+  const env = await setup();
+  serve(env.transport, content(['a']));
+  await env.screen.open(book);
+  await click(env.screen, '设置');
+  await click(env.screen, '显示设置');
   const select = env.screen.element.querySelector<HTMLSelectElement>('select[aria-label="顶部左侧"]')!;
-  await act(() => { select.value = 'book'; select.dispatchEvent(new Event('change', { bubbles: true })); });
+  await act(() => {
+    select.value = 'book';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  });
   await vi.waitFor(() => expect(env.onSettingsChange).toHaveBeenCalledWith({ readoutTopLeft: 'book' }));
   const saved = env.onSettingsChange.mock.calls.at(-1)![0];
-  await click(env.screen, '返回阅读设置'); await click(env.screen, '字体与间距');
+  await click(env.screen, '返回阅读设置');
+  await click(env.screen, '字体与间距');
   expect(env.screen.element.querySelector('[aria-label="字体"]')).not.toBeNull();
-  await click(env.screen, '关闭'); await click(env.screen, '设置'); await click(env.screen, '显示设置');
+  await click(env.screen, '关闭');
+  await click(env.screen, '设置');
+  await click(env.screen, '显示设置');
   expect(env.screen.element.querySelector<HTMLSelectElement>('select[aria-label="顶部左侧"]')?.value).toBe('book');
-  const kv = new MemoryKv(), store = new SettingsStore(kv); await store.load(); await store.update(saved);
+  const kv = new MemoryKv(),
+    store = new SettingsStore(kv);
+  await store.load();
+  await store.update(saved);
   const next = await setup(undefined, undefined, 'u1', 'http://one.test', await new SettingsStore(kv).load());
-  serve(next.transport, content(['a'])); await next.screen.open(book); await click(next.screen, '设置'); await click(next.screen, '显示设置');
+  serve(next.transport, content(['a']));
+  await next.screen.open(book);
+  await click(next.screen, '设置');
+  await click(next.screen, '显示设置');
   expect(next.screen.element.querySelector<HTMLSelectElement>('select[aria-label="顶部左侧"]')?.value).toBe('book');
 });
 
 it('keeps the back control available when opening an uncached book fails', async () => {
-  const env = await setup(); env.transport.failWith(new Error('offline'));
+  const env = await setup();
+  env.transport.failWith(new Error('offline'));
   await env.screen.open(book);
   expect(env.screen.element.dataset.chrome).toBe('visible');
   expect(env.screen.element.querySelector('.topbar')?.hasAttribute('hidden')).toBe(false);
 });
 
-
 async function cacheNovel(env: Awaited<ReturnType<typeof setup>>, value = content(['a', 'b'])) {
-  const cache = new PublicationCache(env.platform.kv, env.platform.blobs, publicationScope(env.api.baseUrl, env.api.currentSession()!.user.id));
+  const cache = new PublicationCache(
+    env.platform.kv,
+    env.platform.blobs,
+    publicationScope(env.api.baseUrl, env.api.currentSession()!.user.id),
+  );
   await cache.putManifest(book.id, manifest(value));
-  for (const item of value.items) await cache.putResource(book.id, item.resourceRef!, new TextEncoder().encode(item.resourceRef!));
+  for (const item of value.items)
+    await cache.putResource(book.id, item.resourceRef!, new TextEncoder().encode(item.resourceRef!));
   return cache;
 }
 
 it('updates metadata and replacement bytes in the background without replacing the visible chapter', async () => {
-  const env = await setup(), cache = await cacheNovel(env);
+  const env = await setup(),
+    cache = await cacheNovel(env);
   serve(env.transport, content(['a', 'b', 'c'], 'r2'));
   const overrides = { version: 2, corrections: [], headingPrefix: '' };
   vi.spyOn(env.api, 'readingOverrides').mockResolvedValue(overrides);
@@ -1236,64 +2069,114 @@ it('updates metadata and replacement bytes in the background without replacing t
   expect(await cache.resource(book.id, 'resource:r2:a')).not.toBeNull();
   expect(await cache.overrides(book.id)).toEqual(overrides);
   expect(body(env.screen)?.textContent).toContain('resource:r1:a');
-  expect(env.transport.requests.filter(request => request.url.includes('/assets?')).map(request => new URL(request.url, 'http://test').searchParams.get('ref'))).toEqual(['resource:r2:a']);
+  expect(
+    env.transport.requests
+      .filter((request) => request.url.includes('/assets?'))
+      .map((request) => new URL(request.url, 'http://test').searchParams.get('ref')),
+  ).toEqual(['resource:r2:a']);
 });
 
-it.each([['a', 'b', 'c'], ['x', 'a', 'y', 'b', 'c']])('shows the checked directory %j without refreshing or replacing the current page', async (...ids) => {
-  const env = await setup(); await cacheNovel(env);
-  const fresh = content(ids, 'r2'); serve(env.transport, fresh);
+it.each([
+  ['a', 'b', 'c'],
+  ['x', 'a', 'y', 'b', 'c'],
+])('shows the checked directory %j without refreshing or replacing the current page', async (...ids) => {
+  const env = await setup();
+  await cacheNovel(env);
+  const fresh = content(ids, 'r2');
+  serve(env.transport, fresh);
   let finish!: (value: Manifest) => void;
-  vi.spyOn(env.api, 'manifest').mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  vi.spyOn(env.api, 'manifest').mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
   vi.spyOn(env.api, 'items').mockResolvedValue(fresh);
   const refresh = vi.spyOn(env.api, 'refreshPublication');
-  await env.screen.open(book); await click(env.screen, '目录');
+  await env.screen.open(book);
+  await click(env.screen, '目录');
   expect(env.screen.element.textContent).not.toContain('章节 c');
-  const page = body(env.screen), position = (env.screen as unknown as { view: ReaderView }).view.position();
+  const page = body(env.screen),
+    position = (env.screen as unknown as { view: ReaderView }).view.position();
   finish(manifest(fresh));
   await vi.waitFor(() => expect(env.screen.element.textContent).toContain('章节 c'));
   expect(body(env.screen)).toBe(page);
   expect(body(env.screen)?.textContent).toContain('resource:r1:a');
   expect((env.screen as unknown as { view: ReaderView }).view.position().locator).toBe(position.locator);
   expect(refresh).not.toHaveBeenCalled();
-  await click(env.screen, '目录'); await click(env.screen, '下一章');
+  await click(env.screen, '目录');
+  await click(env.screen, '下一章');
   await vi.waitFor(() => expect(body(env.screen)?.textContent).toContain('resource:r2:' + ids[ids.indexOf('a') + 1]));
-  await click(env.screen, '目录'); await click(env.screen, '章节 c');
+  await click(env.screen, '目录');
+  await click(env.screen, '章节 c');
   await vi.waitFor(() => expect(body(env.screen)?.textContent).toContain('resource:r2:c'));
 });
 
 it('keeps the readable cache if a replacement chapter is unavailable', async () => {
-  const env = await setup(), cache = await cacheNovel(env); serve(env.transport, content(['a', 'b'], 'r2'));
+  const env = await setup(),
+    cache = await cacheNovel(env);
+  serve(env.transport, content(['a', 'b'], 'r2'));
   vi.spyOn(env.api, 'asset').mockRejectedValue(new ApiError('not_found', 'temporarily missing'));
-  await env.screen.open(book); await vi.waitFor(() => expect(env.api.asset).toHaveBeenCalled());
-  await new Promise(resolve => setTimeout(resolve, 0));
+  await env.screen.open(book);
+  await vi.waitFor(() => expect(env.api.asset).toHaveBeenCalled());
+  await new Promise((resolve) => setTimeout(resolve, 0));
   expect((await cache.manifest(book.id))?.content?.revision).toBe('r1');
   expect(body(env.screen)?.textContent).toContain('resource:r1:a');
 });
 
 it('keeps the local position on decline and blocks keyboard paging behind the question', async () => {
-  const env = await setup(); await cacheNovel(env); serve(env.transport, content(['a', 'b']));
-  const local = { bookId: book.id, locator: 'r1:0.0000:chapter:b', percentage: 0.5, chapterTitle: '章节 b', device: 'here', updatedAt: 10 };
+  const env = await setup();
+  await cacheNovel(env);
+  serve(env.transport, content(['a', 'b']));
+  const local = {
+    bookId: book.id,
+    locator: 'r1:0.0000:chapter:b',
+    percentage: 0.5,
+    chapterTitle: '章节 b',
+    device: 'here',
+    updatedAt: 10,
+  };
   const remote = { ...local, locator: 'r1:0.0000:chapter:a', percentage: 0, chapterTitle: '章节 a', updatedAt: 20 };
   await env.offline.setProgress(local);
   let finish!: (value: typeof remote) => void;
-  vi.spyOn(env.api, 'getProgress').mockImplementation(() => new Promise(resolve => { finish = resolve; }));
-  await env.screen.open(book); expect(body(env.screen)?.textContent).toContain('resource:r1:b');
-  await vi.waitFor(() => expect(finish).toBeDefined()); finish(remote);
+  vi.spyOn(env.api, 'getProgress').mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await env.screen.open(book);
+  expect(body(env.screen)?.textContent).toContain('resource:r1:b');
+  await vi.waitFor(() => expect(finish).toBeDefined());
+  finish(remote);
   await vi.waitFor(() => expect(env.screen.element.querySelector('[role=alertdialog]')).not.toBeNull());
   expect(env.offline.progressFor(book.id)).toEqual(local);
   const turn = vi.spyOn(env.screen as unknown as { turnPage(direction: string): Promise<void> }, 'turnPage');
-  env.screen.element.querySelector('[role=alertdialog]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'PageDown', bubbles: true }));
-  expect(turn).not.toHaveBeenCalled(); await click(env.screen, '继续当前阅读');
+  env.screen.element
+    .querySelector('[role=alertdialog]')!
+    .dispatchEvent(new KeyboardEvent('keydown', { key: 'PageDown', bubbles: true }));
+  expect(turn).not.toHaveBeenCalled();
+  await click(env.screen, '继续当前阅读');
   await vi.waitFor(() => expect(env.offline.progressFor(book.id)!.updatedAt).toBeGreaterThan(remote.updatedAt));
   expect(body(env.screen)?.textContent).toContain('resource:r1:b');
   expect(env.offline.progressFor(book.id)!.locator).toContain('chapter:b');
 });
 
 it('opens an added remote chapter only after accepting the latest position', async () => {
-  const env = await setup(), cache = await cacheNovel(env); serve(env.transport, content(['a', 'b', 'c'], 'r2'));
-  const local = { bookId: book.id, locator: 'r1:0.0000:chapter:a', percentage: 0, chapterTitle: '章节 a', device: 'here', updatedAt: 10 };
+  const env = await setup(),
+    cache = await cacheNovel(env);
+  serve(env.transport, content(['a', 'b', 'c'], 'r2'));
+  const local = {
+    bookId: book.id,
+    locator: 'r1:0.0000:chapter:a',
+    percentage: 0,
+    chapterTitle: '章节 a',
+    device: 'here',
+    updatedAt: 10,
+  };
   const remote = { ...local, locator: 'r1:0.0000:chapter:c', percentage: 0.7, chapterTitle: '章节 c', updatedAt: 20 };
-  await env.offline.setProgress(local); vi.spyOn(env.api, 'getProgress').mockResolvedValue(remote);
+  await env.offline.setProgress(local);
+  vi.spyOn(env.api, 'getProgress').mockResolvedValue(remote);
   await env.screen.open(book);
   await vi.waitFor(() => expect(env.screen.element.querySelector('[role=alertdialog]')).not.toBeNull());
   expect(body(env.screen)?.textContent).toContain('resource:r1:a');
@@ -1305,25 +2188,44 @@ it('opens an added remote chapter only after accepting the latest position', asy
 });
 
 it('cancels validation and discards late metadata after closing and changing accounts', async () => {
-  const env = await setup(), cache = await cacheNovel(env); serve(env.transport, content(['a', 'b']));
+  const env = await setup(),
+    cache = await cacheNovel(env);
+  serve(env.transport, content(['a', 'b']));
   let finish!: (value: Manifest) => void;
-  vi.spyOn(env.api, 'manifest').mockImplementation(() => new Promise(resolve => { finish = resolve; }));
-  await env.screen.open(book); await vi.waitFor(() => expect(finish).toBeDefined());
+  vi.spyOn(env.api, 'manifest').mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await env.screen.open(book);
+  await vi.waitFor(() => expect(finish).toBeDefined());
   const signal = vi.mocked(env.api.manifest).mock.calls[0]![1]!.signal!;
-  env.screen.dispose(); screens.splice(screens.indexOf(env.screen), 1);
-  await env.offline.setScope('another-account'); finish(manifest(content(['a'], 'r2')));
-  await new Promise(resolve => setTimeout(resolve, 0));
+  env.screen.dispose();
+  screens.splice(screens.indexOf(env.screen), 1);
+  await env.offline.setScope('another-account');
+  finish(manifest(content(['a'], 'r2')));
+  await new Promise((resolve) => setTimeout(resolve, 0));
   expect(signal.aborted).toBe(true);
   expect((await cache.manifest(book.id))?.content?.revision).toBe('r1');
   expect(env.offline.progressFor(book.id)).toBeUndefined();
 });
 
 it('removes cached text after explicit background denial of book access', async () => {
-  const env = await setup(); await cacheNovel(env); serve(env.transport, content(['a', 'b']));
+  const env = await setup();
+  await cacheNovel(env);
+  serve(env.transport, content(['a', 'b']));
   let deny!: (error: Error) => void;
-  vi.spyOn(env.api, 'manifest').mockImplementation(() => new Promise((_resolve, reject) => { deny = reject; }));
-  await env.screen.open(book); expect(body(env.screen)?.textContent).toContain('resource:r1:a');
-  await vi.waitFor(() => expect(deny).toBeDefined()); deny(new ApiError('forbidden', 'book permission revoked'));
+  vi.spyOn(env.api, 'manifest').mockImplementation(
+    () =>
+      new Promise((_resolve, reject) => {
+        deny = reject;
+      }),
+  );
+  await env.screen.open(book);
+  expect(body(env.screen)?.textContent).toContain('resource:r1:a');
+  await vi.waitFor(() => expect(deny).toBeDefined());
+  deny(new ApiError('forbidden', 'book permission revoked'));
   await vi.waitFor(() => expect(env.screen.element.querySelector('book-content')).toBeNull());
   expect(env.screen.element.dataset.chrome).toBe('visible');
 });
@@ -1332,7 +2234,9 @@ it('keeps saying why a book did not open, and 重试 opens it once the server an
   const env = await setup();
   env.transport.json({ error: { code: 'BROKEN', message: '服务器出错了' } }, 500);
   await env.screen.open(book);
-  await vi.waitFor(() => expect(env.screen.element.querySelector('.reader-open-failure')?.textContent).toContain('服务器出错了'));
+  await vi.waitFor(() =>
+    expect(env.screen.element.querySelector('.reader-open-failure')?.textContent).toContain('服务器出错了'),
+  );
   serve(env.transport, content(['a']));
   await click(env.screen, '重试');
   await vi.waitFor(() => expect(body(env.screen)?.textContent ?? '').toContain('正文'));
@@ -1340,25 +2244,39 @@ it('keeps saying why a book did not open, and 重试 opens it once the server an
 });
 
 it('turns pages from the keyboard without the reader having focused anything first', async () => {
-  const env = await setup(); serve(env.transport, content(['a', 'b']));
+  const env = await setup();
+  serve(env.transport, content(['a', 'b']));
   await env.screen.open(book);
-  const turn = vi.spyOn(env.screen as unknown as { turnPage(direction: string): Promise<void> }, 'turnPage').mockResolvedValue(undefined);
+  const turn = vi
+    .spyOn(env.screen as unknown as { turnPage(direction: string): Promise<void> }, 'turnPage')
+    .mockResolvedValue(undefined);
   document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
   document.body.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', shiftKey: true, bubbles: true }));
-  expect(turn.mock.calls.map(call => call[0])).toEqual(['next', 'previous']);
+  expect(turn.mock.calls.map((call) => call[0])).toEqual(['next', 'previous']);
 });
 
 it('answers the single-key commands, and leaves a key with a modifier to the browser', async () => {
-  const env = await setup(); serve(env.transport, content(['a', 'b']));
+  const env = await setup();
+  serve(env.transport, content(['a', 'b']));
   await env.screen.open(book);
-  const screen = env.screen as unknown as { goToChapter(delta: number): Promise<void>; toggleBookmark(): Promise<void>; openTools(): void };
+  const screen = env.screen as unknown as {
+    goToChapter(delta: number): Promise<void>;
+    toggleBookmark(): Promise<void>;
+    openTools(): void;
+  };
   const chapter = vi.spyOn(screen, 'goToChapter').mockResolvedValue(undefined);
   const bookmark = vi.spyOn(screen, 'toggleBookmark').mockResolvedValue(undefined);
   const tools = vi.spyOn(screen, 'openTools').mockImplementation(() => undefined);
-  const press = (key: string, init: KeyboardEventInit = {}) => act(() => { document.body.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, ...init })); });
-  await press(']'); await press('['); await press('B'); await press('f');
+  const press = (key: string, init: KeyboardEventInit = {}) =>
+    act(() => {
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, ...init }));
+    });
+  await press(']');
+  await press('[');
+  await press('B');
+  await press('f');
   await press('f', { ctrlKey: true });
-  expect(chapter.mock.calls.map(call => call[0])).toEqual([1, -1]);
+  expect(chapter.mock.calls.map((call) => call[0])).toEqual([1, -1]);
   expect(bookmark).toHaveBeenCalledTimes(1);
   expect(tools).toHaveBeenCalledTimes(1);
   // T opens the contents; with that sheet open the keys belong to it.
@@ -1369,34 +2287,46 @@ it('answers the single-key commands, and leaves a key with a modifier to the bro
 });
 
 it('fetches the configured next chapter while the current one is read, once', async () => {
-  const env = await setup(undefined, undefined, 'u1', 'http://one.test', { autoCache: true, autoCacheChapters: 1 }); serve(env.transport, content(['a', 'b', 'c']));
+  const env = await setup(undefined, undefined, 'u1', 'http://one.test', { autoCache: true, autoCacheChapters: 1 });
+  serve(env.transport, content(['a', 'b', 'c']));
   await env.screen.open(book);
-  const assets = () => env.transport.requests.filter((request) => request.url.includes('/assets?')).map((request) => new URL(request.url, 'http://test').searchParams.get('ref'));
+  const assets = () =>
+    env.transport.requests
+      .filter((request) => request.url.includes('/assets?'))
+      .map((request) => new URL(request.url, 'http://test').searchParams.get('ref'));
   await vi.waitFor(() => expect(assets()).toContain('resource:r1:b'));
   expect(assets().filter((ref) => ref === 'resource:r1:b')).toHaveLength(1);
   expect(assets()).not.toContain('resource:r1:c');
 });
 
 it('bookmarks the page on screen from the top bar, and the same button removes it', async () => {
-  const env = await setup(); serve(env.transport, content(['a', 'b']));
+  const env = await setup();
+  serve(env.transport, content(['a', 'b']));
   await env.screen.open(book);
   const button = () => env.screen.element.querySelector<HTMLButtonElement>('.reader-bookmark')!;
   expect(button().getAttribute('aria-pressed')).toBe('false');
-  await act(async () => { button().click(); });
+  await act(async () => {
+    button().click();
+  });
   await vi.waitFor(() => expect(button().getAttribute('aria-pressed')).toBe('true'));
   expect(env.offline.notesFor(book.id).filter((note) => note.type === 'bookmark')).toHaveLength(1);
   // 读书笔记 says which chapter a note is from.
   expect(env.offline.notesFor(book.id)[0]?.chapterTitle).toBe('章节 a');
-  await act(async () => { button().click(); });
+  await act(async () => {
+    button().click();
+  });
   await vi.waitFor(() => expect(button().getAttribute('aria-pressed')).toBe('false'));
   expect(env.offline.notesFor(book.id).filter((note) => note.type === 'bookmark')).toHaveLength(0);
 });
 
 it('in scroll mode, pulling on past the end of a chapter opens the next one, and only a pull that starts there', async () => {
-  const env = await setup(); serve(env.transport, content(['a', 'b']));
+  const env = await setup();
+  serve(env.transport, content(['a', 'b']));
   await env.screen.open(book);
   (env.screen as unknown as { settings: { mode: string } }).settings.mode = 'scroll';
-  const turn = vi.spyOn(env.screen as unknown as { turnPage(direction: string): Promise<void> }, 'turnPage').mockResolvedValue(undefined);
+  const turn = vi
+    .spyOn(env.screen as unknown as { turnPage(direction: string): Promise<void> }, 'turnPage')
+    .mockResolvedValue(undefined);
   const host = env.screen.element.querySelector('book-content') as HTMLElement;
   // jsdom lays nothing out: scrollTop 0 of a 0-high flow is both edges at once.
   const touch = (type: string, y: number) => {
@@ -1404,9 +2334,11 @@ it('in scroll mode, pulling on past the end of a chapter opens the next one, and
     Object.assign(event, { touches: type === 'touchend' ? [] : [{ clientY: y }], changedTouches: [{ clientY: y }] });
     host.dispatchEvent(event);
   };
-  touch('touchstart', 500); touch('touchend', 460);
+  touch('touchstart', 500);
+  touch('touchend', 460);
   expect(turn).not.toHaveBeenCalled();
-  touch('touchstart', 500); touch('touchend', 400);
+  touch('touchstart', 500);
+  touch('touchend', 400);
   expect(turn).toHaveBeenLastCalledWith('next');
   // A trackpad flick is one chapter: the momentum that follows inside the cooldown is not another.
   turn.mockClear();
@@ -1423,77 +2355,143 @@ it('in scroll mode, pulling on past the end of a chapter opens the next one, and
 });
 
 it('lists 阅读记录 in 书籍信息 and goes back to a place from it', async () => {
-  const env = await setup(); serve(env.transport, content(['a', 'b']));
+  const env = await setup();
+  serve(env.transport, content(['a', 'b']));
   await env.screen.open(book);
   const places = [
-    { bookId: book.id, locator: 'r1:0.0000:chapter:b', percentage: 0.9, chapterTitle: '章节 b', device: 'phone', updatedAt: Date.now() - 60_000 },
-    { bookId: book.id, locator: 'r1:0.5000:chapter:a', percentage: 0.25, chapterTitle: '章节 a', device: 'tablet', updatedAt: Date.now() - 3_600_000 },
+    {
+      bookId: book.id,
+      locator: 'r1:0.0000:chapter:b',
+      percentage: 0.9,
+      chapterTitle: '章节 b',
+      device: 'phone',
+      updatedAt: Date.now() - 60_000,
+    },
+    {
+      bookId: book.id,
+      locator: 'r1:0.5000:chapter:a',
+      percentage: 0.25,
+      chapterTitle: '章节 a',
+      device: 'tablet',
+      updatedAt: Date.now() - 3_600_000,
+    },
   ];
   vi.spyOn(env.api, 'progressHistory').mockResolvedValue(places);
-  const navigate = vi.spyOn(env.screen as unknown as { navigateTool(target: string): Promise<void> }, 'navigateTool').mockResolvedValue(undefined);
+  const navigate = vi
+    .spyOn(env.screen as unknown as { navigateTool(target: string): Promise<void> }, 'navigateTool')
+    .mockResolvedValue(undefined);
   await click(env.screen, '书籍信息');
   await vi.waitFor(() => expect(env.screen.element.querySelectorAll('.reading-history li')).toHaveLength(2));
   expect(env.screen.element.querySelector('.reading-history li small')?.textContent).toContain('90% · phone');
-  const older = [...env.screen.element.querySelectorAll<HTMLButtonElement>('.reading-history button')].find(button => button.textContent?.includes('tablet'))!;
+  const older = [...env.screen.element.querySelectorAll<HTMLButtonElement>('.reading-history button')].find((button) =>
+    button.textContent?.includes('tablet'),
+  )!;
   older.click();
   await vi.waitFor(() => expect(navigate).toHaveBeenCalledWith('r1:0.5000:chapter:a'));
   expect(env.screen.element.querySelector('.reading-history')).toBeNull();
 });
 
+it('shows a quiet description placeholder and empty reading history in book info', async () => {
+  const env = await setup();
+  serve(env.transport, content(['a']));
+  await env.screen.open(book);
+  vi.spyOn(env.api, 'progressHistory').mockResolvedValue([]);
+  await click(env.screen, '书籍信息');
+  await vi.waitFor(() =>
+    expect(env.screen.element.querySelector('.reading-history')?.textContent).toContain('还没有阅读记录'),
+  );
+  expect(env.screen.element.querySelector('.book-detail-empty')?.textContent).toBe('暂无简介');
+});
+
 it('says 阅读记录 cannot be read offline instead of showing an empty list', async () => {
-  const env = await setup(); serve(env.transport, content(['a']));
+  const env = await setup();
+  serve(env.transport, content(['a']));
   await env.screen.open(book);
   vi.spyOn(env.api, 'progressHistory').mockRejectedValue(new ApiError('offline', 'offline'));
   await click(env.screen, '书籍信息');
-  await vi.waitFor(() => expect(env.screen.element.querySelector('.reading-history')?.textContent).toContain('离线时无法读取阅读记录'));
+  await vi.waitFor(() =>
+    expect(env.screen.element.querySelector('.reading-history')?.textContent).toContain('离线时无法读取阅读记录'),
+  );
 });
 
 it('does not submit the previous reader’s time through a newly selected account', async () => {
   vi.useFakeTimers({ toFake: ['Date'] });
   try {
-    const env = await setup(); serve(env.transport, content(['a'])); await env.screen.open(book);
+    const env = await setup();
+    serve(env.transport, content(['a']));
+    await env.screen.open(book);
     const record = vi.spyOn(env.api, 'recordReadingTime');
     vi.setSystemTime(Date.now() + 15_000);
     vi.spyOn(env.api, 'currentSession').mockReturnValue({ ...session, user: { ...session.user, id: 'another-user' } });
     await (env.screen as unknown as { readingTime: { flush(): Promise<void> } }).readingTime.flush();
     expect(record).not.toHaveBeenCalled();
-  } finally { vi.useRealTimers(); }
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
-it.each(['wheel','pending-touch'] as const)('does not pull a chapter behind an open settings sheet: %s',async kind=>{
- const env=await setup(undefined,undefined,'u1','http://one.test',{mode:'scroll'});serve(env.transport,content(['a','b']));await env.screen.open(book);
- const reader=env.screen as unknown as {view:ReaderView;turnPage(direction:'next'|'previous'):Promise<void>;onTapZone(column:number,row:number):void};
- const turn=vi.spyOn(reader,'turnPage').mockResolvedValue(),host=reader.view.elementHost;
- Object.defineProperties(host,{clientHeight:{configurable:true,value:100},scrollHeight:{configurable:true,value:1000}});host.scrollTop=0;
- if(kind==='pending-touch'){const event=new Event('touchstart');Object.assign(event,{touches:[{clientY:100}]});host.dispatchEvent(event);}
- reader.onTapZone(1,1);await click(env.screen,'设置');
- if(kind==='wheel')host.dispatchEvent(new WheelEvent('wheel',{deltaY:-300}));
- else{const event=new Event('touchend');Object.assign(event,{changedTouches:[{clientY:250}]});host.dispatchEvent(event);}
- expect(turn).not.toHaveBeenCalled();
-});
-
+it.each(['wheel', 'pending-touch'] as const)(
+  'does not pull a chapter behind an open settings sheet: %s',
+  async (kind) => {
+    const env = await setup(undefined, undefined, 'u1', 'http://one.test', { mode: 'scroll' });
+    serve(env.transport, content(['a', 'b']));
+    await env.screen.open(book);
+    const reader = env.screen as unknown as {
+      view: ReaderView;
+      turnPage(direction: 'next' | 'previous'): Promise<void>;
+      onTapZone(column: number, row: number): void;
+    };
+    const turn = vi.spyOn(reader, 'turnPage').mockResolvedValue(),
+      host = reader.view.elementHost;
+    Object.defineProperties(host, {
+      clientHeight: { configurable: true, value: 100 },
+      scrollHeight: { configurable: true, value: 1000 },
+    });
+    host.scrollTop = 0;
+    if (kind === 'pending-touch') {
+      const event = new Event('touchstart');
+      Object.assign(event, { touches: [{ clientY: 100 }] });
+      host.dispatchEvent(event);
+    }
+    reader.onTapZone(1, 1);
+    await click(env.screen, '设置');
+    if (kind === 'wheel') host.dispatchEvent(new WheelEvent('wheel', { deltaY: -300 }));
+    else {
+      const event = new Event('touchend');
+      Object.assign(event, { changedTouches: [{ clientY: 250 }] });
+      host.dispatchEvent(event);
+    }
+    expect(turn).not.toHaveBeenCalled();
+  },
+);
 
 it('sends single-page chapter completion with its real reading position', async () => {
-  const env = await setup(); serve(env.transport, content(['a'])); await env.screen.open(book);
+  const env = await setup();
+  serve(env.transport, content(['a']));
+  await env.screen.open(book);
   const reader = env.screen as unknown as { view: ReaderView };
   const position = reader.view.position();
   await env.screen.flushProgress();
   expect(env.offline.progressFor(book.id)).toMatchObject({ locator: position.locator, chapterComplete: true });
 });
 
-
 it('dismisses controls on a picture tap before opening the viewer, and blocks taps behind it', async () => {
-  const env = await setup(); serve(env.transport, content(['a'])); await env.screen.open(book);
+  const env = await setup();
+  serve(env.transport, content(['a']));
+  await env.screen.open(book);
   const screen = env.screen as unknown as { view: ReaderView; setChromeVisible(visible: boolean): void };
-  const pictures = vi.spyOn(screen.view, 'picturesAt').mockReturnValue({ index: 0, images: [{ src: 'data:image/png;base64,AQ==', alt: '插图' }] });
+  const pictures = vi
+    .spyOn(screen.view, 'picturesAt')
+    .mockReturnValue({ index: 0, images: [{ src: 'data:image/png;base64,AQ==', alt: '插图' }] });
   const stage = env.screen.element.querySelector<HTMLElement>('.stage')!;
-  const tap = async () => act(() => {
-    for (const type of ['pointerdown', 'pointerup']) {
-      const event = new Event(type, { bubbles: true, composed: true });
-      Object.assign(event, { clientX: 150, clientY: 300, pointerType: 'touch', button: 0 });
-      stage.dispatchEvent(event);
-    }
-  });
+  const tap = async () =>
+    act(() => {
+      for (const type of ['pointerdown', 'pointerup']) {
+        const event = new Event(type, { bubbles: true, composed: true });
+        Object.assign(event, { clientX: 150, clientY: 300, pointerType: 'touch', button: 0 });
+        stage.dispatchEvent(event);
+      }
+    });
   await act(() => screen.setChromeVisible(true));
   await tap();
   expect(env.screen.element.dataset.chrome).toBe('hidden');

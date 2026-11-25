@@ -63,9 +63,7 @@ export function emptySnapshot(): OfflineSnapshot {
 /** True when there is nothing waiting to be sent. */
 export function isOutboxEmpty(snapshot: OfflineSnapshot): boolean {
   return (
-    snapshot.dirtyProgress.length === 0 &&
-    snapshot.dirtyNotes.length === 0 &&
-    snapshot.pendingNoteDeletes.length === 0
+    snapshot.dirtyProgress.length === 0 && snapshot.dirtyNotes.length === 0 && snapshot.pendingNoteDeletes.length === 0
   );
 }
 
@@ -76,7 +74,13 @@ function coerceSnapshot(raw: unknown): OfflineSnapshot {
   const value = raw as Partial<OfflineSnapshot>;
   return {
     books: typeof value.books === 'object' && value.books !== null ? value.books : {},
-    ...(Array.isArray(value.continueReading) ? { continueReading: value.continueReading.filter(item => item && typeof item.id === 'string' && typeof item.percentage === 'number') } : {}),
+    ...(Array.isArray(value.continueReading)
+      ? {
+          continueReading: value.continueReading.filter(
+            (item) => item && typeof item.id === 'string' && typeof item.percentage === 'number',
+          ),
+        }
+      : {}),
     progress: typeof value.progress === 'object' && value.progress !== null ? value.progress : {},
     notes: typeof value.notes === 'object' && value.notes !== null ? value.notes : {},
     dirtyProgress: stringArray(value.dirtyProgress),
@@ -166,7 +170,8 @@ export class OfflineStore {
   }
 
   async removeBooks(ids: string[]): Promise<void> {
-    if (this.snapshot.continueReading) this.snapshot.continueReading = this.snapshot.continueReading.filter(book => !ids.includes(book.id));
+    if (this.snapshot.continueReading)
+      this.snapshot.continueReading = this.snapshot.continueReading.filter((book) => !ids.includes(book.id));
     for (const id of ids) {
       delete this.snapshot.books[id];
       delete this.snapshot.progress[id];
@@ -299,7 +304,10 @@ export class OfflineStore {
    *
    * The `serverTime` is still adopted so the next pull is incremental.
    */
-  async markDelivered(batch: { progress: Progress[]; notes: Note[]; deletes: string[] }, serverTime: number): Promise<void> {
+  async markDelivered(
+    batch: { progress: Progress[]; notes: Note[]; deletes: string[] },
+    serverTime: number,
+  ): Promise<void> {
     const deliveredProgress = new Set(
       batch.progress
         .filter((entry) => this.snapshot.progress[entry.bookId]?.updatedAt === entry.updatedAt)
