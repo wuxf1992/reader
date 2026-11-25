@@ -10,16 +10,19 @@ const handlers = server.server.listeners('request');
 server.server.removeAllListeners('request');
 let mode = 'online';
 const pending = new Set();
+const pendingRequests = new WeakMap();
 server.server.on('request', (request, response) => {
   const path = new URL(request.url, 'http://localhost').pathname;
   if (mode === 'hanging-all' && path.startsWith('/api/')) {
     pending.add(response);
+    pendingRequests.set(response, request);
     response.on('close', () => pending.delete(response));
     return;
   }
   if (path === '/api/v1/library/continue') {
     if (mode === 'hanging') {
       pending.add(response);
+      pendingRequests.set(response, request);
       response.on('close', () => pending.delete(response));
       return;
     }
@@ -67,9 +70,11 @@ try {
             );
             await page.evaluate(() => window.readerApp.offline.flush());
           }
+          await page.waitForLoadState('networkidle');
+          // Change the cold-start URL without launching requests that the reload would cancel.
+          await page.evaluate(() => history.replaceState(null, '', '/#/'));
           mode = cached ? 'hanging-all' : 'hanging';
           const start = Date.now();
-          await page.goto(origin + '/#/');
           // Reload clears Query's memory cache and exercises startup from durable storage.
           await page.reload({ waitUntil: 'domcontentloaded' });
           await page.locator('.app-shell').waitFor({ timeout: 5000 });
@@ -104,8 +109,10 @@ try {
             assert.equal(await card.count(), 1);
             if (output) await page.screenshot({ path: `${output}/${engine}-cached.png` });
             mode = 'empty';
-            // Reconnect closes stalled HTTP/1.1 sockets so queued requests can run.
-            for (const response of pending) response.destroy();
+            // Reconnect resumes the held requests instead of resetting live HTTP connections.
+            for (const response of [...pending]) {
+              if (!response.destroyed) server.server.emit('request', pendingRequests.get(response), response);
+            }
             await page.evaluate(() =>
               window.readerApp.queryClient.invalidateQueries({ queryKey: ['home', 'reading'] }),
             );

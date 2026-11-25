@@ -665,8 +665,14 @@ async function runMediaReview(browser, fixture, checks, errors) {
   }
   await page.goto(`${origin}/#/me/settings`);
   await waitMediaHeading(page, '偏好设置');
-  await page.locator('.theme-swatches [aria-pressed="false"]').first().click();
+  const appThemes = page.getByRole('group', { name: '主题配色', exact: true });
+  const originalThemeLabel = await appThemes.locator('[aria-pressed="true"]').getAttribute('aria-label');
+  const originalTheme = await page.locator('html').getAttribute('data-theme');
+  await appThemes.locator('[aria-pressed="false"]').first().click();
   await page.locator('.theme-settings [role=status]').filter({ hasText: '主题已保存' }).waitFor({ state: 'visible' });
+  assert.notEqual(await page.locator('html').getAttribute('data-theme'), originalTheme);
+  await appThemes.getByRole('button', { name: originalThemeLabel, exact: true }).click();
+  await page.waitForFunction((theme) => document.documentElement.dataset.theme === theme, originalTheme);
 
   // The browse fixture includes one playable, partially watched video.  Keep
   // this assertion close to the route sweep so the recent continuation card

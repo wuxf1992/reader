@@ -80,19 +80,13 @@ try {
         });
         page.on('pageerror', (error) => {
           const entry = { engine, width, reloading, closing, message: error.message };
-          if (
+          const localApi = error.message.startsWith(`/${new URL(origin).host}/api/v1/`);
+          const cancelledDuringNavigation =
             engine === 'webkit' &&
-            reloading &&
-            error.message ===
-              `/${new URL(origin).host}/api/v1/books?scope=shelf&page=1&pageSize=60&sort=recent&order=desc due to access control checks.`
-          )
-            report.navigationAbortWarnings.push(entry);
-          else if (
-            engine === 'webkit' &&
-            closing &&
-            error.message === `/${new URL(origin).host}/api/v1/stats/reading-time due to access control checks.`
-          )
-            report.navigationAbortWarnings.push(entry);
+            (reloading || closing) &&
+            localApi &&
+            error.message.endsWith(' due to access control checks.');
+          if (cancelledDuringNavigation) report.navigationAbortWarnings.push(entry);
           else report.errors.push(entry);
         });
         await page.route('https://wuxf.top/**', (route) => route.abort());
@@ -199,8 +193,11 @@ try {
         await page.locator('[aria-label="主题配色"]').getByRole('button', { name: '牛皮纸', exact: true }).click();
         await page.locator('[aria-label="主题配色"]').getByRole('button', { name: '微信夜间', exact: true }).click();
         await closeDialog(page);
+        reloading = true;
         await page.reload();
         await page.locator('book-content .book-flow p').first().waitFor();
+        await page.waitForLoadState('networkidle');
+        reloading = false;
         assert.equal(await page.locator('.reader-screen').getAttribute('data-reading-theme'), 'local-wechat-night');
         await showChrome(page);
         await page.getByRole('button', { name: '日间', exact: true }).click();

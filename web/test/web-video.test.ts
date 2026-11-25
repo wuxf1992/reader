@@ -51,6 +51,41 @@ describe('web video enhancement', () => {
     enhanced!.destroy();
   });
 
+  it('handles Space without the desktop hotkey bridge and leaves editable fields and modifiers alone', () => {
+    const { parent, video, toggle } = setup();
+    const enhanced = enhanceVideo(video, toggle)!;
+    const player = Artplayer.instances[0]!;
+    // Artplayer omits this bridge on touch platforms, including external keyboards.
+    player.off('document:keydown');
+    video.click();
+    toggle.mockClear();
+    const key = (options: KeyboardEventInit = {}) =>
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          code: 'Space',
+          bubbles: true,
+          cancelable: true,
+          ...options,
+        }),
+      );
+    expect(key()).toBe(false);
+    expect(toggle).toHaveBeenCalledOnce();
+    key({ ctrlKey: true });
+    expect(toggle).toHaveBeenCalledOnce();
+    const field = document.createElement('input');
+    parent.append(field);
+    field.focus();
+    key();
+    expect(toggle).toHaveBeenCalledOnce();
+    field.blur();
+    parent.dataset.locked = 'true';
+    key();
+    expect(toggle).toHaveBeenCalledOnce();
+    enhanced.destroy();
+    key();
+    expect(toggle).toHaveBeenCalledOnce();
+  });
+
   it('destroys only the chrome, preserving the connected video, source, position and Reader listeners', () => {
     const { parent, video, play, pause, load, toggle } = setup();
     const changed = vi.fn();

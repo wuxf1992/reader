@@ -54,6 +54,20 @@ export function enhanceVideo(video: HTMLVideoElement, onToggle: () => void) {
       (event) => {
         if (!(event instanceof KeyboardEvent)) return;
         if (
+          event.code === 'Space' &&
+          player.isFocus &&
+          !event.altKey &&
+          !event.ctrlKey &&
+          !event.metaKey &&
+          !event.shiftKey &&
+          !document.activeElement?.closest('input, textarea, select, [contenteditable]')
+        ) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          toggle();
+          return;
+        }
+        if (
           locked() &&
           player.isFocus &&
           ['Space', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.code)
@@ -65,7 +79,6 @@ export function enhanceVideo(video: HTMLVideoElement, onToggle: () => void) {
       { capture: true },
     );
     for (const callback of [...(player.hotkey.keys.Space ?? [])]) player.hotkey.remove('Space', callback);
-    player.hotkey.add('Space', toggle);
     video.controls = false;
     let destroyed = false;
     return {
