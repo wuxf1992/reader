@@ -543,6 +543,11 @@ test('the local library browses folder by folder with covers, like any source in
   const covered = (await browse(`?ref=${encodeURIComponent('科幻/刘慈欣')}`)).items[0]!;
   assert.match(covered.coverRef ?? '', /^cover@[0-9a-f]{10}$/, 'the cover address names the cover, so a changed one is not served from cache');
   assert.equal((covered as { metadata?: { publicationId?: string } }).metadata?.publicationId, book.ref, 'once shelved, the entry names the shelf book so a client offers 阅读');
+  const member = await h.member();
+  const detail = await h.app.inject({ url: `/api/v1/sources/local/entries?ref=${book.ref}`, headers: auth(member) });
+  assert.equal(detail.statusCode, 200, detail.body);
+  assert.equal(detail.json().shelfBookId, null);
+  assert.match(detail.json().coverUrl, new RegExp(`^/api/v1/books/${book.ref}/cover\\?v=`));
   const image = await h.app.inject({ method: 'GET', url: `/api/v1/sources/local/cover?entryRef=${covered.ref}&coverRef=${encodeURIComponent(covered.coverRef!)}`, headers: auth(h.admin) });
   assert.equal(image.statusCode, 200, image.body); assert.equal(image.headers['content-type'], 'image/png');
 });
@@ -562,9 +567,16 @@ test('only an administrator edits a local book, from 书库 or the shelf; a read
   const listed = await h.app.inject({ method: 'GET', url: '/api/v1/sources/local/browse', headers: auth(member) });
   assert.deepEqual(listed.json().items.map((item: { title: string }) => item.title), ['改过的书名'], 'the edit is the library\'s, so every reader sees it');
 
+  const detail = async (shelfBookId: string | null) => {
+    const response = await h.app.inject({ url: `/api/v1/sources/local/entries?ref=${id}`, headers: auth(member) });
+    assert.equal(response.statusCode, 200, response.body);
+    assert.deepEqual([response.json().title, response.json().authors, response.json().shelfBookId], ['改过的书名', ['某作者'], shelfBookId]);
+  };
+  await detail(null);
   // A reader cannot, in 书库 or with the book on their own shelf: it would rename it for everyone.
   assert.equal((await patch(member, { title: 'x' })).json().error.code, 'ADMIN_REQUIRED');
   await h.app.inject({ method: 'POST', url: '/api/v1/library/browse/shelf', headers: auth(member), payload: { bookIds: [id], action: 'add' } });
+  await detail(id);
   assert.equal((await patch(member, { title: 'x' })).statusCode, 403);
   assert.equal((await h.app.inject({ method: 'DELETE', url: `/api/v1/books/${id}/metadata/title`, headers: auth(member) })).statusCode, 403);
   assert.equal((await h.app.inject({ method: 'POST', url: `/api/v1/books/${id}/cover-source`, headers: auth(member), payload: { sourceId: 'any', entryRef: 'e', coverRef: 'c' } })).statusCode, 403);

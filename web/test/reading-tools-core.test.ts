@@ -53,6 +53,20 @@ describe('navigation and text anchors', () => {
   });
 });
 describe('scoped quota and offline tasks', () => {
+  it('replaces existing bytes without recreating a chapter removed by an earlier queued clear', async () => {
+    const cache = new PublicationCache(new MemoryKv(), new MemoryBlobs(), 'clear-race');
+    const old = Uint8Array.of(1), fresh = Uint8Array.of(2);
+    const replaceOld = (previous: Uint8Array) => previous[0] === old[0];
+    await cache.putResource('book', 'chapter', old);
+    await cache.putResource('book', 'chapter', fresh, replaceOld);
+    expect(await cache.resource('book', 'chapter')).toEqual(fresh);
+    await cache.putResource('book', 'chapter', old);
+    const clear = cache.removeBook('book');
+    const delayedRefresh = cache.putResource('book', 'chapter', fresh, replaceOld);
+    await Promise.all([clear, delayedRefresh]);
+    expect(await cache.resource('book', 'chapter')).toBeNull();
+    expect(await cache.entries()).toEqual([]);
+  });
   it('serializes quota checks, isolates accounts, and rolls back failed metadata writes', async () => {
     const kv = new MemoryKv(), blobs = new MemoryBlobs(); const cache = new PublicationCache(kv, blobs, 'one');
     await cache.setQuota(1024 * 1024);

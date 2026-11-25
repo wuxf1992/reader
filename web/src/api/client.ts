@@ -1122,7 +1122,7 @@ export { ApiError, errorForStatus, parseErrorBody };
 
 export interface ReadingTimeEntry { bookId: string; slot: number; seconds: number }
 export type TimeStatsGroup = 'day' | 'month' | 'year';
-export interface TimeStatsQuery { from: number; to: number; tz: number; group: TimeStatsGroup }
+export interface TimeStatsQuery { from: number; to: number; tz: number; timeZone?: string; group: TimeStatsGroup }
 export interface ReadingStats {
   series: Array<{ key: string; seconds: number }>;
   works: Array<{ id: string; title: string; author: string; coverUrl: string | null; seconds: number; lastAt: number }>;
@@ -1152,5 +1152,7 @@ export function notesParams(query: NotesLibraryQuery): string {
 }
 
 export function statsParams(query: TimeStatsQuery): string {
-  return new URLSearchParams({ from: String(query.from), to: String(query.to), tz: String(query.tz), group: query.group }).toString();
+  const params = new URLSearchParams({ from: String(query.from), to: String(query.to), tz: String(query.tz), group: query.group });
+  if (query.timeZone) params.set('timeZone', query.timeZone);
+  return params.toString();
 }

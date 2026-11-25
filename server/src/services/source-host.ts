@@ -224,8 +224,7 @@ export class SourceHost {
       const local = isLocal
         ? this.db.get<{ book_id: string }>('SELECT book_id FROM user_books WHERE user_id = ? AND book_id = ? AND hidden = 0', userId, ref) : undefined;
       const shelfBookId = acquired?.book_id ?? local?.book_id ?? null;
-      const coverBookId = isLocal ? ref : shelfBookId;
-      const cachedCover = coverBookId ? this.shelf().get(userId, coverBookId).coverUrl : null;
+      const cachedCover = !isLocal && shelfBookId ? this.shelf().get(userId, shelfBookId).coverUrl : null;
       return { ...entry, shelfBookId, ...(cachedCover ? { coverUrl: cachedCover } : {}) };
     }, signal);
   }

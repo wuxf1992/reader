@@ -220,32 +220,33 @@ export class Scanner {
         }
       }
 
-      const lostFile = new Set<string>();
-      for (const row of stored) {
-        if (seen.has(row.rel_path)) {
-          if (row.missing === 1) {
-            this.db.run('UPDATE book_files SET missing = 0 WHERE id = ?', row.id);
+      const reparses = this.db.transaction(() => {
+        const lostFile = new Set<string>();
+        for (const row of stored) {
+          if (seen.has(row.rel_path)) {
+            if (row.missing === 1) this.db.run('UPDATE book_files SET missing = 0 WHERE id = ?', row.id);
+          } else if (row.missing === 0) {
+            this.db.run('UPDATE book_files SET missing = 1 WHERE id = ?', row.id);
+            this.progress.removed += 1;
+            lostFile.add(row.book_id);
           }
-          continue;
         }
-        if (row.missing === 0) {
-          this.db.run('UPDATE book_files SET missing = 1 WHERE id = ?', row.id);
-          this.progress.removed += 1;
-          lostFile.add(row.book_id);
-        }
-      }
 
-      // A book reached through several files (identical bytes under two names) takes
-      // its filename-derived metadata from whichever file was parsed last. When that
-      // file goes away the survivors are unchanged on disk, so nothing would ever
-      // parse them again and the book would keep the gone file's title — deleting
-      // 《斗罗大陆2》.txt left a book still called 斗罗大陆2. Re-derive it from what is left.
-      const liveFiles = new Map(found.files.map((entry) => [entry.relPath, entry]));
-      for (const row of lostFile.size ? this.loadStoredFiles() : []) {
-        const entry = liveFiles.get(row.rel_path);
-        if (!entry || row.missing !== 0 || !lostFile.has(row.book_id) || this.recorded.has(row.rel_path)) continue;
+        const pending: Array<{ entry: FileEntry; row: StoredFile }> = [];
+        if (!lostFile.size) return pending;
+        const liveFiles = new Map(found.files.map(entry => [entry.relPath, entry]));
+        for (const row of this.loadStoredFiles()) {
+          const entry = liveFiles.get(row.rel_path);
+          if (!entry || row.missing !== 0 || !lostFile.has(row.book_id) || this.recorded.has(row.rel_path)) continue;
+          // Commit the retry marker with the removal, before reading the remaining copy.
+          this.db.run('UPDATE book_files SET parse_version = -1 WHERE id = ?', row.id);
+          pending.push({ entry, row: { ...row, parse_version: -1 } });
+        }
+        return pending;
+      });
+      for (const { entry, row } of reparses) {
         try {
-          await this.indexFile(entry, { ...row, parse_version: -1 });
+          await this.indexFile(entry, row);
         } catch (err) {
           this.progress.failed += 1;
           this.progress.lastError = err instanceof Error ? err.message : String(err);
@@ -652,7 +653,6 @@ export class Scanner {
     previous: StoredFile | undefined,
     stat: { size: number; mtimeMs: number },
   ): Promise<void> {
-    this.recorded.add(relPath);
     // Reuse the identity this path already had, so an in-place edit updates the
     // book instead of creating a second one and orphaning the reader's progress.
     // A source that carries an identifier of its own (epub) keeps the
@@ -712,6 +712,7 @@ export class Scanner {
         fileId, bookId, relPath, stat.size, stat.mtimeMs, now, now, PARSE_VERSION,
       );
     }
+    this.recorded.add(relPath);
   }
 
   private insertBook(bookId: string, parsed: ParsedSource, coverPath: string | undefined, now: number): void {

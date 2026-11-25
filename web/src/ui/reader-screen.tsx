@@ -798,9 +798,9 @@ export class ReaderScreen {
       // Keep the current chapter in place. The refreshed bytes are used the next time it opens.
       void this.options.api.asset(book.id, ref, { signal }).then(async fresh => {
         const bytes = new Uint8Array(await fresh.arrayBuffer());
-        if (signal.aborted || token !== this.loadingToken || this.disposed || cachedChapterLacksStyles(bytes, item.mediaType)) return;
-        if (!await this.publicationCache.resource(book.id, ref) || signal.aborted || token !== this.loadingToken) return;
-        await this.publicationCache.putResource(book.id, ref, bytes);
+        if (cachedChapterLacksStyles(bytes, item.mediaType)) return;
+        await this.publicationCache.putResource(book.id, ref, bytes, previous =>
+          !signal.aborted && token === this.loadingToken && !this.disposed && cachedChapterLacksStyles(previous, item.mediaType));
       }).catch(() => undefined);
     }
     if (!cached) { this.stopPrefetch(); this.prefetchChapter = null; }

@@ -42,13 +42,13 @@ export function StatsPage() {
     setParams(next, { replace: true });
   };
 
-  const tz = statsTz();
+  const tz = statsTz(), timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const range = periodRange(group, anchor);
-  const chartQuery: TimeStatsQuery = { from: range.from, to: range.to, tz, group };
+  const chartQuery: TimeStatsQuery = { from: range.from, to: range.to, tz, timeZone, group };
   const periods = useMemo(() => buildPeriods(group, range), [group, range.from, range.to]);
   const pick = periods.find(period => period.key === selected);
   // The works list answers for the bar picked, or for the whole range shown.
-  const worksQuery: TimeStatsQuery = pick ? { from: pick.from, to: pick.to, tz, group } : chartQuery;
+  const worksQuery: TimeStatsQuery = pick ? { ...chartQuery, from: pick.from, to: pick.to } : chartQuery;
 
   const reading = useQuery({ queryKey: ['stats', 'reading', chartQuery], queryFn: ({ signal }) => runtime.api.readingStats(chartQuery, { signal }) });
   const media = useQuery({ queryKey: ['stats', 'media', chartQuery], queryFn: ({ signal }) => runtime.mediaApi.timeStats(chartQuery, signal), enabled, retry: false });
@@ -143,7 +143,7 @@ function ReadingCalendar({ kind, onPick }: { kind: StatKind | ''; onPick(key: st
   const enabled = useMediaEnabled();
   const now = new Date();
   const range = heatmapRange(now);
-  const query: TimeStatsQuery = { from: range.from, to: range.to, tz: statsTz(), group: 'day' };
+  const query: TimeStatsQuery = { from: range.from, to: range.to, tz: statsTz(now), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, group: 'day' };
   const reading = useQuery({ queryKey: ['stats', 'reading', query], queryFn: ({ signal }) => runtime.api.readingStats(query, { signal }) });
   const media = useQuery({ queryKey: ['stats', 'media', query], queryFn: ({ signal }) => runtime.mediaApi.timeStats(query, signal), enabled, retry: false });
   const periods = useMemo(() => buildPeriods('day', range), [range.from, range.to]);

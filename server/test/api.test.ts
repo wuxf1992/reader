@@ -220,6 +220,34 @@ test('deleting one of two identical copies renames the book after the copy that 
   await ctx.scanner.scan();
 });
 
+test('a failed reparse after removing a duplicate is retried on the next scan', async t => {
+  const text = '第一章\n\n重试用的相同正文。\n';
+  const original = join(booksDir, '重试原名.txt'), duplicate = join(booksDir, '重试副本.txt');
+  const indexFile = ctx.scanner['indexFile'].bind(ctx.scanner);
+  const scanner = ctx.scanner as unknown as { indexFile: typeof indexFile };
+  await writeFile(original, text);
+  await ctx.scanner.scan();
+  await writeFile(duplicate, text);
+  await ctx.scanner.scan();
+  await rm(duplicate);
+  const failure = t.mock.method(scanner, 'indexFile', async (entry, previous) => {
+    if (entry.relPath === '重试原名.txt' && previous?.parse_version === -1) throw new Error('temporary read failure');
+    await indexFile(entry, previous);
+  });
+  try {
+    assert.equal((await ctx.scanner.scan()).failed, 1);
+    failure.mock.restore();
+    assert.equal((await ctx.scanner.scan()).failed, 0);
+    assert.equal(ctx.db.get<{ title: string }>(
+      `SELECT b.title FROM books b JOIN book_files f ON f.book_id = b.id WHERE f.rel_path = '重试原名.txt'`,
+    )?.title, '重试原名');
+  } finally {
+    failure.mock.restore();
+    await rm(original);
+    await ctx.scanner.scan();
+  }
+});
+
 test('manual metadata is never overwritten by a rescan, and can be undone', async () => {
   const owner = await login('owner');
   const book = ctx.db.get<{ id: string }>('SELECT id FROM books WHERE identifier = ?', 'urn:isbn:9787536692930')!;

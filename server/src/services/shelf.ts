@@ -170,7 +170,7 @@ function escapeLike(value: string): string {
 }
 
 /** Names one cover file, so a cover address changes when the cover does (`?v=`). */
-export const coverVersion = (coverPath: string): string => createHash('sha1').update(coverPath).digest('hex').slice(0, 10);
+const coverVersion = (coverPath: string): string => createHash('sha1').update(coverPath).digest('hex').slice(0, 10);
 
 export class ShelfService {
   constructor(private readonly db: Db) {}

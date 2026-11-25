@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import { registerStatsCalendar } from '../lib/stats-calendar.ts';
 import type { Db, Row, SqlValue } from '../db/index.ts';
 
 export type MediaDatabase = Pick<Db, 'get' | 'all' | 'run' | 'transaction'>;
@@ -9,6 +10,7 @@ export class MediaReadDatabase implements MediaDatabase {
 
   constructor(path: string) {
     this.raw = new DatabaseSync(path, { readOnly: true });
+    registerStatsCalendar(this.raw);
     this.raw.exec('PRAGMA query_only = ON');
     this.raw.exec('PRAGMA busy_timeout = 2000');
   }

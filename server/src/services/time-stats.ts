@@ -34,6 +34,8 @@ export interface StatsQuery {
   to: number;
   /** The viewer's offset from UTC in minutes east (UTC+8 → 480). */
   tz: number;
+  /** Optional IANA zone for historical offsets. Legacy clients pass tz alone. */
+  timeZone?: string;
   group: StatsGroup;
 }
 
@@ -70,12 +72,13 @@ export class TimeStatsService {
 
   /** Totals per day/month/year in the viewer's zone, and per book, for one user. */
   summary(userId: string, query: StatsQuery): { series: StatsSeriesPoint[]; works: StatsWork[]; total: number } {
-    const { from, to, tz, group } = validQuery(query);
-    const key = `strftime('${FORMATS[group]}', (slot + ${tz * 60000}) / 1000, 'unixepoch')`;
+    const params = validQuery(query);
+    const { from, to } = params;
+    const { sql: key, bindings } = statsPeriod(params);
     const series = this.db.all<StatsSeriesPoint>(
       `SELECT ${key} AS key, SUM(seconds) AS seconds FROM reading_time
        WHERE user_id = ? AND slot >= ? AND slot < ? GROUP BY key ORDER BY key`,
-      userId, from, to,
+      ...bindings, userId, from, to,
     ).map(point => ({ key: point.key, seconds: point.seconds }));
     const rows = this.db.all<{ book_id: string; seconds: number; last_at: number; title: string | null; author: string | null }>(
       `SELECT t.book_id, SUM(t.seconds) AS seconds, MAX(t.slot) AS last_at, b.title, b.author
@@ -118,8 +121,20 @@ export function validQuery(query: Partial<StatsQuery>): StatsQuery {
   const group = (query.group ?? 'day') as StatsGroup;
   if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || to <= from) throw badRequest('invalid range', 'BAD_RANGE');
   if (!Number.isInteger(tz) || Math.abs(tz) > 14 * 60) throw badRequest('invalid timezone offset', 'BAD_RANGE');
-  if (!(group in FORMATS)) throw badRequest('invalid group', 'BAD_RANGE');
-  return { from, to, tz, group };
+  if (!Object.hasOwn(FORMATS, group)) throw badRequest('invalid group', 'BAD_RANGE');
+  const { timeZone } = query;
+  if (timeZone !== undefined) {
+    if (typeof timeZone !== 'string' || !timeZone || timeZone.length > 64) throw badRequest('invalid time zone', 'BAD_RANGE');
+    try { new Intl.DateTimeFormat('en', { timeZone }); }
+    catch { throw badRequest('invalid time zone', 'BAD_RANGE'); }
+  }
+  return { from, to, tz, group, ...(timeZone === undefined ? {} : { timeZone }) };
 }
 
-export const STATS_FORMATS = FORMATS;
+export function statsPeriod({ tz, timeZone, group }: StatsQuery): { sql: string; bindings: string[] } {
+  if (timeZone) {
+    const length = { year: 4, month: 7, day: 10 }[group];
+    return { sql: `substr(reader_stats_date(slot, ?), 1, ${length})`, bindings: [timeZone] };
+  }
+  return { sql: `strftime('${FORMATS[group]}', (slot + ${tz * 60000}) / 1000, 'unixepoch')`, bindings: [] };
+}

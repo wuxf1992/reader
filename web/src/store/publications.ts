@@ -43,14 +43,15 @@ export class PublicationCache {
     return this.blobs.get(this.resourceKey(bookId, ref));
   }
 
-  async putResource(bookId: string, ref: string, bytes: Uint8Array): Promise<void> {
+  async putResource(bookId: string, ref: string, bytes: Uint8Array, replaceIf?: (previous: Uint8Array) => boolean): Promise<void> {
     await this.exclusive(async () => {
+      const key = this.resourceKey(bookId, ref);
+      const previous = await this.blobs.get(key);
+      if (replaceIf && (!previous || !replaceIf(previous))) return;
       const entries = await this.entries();
       const retained = entries.filter(e => e.bookId !== bookId || e.ref !== ref);
       const used = retained.reduce((sum, entry) => sum + entry.bytes, 0);
       if (used + bytes.byteLength > await this.quota()) throw new Error('离线缓存配额不足，请清理缓存或提高配额');
-      const key = this.resourceKey(bookId, ref);
-      const previous = await this.blobs.get(key);
       await this.blobs.put(key, bytes);
       try { await this.kv.set(this.indexKey(), JSON.stringify([...retained, { bookId, ref, bytes: bytes.byteLength }])); }
       catch (error) { if (previous) await this.blobs.put(key, previous); else await this.blobs.remove(key); throw error; }

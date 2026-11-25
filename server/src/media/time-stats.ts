@@ -1,6 +1,6 @@
 import type { MediaDatabase } from './read-database.ts';
 import type { MediaActor, MediaLibraries } from './libraries.ts';
-import { SLOT_MS, STATS_FORMATS, validQuery, type StatsQuery } from '../services/time-stats.ts';
+import { SLOT_MS, statsPeriod, validQuery, type StatsQuery } from '../services/time-stats.ts';
 
 /**
  * 时长统计, the media half (table media_watch_time, written by MediaPlayback).
@@ -46,7 +46,9 @@ export class MediaTimeStats {
    * are counted, as everywhere else in media.
    */
   summary(actor: MediaActor, query: Partial<StatsQuery>) {
-    const { from, to, tz, group } = validQuery(query);
+    const params = validQuery(query);
+    const { from, to } = params;
+    const { sql: key, bindings } = statsPeriod(params);
     const visible = this.libraries.list(actor).map(lib => lib.id);
     if (!visible.length) return { series: [], works: [] };
     const marks = visible.map(() => '?').join(',');
@@ -61,8 +63,8 @@ export class MediaTimeStats {
       roots AS (SELECT slot,seconds,channel,item_id FROM up WHERE parent_id IS NULL OR depth=4)`;
     const args = [actor.id, from, to, ...visible];
     const series = this.db.all<{ key: string; channel: MediaChannel; seconds: number }>(
-      `${rows} SELECT strftime('${STATS_FORMATS[group]}',(slot+${tz * 60000})/1000,'unixepoch') key,channel,SUM(seconds) seconds
-       FROM roots GROUP BY key,channel ORDER BY key,channel`, ...args);
+      `${rows} SELECT ${key} key,channel,SUM(seconds) seconds
+       FROM roots GROUP BY key,channel ORDER BY key,channel`, ...args, ...bindings);
     const works = this.db.all<{ id: string; channel: MediaChannel; kind: string; title: string; seconds: number; lastAt: number }>(
       `${rows}, totals AS (SELECT item_id,channel,SUM(seconds) seconds,MAX(slot) lastAt FROM roots GROUP BY item_id,channel)
        SELECT i.id,t.channel,i.kind,COALESCE(json_extract(o.value_json,'$'),json_extract(m.fields_json,'$.title'),i.title) title,

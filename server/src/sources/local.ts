@@ -1,7 +1,7 @@
 import type { Db } from '../db/index.ts';
-import { coverVersion, type ShelfService, type BookDto } from '../services/shelf.ts';
+import type { ShelfService, BookDto } from '../services/shelf.ts';
 import { badRequest, notFound } from '../lib/errors.ts';
-import type { SourceProvider, CatalogEntry } from './types.ts';
+import type { SourceProvider, SourceContext, CatalogEntry } from './types.ts';
 import { readFile } from 'node:fs/promises';
 import { extname } from 'node:path';
 import { assertSafeRel, resolveInside } from '../lib/paths.ts';
@@ -25,14 +25,12 @@ function entry(book: Pick<BookDto, 'id' | 'title' | 'author' | 'description' | '
 }
 
 export function createLocalProvider(db: Db, shelf: () => ShelfService, dataDir: string): SourceProvider {
-  const detail = async (_ctx: unknown, ref: string): Promise<CatalogEntry> => {
-    const row = db.get<BookDto>(
-      `SELECT id, title, author, description, format FROM books b
-       WHERE b.id = ? AND EXISTS (SELECT 1 FROM book_files f WHERE f.book_id = b.id AND f.missing = 0)`, ref,
-    );
-    if (!row) throw notFound('local book not found', 'ENTRY_NOT_FOUND');
-    const cover = shelf().coverPath(row.id);
-    return entry({ ...row, coverVersion: cover ? coverVersion(cover) : null });
+  const detail = async (ctx: SourceContext, ref: string): Promise<CatalogEntry> => {
+    if (!db.get('SELECT 1 FROM book_files WHERE book_id = ? AND missing = 0', ref)) {
+      throw notFound('local book not found', 'ENTRY_NOT_FOUND');
+    }
+    const book = shelf().getVisible(ctx.userId, ref);
+    return { ...listed(book), ...(book.coverUrl ? { coverUrl: book.coverUrl } : {}) };
   };
   function page(cursor?: string): number {
     if (cursor && !/^[1-9]\d{0,5}$/.test(cursor)) throw badRequest('invalid catalog cursor');

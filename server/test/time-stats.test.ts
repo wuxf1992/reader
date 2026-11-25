@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Db } from '../src/db/index.ts';
 import { MediaLibraries } from '../src/media/libraries.ts';
+import { MediaReadDatabase } from '../src/media/read-database.ts';
 import { MediaScanner } from '../src/media/scanner.ts';
 import { MediaPlayback } from '../src/media/playback.ts';
 import { MediaTimeStats } from '../src/media/time-stats.ts';
@@ -17,6 +18,9 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 const DAY = 24 * 60 * 60 * 1000;
+const NEW_YORK = 'America/New_York';
+const SUMMER_READING = Date.UTC(2025, 6, 1, 4, 15); // 00:15 local with daylight saving.
+const WINTER_READING = Date.UTC(2025, 0, 1, 5, 15); // 00:15 local with standard time.
 // 2026-08-31T16:00Z is 2026-09-01 00:00 in UTC+8.
 const MIDNIGHT_SG = Date.UTC(2026, 7, 31, 16);
 
@@ -78,8 +82,27 @@ test('reading time groups by day, month and year in the viewer\'s zone', () => {
   db.close();
 });
 
+test('reading time uses each slot’s local date across daylight saving changes', () => {
+  const { db, stats } = readingFixture();
+  try {
+    stats.record('alice', 'device-aaaa', [
+      { bookId: 'b1', slot: WINTER_READING, seconds: 60 },
+      { bookId: 'b1', slot: SUMMER_READING, seconds: 120 },
+    ]);
+    const query = { from: WINTER_READING - DAY, to: SUMMER_READING + DAY, tz: -300, group: 'day' as const };
+    assert.deepEqual(stats.summary('alice', { ...query, timeZone: NEW_YORK }).series,
+      [{ key: '2025-01-01', seconds: 60 }, { key: '2025-07-01', seconds: 120 }]);
+    assert.deepEqual(stats.summary('alice', { ...query, timeZone: NEW_YORK, group: 'month' }).series,
+      [{ key: '2025-01', seconds: 60 }, { key: '2025-07', seconds: 120 }]);
+    assert.deepEqual(stats.summary('alice', { ...query, from: Date.UTC(2025, 6, 1, 4) }).works.map(work => work.seconds), [120]);
+    assert.deepEqual(stats.summary('alice', query).series.map(point => point.key), ['2025-01-01', '2025-06-30']);
+  } finally { db.close(); }
+});
+
 test('watch time is derived from progress saves: the smaller of clock and position, gaps ignored', async () => {
-  const db = new Db(':memory:'), libraries = new MediaLibraries(db), scanner = new MediaScanner(db, libraries);
+  const root = await mkdtemp(join(tmpdir(), 'watch-time-'));
+  const database = join(root, 'media.db');
+  const db = new Db(database), libraries = new MediaLibraries(db), scanner = new MediaScanner(db, libraries);
   try {
     const playback = new MediaPlayback(db, libraries), stats = new MediaTimeStats(db, libraries);
     const actor = { id: 'member', role: 'member' } as const;
@@ -113,10 +136,17 @@ test('watch time is derived from progress saves: the smaller of clock and positi
     assert.ok(Math.abs(result.series[0]!.seconds - 12) <= 1, `got ${result.series[0]!.seconds}`);
     assert.deepEqual(result.works.map(work => [work.id, work.title, work.channel]), [['show', '剧集', 'video']]);
     assert.deepEqual(stats.users({ from: today - DAY, to: today + DAY }).map(row => [row.userId, row.channel]), [['member', 'video']]);
+    db.run("INSERT INTO media_watch_time(user_id,part_id,slot,seconds) VALUES('member','p1',?,120)", SUMMER_READING);
+    const readOnly = new MediaReadDatabase(database);
+    try {
+      const media = new MediaTimeStats(readOnly, libraries);
+      assert.deepEqual(media.summary(actor, { from: SUMMER_READING - DAY, to: SUMMER_READING + DAY, tz: -300, timeZone: NEW_YORK, group: 'day' }).series,
+        [{ key: '2025-07-01', channel: 'video', seconds: 120 }]);
+    } finally { readOnly.close(); }
     // A library the user can no longer see is not counted.
     db.run("UPDATE media_libraries SET access='restricted' WHERE id='tv'");
     assert.deepEqual(stats.summary(actor, { from: today - DAY, to: today + DAY, tz: 0, group: 'day' }).series, []);
-  } finally { await scanner.close(); db.close(); }
+  } finally { await scanner.close(); db.close(); await rm(root, { recursive: true, force: true }); }
 });
 
 test('the HTTP routes work when services are attached after the app is built, as main.ts does', async t => {
@@ -142,4 +172,8 @@ test('the HTTP routes work when services are attached after the app is built, as
   const users = await app.inject({ url: `/api/v1/stats/reading/users?${query}`, headers });
   assert.equal(users.statusCode, 200, users.body);
   assert.equal((await app.inject({ url: `/api/v1/stats/reading?from=5&to=1&tz=0&group=day`, headers })).statusCode, 400);
+  assert.equal((await app.inject({ url: `/api/v1/stats/reading?${query}&timeZone=Not%2FAZone`, headers })).statusCode, 400);
+  const utc = await app.inject({ url: `/api/v1/stats/reading?${query.replace('group=year', 'group=day')}&timeZone=UTC`, headers });
+  assert.equal(utc.statusCode, 200, utc.body);
+  assert.deepEqual(utc.json().series, [{ key: '2026-08-31', seconds: 120 }]);
 });

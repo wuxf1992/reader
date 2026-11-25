@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import { registerStatsCalendar } from '../lib/stats-calendar.ts';
 import { join } from 'node:path';
 import type { AppConfig } from '../config/index.ts';
 import { MIGRATIONS_SQL, SCHEMA_SQL, SYNC_TRACKING_SQL } from './schema.ts';
@@ -18,6 +19,7 @@ export class Db {
 
   constructor(path: string) {
     this.raw = new DatabaseSync(path);
+    registerStatsCalendar(this.raw);
     this.raw.exec('PRAGMA journal_mode = WAL;');
     this.raw.exec('PRAGMA foreign_keys = ON;');
     this.raw.exec(SCHEMA_SQL);
