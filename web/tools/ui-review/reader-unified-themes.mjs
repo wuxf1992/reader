@@ -172,7 +172,18 @@ try {
           assert.equal(actual.rootBg.toLowerCase(), expected.bg.toLowerCase());
           assert.equal(actual.ink.toLowerCase(), expected.ink.toLowerCase());
           assert.equal(actual.selected, 1);
-          assert.equal(actual.dialogBg, rgb(expected.surface));
+          const dialogBackground =
+            option.value === 'glass'
+              ? await page.evaluate((surface) => {
+                  const sample = document.createElement('div');
+                  sample.style.backgroundColor = `color-mix(in srgb, ${surface} 85%, transparent)`;
+                  document.body.append(sample);
+                  const color = getComputedStyle(sample).backgroundColor;
+                  sample.remove();
+                  return color;
+                }, expected.surface)
+              : rgb(expected.surface);
+          assert.equal(actual.dialogBg, dialogBackground);
           assert.equal(actual.readerColor, rgb(expected.ink));
           assert.equal(actual.overflow, false);
           if (option.value === 'glass') {
