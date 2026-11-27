@@ -121,9 +121,12 @@ try {
   ctx.tts = new TtsService(config);
   ctx.browse = new BrowseService(db, config, ctx.shelf);
   ctx.uploads = new UploadService(db, config, ctx.browse, ctx.scanner);
-  const base = await app.listen({ host: '127.0.0.1', port: 0 });
+  const address = new URL(await app.listen({ host: '127.0.0.1', port: 0 }));
+  address.hostname = 'reader-http.test';
+  const base = address.origin;
   browser = await chromium.launch({
     headless: true,
+    args: ['--host-resolver-rules=MAP reader-http.test 127.0.0.1', '--no-proxy-server'],
     ...(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {}),
   });
   page = await browser.newPage({ viewport: { width: 390, height: 844 } });
@@ -132,6 +135,10 @@ try {
   page.on('pageerror', (error) => errors.push(error.message));
   await page.route('https://wuxf.top/**', (route) => route.abort());
   await page.goto(base);
+  assert.deepEqual(await page.evaluate(() => ({ secure: isSecureContext, randomUUID: typeof crypto.randomUUID })), {
+    secure: false,
+    randomUUID: 'undefined',
+  });
   await page.getByText('更换服务地址', { exact: true }).click();
   await page.locator('input[type=url]').fill(base);
   await page.getByText('这是一个全新的实例，第一个注册的账号会成为管理员。', { exact: true }).waitFor();
@@ -415,7 +422,7 @@ try {
   await page.waitForURL(/#\/sources(?:\?tab=sources)?$/);
   assert.deepEqual(errors, []);
   console.log(
-    'PASS real HTTP + SQLite + stdio plugin + production Web: registration, tgz upload, npm registry install, auto-enable, independent instances, tabs, layout, streamed search, acquisition and chapter reading',
+    'PASS insecure HTTP without crypto.randomUUID + SQLite + stdio plugin + production Web: registration, tgz upload, npm registry install, auto-enable, independent instances, tabs, layout, streamed search, acquisition and chapter reading',
   );
   console.log(
     'PASS extension feedback fixtures: mobile/desktop floating busy/error/success, bounded width and stable content position',

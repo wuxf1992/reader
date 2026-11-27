@@ -140,6 +140,22 @@ it('restores the same page from a rounded locator in a long chapter', async () =
   await view.openLocator(before.locator);
   expect(view.position().pageInChapter).toBe(before.pageInChapter);
 });
+it.each(['scroll', 'paged'] as const)(
+  'restores the text anchor ahead of an outdated fraction in %s mode',
+  async (mode) => {
+    const { view } = await chapter();
+    view.applySettings({ mode });
+    await frame();
+    await view.seekPageInChapter(6);
+    const before = view.position();
+    expect(before.locator).toMatch(/@\d+:/);
+    const staleFraction = before.locator.replace(/^r1:[^@]+@/, 'r1:0.0000@');
+    await view.open(0);
+    await view.openLocator(staleFraction);
+    expect(view.position().pageInChapter).toBe(before.pageInChapter);
+  },
+);
+
 it('stops an in-flight animation when the user disables it', async () => {
   const { view, host } = await chapter();
   view.applySettings({ pageAnimation: 'slide' });

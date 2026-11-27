@@ -43,6 +43,8 @@ export interface Locator {
 }
 
 export const LOCATOR_PREFIX = 'r1';
+const OFFSET_DECIMALS = 4;
+export const LOCATOR_OFFSET_ROUNDING_ERROR = 0.5 * 10 ** -OFFSET_DECIMALS;
 
 export function parseLocator(value: string, doc: BookDoc): Locator | null {
   if (!value) return null;
@@ -107,7 +109,7 @@ export function formatLocator(sectionId: string, offset: number, textOffset?: nu
   // Older readers parseFloat the coordinate and retain the fractional fallback.
   const anchor =
     textOffset !== undefined && Number.isSafeInteger(textOffset) && textOffset >= 0 ? `@${textOffset}` : '';
-  return `${LOCATOR_PREFIX}:${clamped.toFixed(4)}${anchor}:${sectionId}`;
+  return `${LOCATOR_PREFIX}:${clamped.toFixed(OFFSET_DECIMALS)}${anchor}:${sectionId}`;
 }
 
 /**
