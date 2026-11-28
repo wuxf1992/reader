@@ -3,6 +3,8 @@ import { useLocation, useNavigationType, useSearchParams, useNavigate } from 're
 import { useRuntime } from '../../../app/providers/runtime-context.tsx';
 import { MediaSearch } from '../components/search.tsx';
 import { MediaPageFrame } from '../components/MediaPageFrame.tsx';
+import type { MediaChannel } from '../api/media-api.ts';
+import { MediaSourceSearchSection } from '../../sources/components/HomeSourceSearch.tsx';
 
 export function MediaSearchPage() {
   const runtime = useRuntime(),
@@ -17,6 +19,9 @@ export function MediaSearchPage() {
     seen = useRef({ key: location.key, mount: 0 });
   if (seen.current.key !== location.key)
     seen.current = { key: location.key, mount: seen.current.mount + (navigationType === 'POP' ? 1 : 0) };
+  const rawScope = params.get('scope') ?? 'all';
+  const scope = (['all', 'video', 'music', 'audiobook'].includes(rawScope) ? rawScope : 'all') as MediaChannel | 'all';
+  const query = params.get('q') ?? '';
   return (
     <MediaPageFrame className="media-secondary-page" title="搜索" backLabel="返回搜索来源">
       <MediaSearch
@@ -27,13 +32,14 @@ export function MediaSearchPage() {
           navigate(`/media/${channel}/items/${encodeURIComponent(id)}`, { state: { returnTo: here } })
         }
         initialLocation={{
-          q: params.get('q') ?? '',
-          scope: params.get('scope') ?? 'all',
+          q: query,
+          scope,
           offset: params.get('offset') ?? '0',
         }}
         onLocationChange={(next) => setParams(next)}
         scrollKey={runtime.mediaApi.preferenceScope() + '\0' + here}
       />
+      <MediaSourceSearchSection scope={scope} query={query} />
     </MediaPageFrame>
   );
 }

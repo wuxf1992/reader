@@ -89,7 +89,9 @@ export function SourcesPage() {
     enabled: tab === 'updates',
   });
   const [busy, setBusy] = useState<string | null>(null);
-  const enabledSources = (sources.data ?? []).filter((source) => source.enabled && source.descriptor);
+  const enabledSources = (sources.data ?? []).filter(
+    (source) => source.enabled && source.descriptor?.capabilities.length,
+  );
   // `local` names the built-in library whatever id an old database gave it; an id that is not an enabled source falls back to the default.
   const selectedSourceId =
     (
@@ -627,6 +629,18 @@ export function SourcesPage() {
                     </span>
                   </div>
                   <div className="source-entry-actions">
+                    {admin &&
+                      source.enabled &&
+                      !source.descriptor?.capabilities.length &&
+                      source.descriptor?.extensions?.pages?.map((page) => (
+                        <Link
+                          className="button"
+                          key={page.id}
+                          to={'/sources/' + encodeURIComponent(source.id) + '/' + encodeURIComponent(page.id)}
+                        >
+                          {page.title}
+                        </Link>
+                      ))}
                     {source.descriptor?.credentialKeys?.length ? (
                       <Link className="button" to={'/sources/' + encodeURIComponent(source.id) + '/credentials'}>
                         书源登录
@@ -637,7 +651,10 @@ export function SourcesPage() {
                         label="管理"
                         title={`${source.name}管理`}
                         items={[
-                          ...(source.descriptor?.extensions?.pages ?? []).map((page) => ({
+                          ...(source.enabled && !source.descriptor?.capabilities.length
+                            ? []
+                            : (source.descriptor?.extensions?.pages ?? [])
+                          ).map((page) => ({
                             label: page.title,
                             onSelect: () =>
                               navigate('/sources/' + encodeURIComponent(source.id) + '/' + encodeURIComponent(page.id)),

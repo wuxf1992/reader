@@ -25,6 +25,10 @@ test('request logs omit query credentials without changing the request', async (
     assert.ok(!output.includes('private-access'));
     assert.ok(!output.includes('private-ticket'));
     assert.equal(requestLogPath('/resource?access_token=secret#fragment'), '/resource');
+    assert.equal(
+      requestLogPath('/api/v1/sources/playback/private-ticket/private-asset'),
+      '/api/v1/sources/playback/:ticket/:asset',
+    );
   } finally {
     await app.close();
   }

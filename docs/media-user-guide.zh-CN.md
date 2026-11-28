@@ -102,3 +102,7 @@ Android 原生后台播放与条件恢复见[后台播放说明](media-backgroun
 当前不包含 TVBox/JAR、转码、影音离线下载或云盘账号登录。OpenList 负责其挂载驱动访问，Reader 服务端必须能访问 OpenList 及下载源；某些驱动需要启用 OpenList Web 代理。实际可播放编码取决于浏览器或设备。
 
 更多：[导航约定](media-navigation.md)、[架构](media-implementation.md)、[验收媒体包](media-acceptance-pack.md)、[验证方式](media-validation.md)。
+
+## 插件在线视频
+
+安装支持在线视频来源的插件后，在「书源 → 书源管理」添加该来源，再打开来源页面导入规则、搜索和选集。播放需要管理员账号启用影音功能，支持源站提供的 HLS 和 MP4 直链。播放器使用 Reader 签发的临时地址。此入口独立于本地及 OpenList 媒体库。

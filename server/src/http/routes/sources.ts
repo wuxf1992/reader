@@ -2,7 +2,7 @@ import { extensionValues } from '../../sources/extensions.ts';
 import type { FastifyInstance } from 'fastify';
 import type { AppContext } from '../context.ts';
 import { authenticate, currentUser, requireAdmin } from '../auth.ts';
-import { badRequest } from '../../lib/errors.ts';
+import { badRequest, forbidden } from '../../lib/errors.ts';
 import { SourceHost } from '../../services/source-host.ts';
 import { withSignal } from '../request-signal.ts';
 import { isolateBookResource } from '../assets.ts';
@@ -10,6 +10,7 @@ import { searchResponse } from '../search-stream.ts';
 import { createWriteStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { PluginInstaller, PLUGIN_UPLOAD_LIMIT } from '../../sources/plugin-installer.ts';
+import { SourcePlayback } from '../../sources/source-playback.ts';
 
 function textBody(body: unknown, name: string): string {
   const value = (body as Record<string, unknown> | null)?.[name];
@@ -41,6 +42,10 @@ export function registerSourceRoutes(app: FastifyInstance, ctx: AppContext): voi
   const auth = authenticate(ctx);
   const host = (ctx.sources ??= new SourceHost(ctx.db, ctx.config, () => ctx.shelf, app.log));
   const installer = new PluginInstaller(ctx.config.dataDir, host.plugins);
+  const playback = new SourcePlayback();
+  const mediaEnabled = () => ctx.settings?.read('modules').mediaEnabled !== false;
+  const sourceEnabled = (id: string) =>
+    host.list(false).some((source) => source.id === id && source.enabled && source.descriptor);
   app.addHook('onReady', async () => {
     await host.plugins.loadInstalled();
     host.updates.start();
@@ -330,37 +335,77 @@ export function registerSourceRoutes(app: FastifyInstance, ctx: AppContext): voi
       revision = textBody(request.body, 'revision');
     return withSignal(request, reply, (signal) => host.switchSource(user.id, id, ref, chapter, revision, signal));
   });
+  app.get('/api/v1/sources/playback/:ticket/:asset', { onRequest: isolateBookResource }, async (request, reply) => {
+    const { ticket, asset } = request.params as { ticket: string; asset: string };
+    const controller = new AbortController();
+    const disconnect = () => controller.abort();
+    reply.raw.once('close', disconnect);
+    const response = await playback.read(
+      ticket,
+      asset,
+      ({ userId, sourceId, authVersion }) => {
+        const account = ctx.users.byId(userId);
+        return (
+          mediaEnabled() &&
+          !!account &&
+          !account.disabled &&
+          account.role === 'admin' &&
+          account.media_enabled !== 0 &&
+          (account.auth_version ?? 0) === authVersion &&
+          sourceEnabled(sourceId)
+        );
+      },
+      request.headers.range,
+      controller.signal,
+    );
+    reply
+      .code(response.status)
+      .header('cache-control', 'private, no-store')
+      .header('x-content-type-options', 'nosniff');
+    for (const [name, value] of Object.entries(response.headers)) if (value) reply.header(name, value);
+    return reply.send(response.body);
+  });
   app.get('/api/v1/sources/:id/pages/:pageId', { preHandler: auth }, async (request) => {
     requireAdmin(request);
     const { id, pageId } = request.params as { id: string; pageId: string };
-    return host.plugins.sourcePage(id, pageId, currentUser(request).id);
+    const { playback: _playback, ...page } = await host.plugins.sourcePage(id, pageId, currentUser(request).id);
+    return page;
   });
-  app.post('/api/v1/sources/:id/pages/:pageId', { preHandler: auth }, async (request) => {
+  app.post('/api/v1/sources/:id/pages/:pageId', { preHandler: auth }, async (request, reply) => {
     requireAdmin(request);
     const { id, pageId } = request.params as { id: string; pageId: string };
-    return host.plugins.sourcePage(
+    const user = currentUser(request);
+    const { playback: stream, ...page } = await host.plugins.sourcePage(
       id,
       pageId,
-      currentUser(request).id,
+      user.id,
       textBody(request.body, 'action'),
       (request.body as Record<string, unknown>).values ?? {},
     );
+    if (!stream) return page;
+    if (!mediaEnabled() || !user.mediaEnabled) throw forbidden('此账号未启用影音', 'MEDIA_DISABLED');
+    if (!sourceEnabled(id)) throw forbidden('来源已停用', 'SOURCE_DISABLED');
+    const owner = { userId: user.id, sourceId: id, authVersion: ctx.users.byId(user.id)?.auth_version ?? 0 };
+    reply.header('cache-control', 'no-store');
+    return { ...page, playback: playback.create(owner, stream) };
   });
   app.get('/api/v1/plugins/:id/pages/:pageId', { preHandler: auth }, async (request) => {
     requireAdmin(request);
     const { id, pageId } = request.params as { id: string; pageId: string };
-    return host.plugins.page(id, pageId, currentUser(request).id);
+    const { playback: _playback, ...page } = await host.plugins.page(id, pageId, currentUser(request).id);
+    return page;
   });
   app.post('/api/v1/plugins/:id/pages/:pageId', { preHandler: auth }, async (request) => {
     requireAdmin(request);
     const { id, pageId } = request.params as { id: string; pageId: string };
-    return host.plugins.page(
+    const { playback: _playback, ...page } = await host.plugins.page(
       id,
       pageId,
       currentUser(request).id,
       textBody(request.body, 'action'),
       (request.body as Record<string, unknown>).values ?? {},
     );
+    return page;
   });
   app.get('/api/v1/plugins', { preHandler: auth }, async (request) => {
     requireAdmin(request);

@@ -14,6 +14,7 @@ import type { MediaChannel } from '../../media/api/media-api.ts';
 import '../../home/styles/home.css';
 import '../styles/search.css';
 import { useMediaEnabled } from '../../../shared/stores/features.ts';
+import { GlobalSourceSearchSection } from '../../sources/components/HomeSourceSearch.tsx';
 
 const channelLabels: Record<MediaChannel, string> = { video: '影视', music: '音乐', audiobook: '有声书' };
 const BOOK_LIMIT = 12,
@@ -33,6 +34,7 @@ export function SearchPage() {
   const [params, setParams] = useSearchParams();
   const query = (params.get('q') ?? '').trim();
   const [input, setInput] = useState(query);
+  const [submitCount, setSubmitCount] = useState(0);
   // The URL is the query; the field follows it (Back, a sidebar search, a recent one),
   // except while it is only ahead of the URL by whitespace the reader is still typing.
   useEffect(() => {
@@ -78,7 +80,10 @@ export function SearchPage() {
     event.preventDefault();
     const q = input.trim();
     setParams(q ? { q } : {}, { replace: true });
-    if (q) setRecent(rememberSearch(scope, q));
+    if (q) {
+      setRecent(rememberSearch(scope, q));
+      setSubmitCount((value) => value + 1);
+    }
   };
   const mediaItems = (media.data?.items ?? []).slice(0, MEDIA_LIMIT);
   return (
@@ -215,6 +220,7 @@ export function SearchPage() {
               )}
             </section>
           )}
+          <GlobalSourceSearchSection query={query} submitCount={submitCount} />
         </div>
       )}
     </MediaPageFrame>
