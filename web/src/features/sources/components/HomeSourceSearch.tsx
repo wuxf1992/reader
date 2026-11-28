@@ -453,7 +453,7 @@ function ExtensionMediaPanel({
       </div>
 
       {playback &&
-        (item.channel === 'audiobook' ? (
+        (playback.kind === 'audio' || (item.channel === 'audiobook' && playback.kind !== 'hls') ? (
           <SourceAudio key={playback.path} playback={playback} baseUrl={runtime.api.baseUrl} />
         ) : (
           <SourceVideo key={playback.path} playback={playback} baseUrl={runtime.api.baseUrl} />

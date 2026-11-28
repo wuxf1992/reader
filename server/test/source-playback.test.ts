@@ -94,3 +94,25 @@ test('MP4 streams bytes with Range and rejects invalid URLs and non-media pages'
     { code: 'SOURCE_PLAYBACK_UPSTREAM' },
   );
 });
+
+test('audio streams MP3 and M4A bytes with Range and accurate MIME types', async () => {
+  const playback = new SourcePlayback(async (url, range) => {
+    assert.equal(range, 'bytes=0-3');
+    return {
+      url,
+      response: response('audi', url.pathname.endsWith('.m4a') ? 'audio/mp4' : 'audio/mpeg', 206, {
+        'content-range': 'bytes 0-3/10',
+      }),
+    };
+  });
+  const mp3 = playback.create(owner, { title: '有声书 · 第1回', url: 'https://audio.example.test/ch1.mp3' });
+  assert.equal(mp3.kind, 'audio');
+  const mp3Res = await playback.read(...parts(mp3.path), () => true, 'bytes=0-3', signal);
+  assert.equal(mp3Res.headers['content-type'], 'audio/mpeg');
+  assert.equal(mp3Res.status, 206);
+
+  const m4a = playback.create(owner, { title: '有声书 · 第2回', url: 'https://audio.example.test/ch2.m4a' });
+  assert.equal(m4a.kind, 'audio');
+  const m4aRes = await playback.read(...parts(m4a.path), () => true, 'bytes=0-3', signal);
+  assert.equal(m4aRes.headers['content-type'], 'audio/mp4');
+});

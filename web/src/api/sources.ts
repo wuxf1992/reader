@@ -130,7 +130,7 @@ export interface ExtensionContent {
 }
 export interface ExtensionPage extends ExtensionContent {
   title: string;
-  playback?: { title: string; kind: 'file' | 'hls'; path: string };
+  playback?: { title: string; kind: 'file' | 'hls' | 'audio'; path: string };
   description?: string;
   notice?: string;
   noticeKind?: 'info' | 'error';

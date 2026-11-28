@@ -13,7 +13,8 @@ export interface PlaybackRequest {
 
 interface Asset {
   url: URL;
-  kind: 'hls' | 'file' | 'part';
+  kind: 'hls' | 'file' | 'audio' | 'part';
+  mime?: string;
 }
 interface Session {
   owner: { userId: string; sourceId: string; authVersion: number };
@@ -26,8 +27,8 @@ interface Session {
 const PLAYLIST_LIMIT = 1024 * 1024;
 const SESSION_LIMIT = 64;
 const ASSET_LIMIT = 8192;
-const invalidMedia = () => badRequest('来源未提供可直接播放的 HLS 或 MP4 地址', 'SOURCE_PLAYBACK_URL');
-const upstreamError = () => new AppError(502, 'SOURCE_PLAYBACK_UPSTREAM', '视频来源暂时无法播放，请换一集或稍后重试');
+const invalidMedia = () => badRequest('来源未提供可直接播放的音视频或 HLS 地址', 'SOURCE_PLAYBACK_URL');
+const upstreamError = () => new AppError(502, 'SOURCE_PLAYBACK_UPSTREAM', '媒体来源暂时无法播放，请换一集或稍后重试');
 const token = () => randomBytes(18).toString('base64url');
 
 function publicUrl(value: string, base?: URL): URL {
@@ -51,10 +52,29 @@ function publicUrl(value: string, base?: URL): URL {
   return url;
 }
 
-export function playbackKind(url: URL): 'hls' | 'file' {
+const AUDIO_MIMES: Record<string, string> = {
+  '.mp3': 'audio/mpeg',
+  '.m4a': 'audio/mp4',
+  '.aac': 'audio/aac',
+  '.ogg': 'audio/ogg',
+  '.oga': 'audio/ogg',
+  '.wav': 'audio/wav',
+  '.flac': 'audio/flac',
+};
+
+export function playbackKind(url: URL): 'hls' | 'file' | 'audio' {
   if (/\.m3u8$/i.test(url.pathname)) return 'hls';
   if (/\.mp4$/i.test(url.pathname)) return 'file';
+  const ext = /\.[a-z0-9]+$/i.exec(url.pathname)?.[0]?.toLowerCase();
+  if (ext && AUDIO_MIMES[ext]) return 'audio';
   throw invalidMedia();
+}
+
+function playbackMime(url: URL, kind: 'hls' | 'file' | 'audio'): string {
+  if (kind === 'hls') return 'application/vnd.apple.mpegurl';
+  if (kind === 'file') return 'video/mp4';
+  const ext = /\.[a-z0-9]+$/i.exec(url.pathname)?.[0]?.toLowerCase();
+  return (ext && AUDIO_MIMES[ext]) || 'audio/mpeg';
 }
 
 export class SourcePlayback {
@@ -73,7 +93,7 @@ export class SourcePlayback {
       references: new Map(),
       bytes: 0,
     };
-    const asset = this.add(session, { url, kind });
+    const asset = this.add(session, { url, kind, mime: playbackMime(url, kind) });
     for (const [old, entry] of this.sessions) if (entry.expires <= Date.now()) this.sessions.delete(old);
     if (this.sessions.size >= SESSION_LIMIT) this.sessions.delete(this.sessions.keys().next().value!);
     this.sessions.set(id, session);
@@ -131,7 +151,7 @@ export class SourcePlayback {
     return {
       status,
       headers: {
-        'content-type': target.kind === 'file' ? 'video/mp4' : 'application/octet-stream',
+        'content-type': target.mime ?? (target.kind === 'file' ? 'video/mp4' : 'application/octet-stream'),
         'accept-ranges': header(headers['accept-ranges']),
         'content-length': header(headers['content-length']),
         'content-range': header(headers['content-range']),

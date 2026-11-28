@@ -22,3 +22,8 @@
   max-height: 70vh;
   background: var(--color-video-bg);
 }
+
+.source-audio {
+  display: block;
+  width: 100%;
+}

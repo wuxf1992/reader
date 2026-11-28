@@ -13,6 +13,7 @@ export function SourceVideo({
   const validPath = /^\/api\/v1\/sources\/playback\/[\w-]{24}\/[\w-]{24}$/.test(playback.path);
   const url = validPath ? baseUrl + playback.path : '';
   useEffect(() => {
+    if (playback.kind === 'audio') return;
     const video = media.current;
     if (!video || !url) return;
     video.scrollIntoView?.({ block: 'nearest' });
@@ -54,7 +55,18 @@ export function SourceVideo({
   return (
     <section className="sources-card">
       <h2>{playback.title}</h2>
-      <video ref={media} className="source-video" aria-label={playback.title} autoPlay controls playsInline />
+      {playback.kind === 'audio' ? (
+        <audio
+          className="source-audio"
+          aria-label={playback.title}
+          src={url}
+          autoPlay
+          controls
+          onError={() => setError('音频加载失败。请换一集，或重新选择这一集。')}
+        />
+      ) : (
+        <video ref={media} className="source-video" aria-label={playback.title} autoPlay controls playsInline />
+      )}
       {error && <p role="alert">{error}</p>}
     </section>
   );
