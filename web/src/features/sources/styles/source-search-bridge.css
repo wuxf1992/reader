@@ -308,3 +308,35 @@
     border-color: var(--media-accent, var(--color-brand-text));
   }
 }
+
+.source-origin-links {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.source-bridge-sites {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.source-bridge-site {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--media-accent, var(--color-brand-text));
+  font-size: var(--text-meta);
+  text-decoration: none;
+}
+
+.source-bridge-hint-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}

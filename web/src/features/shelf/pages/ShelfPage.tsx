@@ -27,7 +27,7 @@ import { ChangeCoverSheet } from '../../../ui/change-cover-sheet.tsx';
 import { BookMetadataSheet } from '../../../ui/book-metadata-sheet.tsx';
 import { useAuthStore } from '../../../shared/stores/auth.store.ts';
 import { describeShelfAction, SHELF_ACTION_LABELS } from '../../../ui/shelf-membership.ts';
-import { ShelfSourceSearchStrip } from '../../sources/components/HomeSourceSearch.tsx';
+import { ShelfDiscoverLink, ShelfSourceSearchStrip } from '../../sources/components/HomeSourceSearch.tsx';
 
 export function BookCard({
   book,
@@ -370,6 +370,7 @@ export function ShelfPage() {
         <span>书源</span>
         <Icon name="chevron-right" />
       </Link>
+      <ShelfDiscoverLink />
     </nav>
   );
   return (

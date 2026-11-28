@@ -1,7 +1,7 @@
 import type { ExtensionForm, ExtensionPage, SourceInstance } from '../../api/sources.ts';
 import type { MediaChannel } from '../media/api/media-api.ts';
 
-export type BridgeChannel = 'novel' | 'comic' | 'video' | 'audiobook';
+export type BridgeChannel = 'novel' | 'comic' | 'video' | 'audiobook' | 'music';
 
 export interface BridgeSource {
   source: SourceInstance;
@@ -9,6 +9,8 @@ export interface BridgeSource {
   mode: 'catalog' | 'extension';
   pageId?: string;
   label: string;
+  /** Offers category browsing: the host `browse` capability, or the plugin page's 发现 tab. */
+  browsable: boolean;
 }
 
 const CHANNEL_ORDER: Record<BridgeChannel, number> = {
@@ -16,6 +18,7 @@ const CHANNEL_ORDER: Record<BridgeChannel, number> = {
   comic: 1,
   video: 2,
   audiobook: 3,
+  music: 4,
 };
 
 export const BRIDGE_CHANNEL_LABELS: Record<BridgeChannel, string> = {
@@ -23,10 +26,12 @@ export const BRIDGE_CHANNEL_LABELS: Record<BridgeChannel, string> = {
   comic: '漫画',
   video: '视频',
   audiobook: '有声书',
+  music: '音乐',
 };
 
 function inferChannel(sourceType: string): BridgeChannel {
   if (/video/i.test(sourceType)) return 'video';
+  if (/music|song/i.test(sourceType)) return 'music';
   if (/audio/i.test(sourceType)) return 'audiobook';
   if (/comic|manga/i.test(sourceType)) return 'comic';
   return 'novel';
@@ -40,7 +45,7 @@ export function classifySource(
   if (source.descriptor.builtin && source.sourceType === 'local') return null;
 
   const channel = inferChannel(source.sourceType);
-  const isMedia = channel === 'video' || channel === 'audiobook';
+  const isMedia = channel === 'video' || channel === 'audiobook' || channel === 'music';
   if (isMedia && !options.mediaEnabled) return null;
 
   if (source.descriptor.capabilities.includes('search')) {
@@ -49,6 +54,7 @@ export function classifySource(
       channel,
       mode: 'catalog',
       label: source.name || source.descriptor.label || BRIDGE_CHANNEL_LABELS[channel],
+      browsable: source.descriptor.capabilities.includes('browse'),
     };
   }
 
@@ -60,6 +66,7 @@ export function classifySource(
       mode: 'extension',
       pageId,
       label: source.name || source.descriptor.label || BRIDGE_CHANNEL_LABELS[channel],
+      browsable: true,
     };
   }
 
@@ -91,7 +98,8 @@ export function sourcesForMediaScope(
 ): BridgeSource[] {
   if (scope === 'video') return sources.filter((item) => item.channel === 'video');
   if (scope === 'audiobook') return sources.filter((item) => item.channel === 'audiobook');
-  if (scope === 'all') return sources.filter((item) => item.channel === 'video' || item.channel === 'audiobook');
+  if (scope === 'music') return sources.filter((item) => item.channel === 'music');
+  if (scope === 'all') return sources.filter((item) => item.channel !== 'novel' && item.channel !== 'comic');
   return [];
 }
 
@@ -105,6 +113,34 @@ export function sourceManageLink(item: BridgeSource): string {
     return `/sources/${encodeURIComponent(item.source.id)}/${encodeURIComponent(pageId)}`;
   }
   return '/sources?tab=sources';
+}
+
+/** Where a source's categories are browsed without a keyword. */
+export function sourceExploreLink(item: BridgeSource): string {
+  if (item.mode === 'extension' && item.pageId)
+    return `/sources/${encodeURIComponent(item.source.id)}/${encodeURIComponent(item.pageId)}?tab=discover`;
+  return `/sources?tab=explore&source=${encodeURIComponent(item.source.id)}`;
+}
+
+/** An http(s) address a plugin supplied, or undefined: never a script, a credential or a relative path. */
+export function safeHttpUrl(value: unknown): string | undefined {
+  if (typeof value !== 'string' || value.length > 2048) return undefined;
+  try {
+    const url = new URL(value);
+    return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password ? url.href : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The website and the work's own page behind a result, when the plugin reported them. */
+export function entryOriginLinks(entry: { metadata?: Record<string, unknown> | undefined }): {
+  site?: string;
+  page?: string;
+} {
+  const site = safeHttpUrl(entry.metadata?.originUrl);
+  const page = safeHttpUrl(entry.metadata?.bookUrl);
+  return { ...(site ? { site } : {}), ...(page ? { page } : {}) };
 }
 
 export function sourceSearchLink(item: BridgeSource, query?: string, site?: string): string {

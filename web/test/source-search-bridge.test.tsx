@@ -10,7 +10,10 @@ import { dismissAllNotices } from '../src/ui/notifications.ts';
 import type { ExtensionPage, SourceInstance, SourcePage } from '../src/api/sources.ts';
 import {
   classifySources,
+  entryOriginLinks,
   extractExtensionSearchView,
+  safeHttpUrl,
+  sourceExploreLink,
   sourceSearchLink,
   sourcesForBookShelf,
   sourcesForMediaScope,
@@ -20,6 +23,7 @@ import { MediaSearchPage } from '../src/features/media/pages/MediaSearchPage.tsx
 import { MediaCatalogPage } from '../src/features/media/pages/MediaCatalogPage.tsx';
 import { ShelfPage } from '../src/features/shelf/pages/ShelfPage.tsx';
 import { SourceExtensionPage } from '../src/features/sources/pages/SourceExtensionPage.tsx';
+import { SourceOriginLinks } from '../src/features/sources/components/SourceOriginLinks.tsx';
 
 const root = document.createElement('div');
 document.body.append(root);
@@ -73,7 +77,7 @@ const sampleSources: SourceInstance[] = [
       label: '网络小说',
       version: '1.8.1',
       builtin: false,
-      capabilities: ['search', 'search.filters', 'detail', 'acquire.chapters'],
+      capabilities: ['browse', 'search', 'search.filters', 'detail', 'acquire.chapters'],
       extensions: { pages: [{ id: 'legacy-sources', title: '网站与书源管理' }] },
     },
   },
@@ -89,7 +93,7 @@ const sampleSources: SourceInstance[] = [
       label: '在线漫画',
       version: '1.8.1',
       builtin: false,
-      capabilities: ['search', 'search.filters', 'detail', 'acquire.chapters'],
+      capabilities: ['browse', 'search', 'search.filters', 'detail', 'acquire.chapters'],
       extensions: { pages: [{ id: 'media-sources', title: '漫画规则管理' }] },
     },
   },
@@ -123,6 +127,22 @@ const sampleSources: SourceInstance[] = [
       builtin: false,
       capabilities: [],
       extensions: { pages: [{ id: 'media-sources', title: '在线有声书' }] },
+    },
+  },
+  {
+    id: 'music-1',
+    pluginId: 'reader.source.novelweb',
+    sourceType: 'music-web',
+    name: '在线音乐',
+    enabled: true,
+    descriptor: {
+      id: 'music-web',
+      pluginId: 'reader.source.novelweb',
+      label: '在线音乐',
+      version: '1.8.3',
+      builtin: false,
+      capabilities: [],
+      extensions: { pages: [{ id: 'media-sources', title: '在线音乐' }] },
     },
   },
   {
@@ -299,6 +319,7 @@ function createRuntime(overrides: Record<string, unknown> = {}) {
             authors: ['刘慈欣'],
             latestChapter: '第38章',
             sourceName: '测试书站',
+            metadata: { originUrl: 'https://site.example/', bookUrl: 'https://site.example/book/1' },
           },
         ],
         batch: { completed: 2, total: 2 },
@@ -390,6 +411,7 @@ describe('source-search-bridge helpers', () => {
       ['comic-1', 'comic', 'catalog'],
       ['video-1', 'video', 'extension'],
       ['audio-1', 'audiobook', 'extension'],
+      ['music-1', 'music', 'extension'],
     ]);
 
     const memberAll = classifySources(sampleSources, { admin: false, mediaEnabled: true });
@@ -400,7 +422,19 @@ describe('source-search-bridge helpers', () => {
 
     expect(sourcesForMediaScope(adminAll, 'video').map((item) => item.source.id)).toEqual(['video-1']);
     expect(sourcesForMediaScope(adminAll, 'audiobook').map((item) => item.source.id)).toEqual(['audio-1']);
-    expect(sourcesForMediaScope(adminAll, 'music')).toEqual([]);
+    expect(sourcesForMediaScope(adminAll, 'music').map((item) => item.source.id)).toEqual(['music-1']);
+    expect(sourcesForMediaScope(adminAll, 'all').map((item) => item.source.id)).toEqual([
+      'video-1',
+      'audio-1',
+      'music-1',
+    ]);
+    expect(adminAll.map((item) => [item.source.id, item.browsable])).toEqual([
+      ['novel-1', true],
+      ['comic-1', true],
+      ['video-1', true],
+      ['audio-1', true],
+      ['music-1', true],
+    ]);
     expect(sourcesForBookShelf(adminAll).map((item) => item.source.id)).toEqual(['novel-1', 'comic-1']);
 
     expect(sourceSearchLink(adminAll[0]!, '三体')).toBe('/sources?source=novel-1&q=%E4%B8%89%E4%BD%93');
@@ -451,6 +485,11 @@ describe('cross-homepage source search UI', () => {
     await vi.waitFor(() => expect(runtime.api.searchSource).toHaveBeenCalledTimes(1));
     await vi.waitFor(() => expect(root.textContent).toContain('刘慈欣'));
 
+    const pageLink = root.querySelector<HTMLAnchorElement>('.source-origin-links a[href="https://site.example/book/1"]');
+    expect(pageLink?.textContent).toBe('原页 ↗');
+    expect(pageLink?.target).toBe('_blank');
+    expect(pageLink?.rel).toContain('noopener');
+    expect(root.querySelector('.source-origin-links a[href="https://site.example/"]')?.textContent).toBe('原站 ↗');
     const addButton = [...root.querySelectorAll<HTMLButtonElement>('.source-bridge-action')].find(
       (button) => button.textContent === '加入书架',
     )!;
@@ -562,6 +601,168 @@ describe('cross-homepage source search UI', () => {
         query: '流浪地球',
         site: 'backup',
       }),
+    );
+  });
+});
+
+describe('music, browsing and original-site entries', () => {
+  it('builds explore links per mode and only accepts plain http(s) addresses from plugins', () => {
+    const [novel, , video] = classifySources(sampleSources, { admin: true, mediaEnabled: true });
+    expect(sourceExploreLink(novel!)).toBe('/sources?tab=explore&source=novel-1');
+    expect(sourceExploreLink(video!)).toBe('/sources/video-1/media-sources?tab=discover');
+    expect(safeHttpUrl('https://a.example/x?y=1')).toBe('https://a.example/x?y=1');
+    for (const unsafe of ['javascript:alert(1)', 'data:text/html,x', 'https://u:p@a.example/', '/relative', 7, undefined])
+      expect(safeHttpUrl(unsafe)).toBeUndefined();
+    expect(
+      entryOriginLinks({ metadata: { originUrl: 'https://a.example/', bookUrl: 'javascript:1' } }),
+    ).toEqual({ site: 'https://a.example/' });
+  });
+
+  it('renders no link for an entry without safe addresses and opens the rest in a new tab', async () => {
+    act(() => render(<SourceOriginLinks entry={{ metadata: { bookUrl: 'javascript:alert(1)' } }} />, root));
+    expect(root.querySelector('a')).toBeNull();
+    act(() =>
+      render(
+        <SourceOriginLinks entry={{ metadata: { originUrl: 'https://a.example/', bookUrl: 'https://a.example/b' } }} />,
+        root,
+      ),
+    );
+    expect([...root.querySelectorAll('a')].map((link) => [link.textContent, link.target])).toEqual([
+      ['原页 ↗', '_blank'],
+      ['原站 ↗', '_blank'],
+    ]);
+  });
+
+  it('searches online music from /media/search?scope=music and shows the source websites', async () => {
+    const runtime = createRuntime({
+      api: {
+        sourcePage: vi.fn(async (_id: string, _pageId: string, action?: string) => ({
+          ...makeVideoPage(),
+          title: '在线音乐',
+          links: [
+            { title: '好音乐 ↗', url: 'https://music.example/' },
+            { title: '坏链接 ↗', url: 'javascript:alert(1)' },
+          ],
+          ...(action === 'search' ? {} : { tabs: undefined }),
+        })),
+      },
+    });
+    mount(
+      <Routes>
+        <Route path="/media/search" element={<MediaSearchPage />} />
+      </Routes>,
+      runtime,
+      '/media/search?q=晴天&scope=music',
+    );
+    await vi.waitFor(() =>
+      expect(runtime.api.sourcePage).toHaveBeenCalledWith('music-1', 'media-sources', 'search', {
+        query: '晴天',
+        site: '',
+      }),
+    );
+    expect(runtime.api.sourcePage).not.toHaveBeenCalledWith('video-1', expect.anything(), 'search', expect.anything());
+    await vi.waitFor(() => expect(root.querySelector('.source-bridge-site')).not.toBeNull());
+    expect([...root.querySelectorAll<HTMLAnchorElement>('.source-bridge-site')].map((link) => link.href)).toEqual([
+      'https://music.example/',
+    ]);
+    expect(root.querySelector('a[href="/sources/music-1/media-sources?tab=discover"]')?.textContent).toContain('发现浏览');
+    expect(root.textContent).toContain('在线音乐源');
+  });
+
+  it('offers browsing next to search on a populated channel page', async () => {
+    const runtime = createRuntime({
+      mediaApi: {
+        browse: vi.fn(async () => ({
+          total: 1,
+          items: [
+            { id: 'v1', libraryId: 'lib', kind: 'video', title: '本地影片', parentId: null, metadata: {}, overrides: {} },
+          ],
+        })),
+      },
+    });
+    mount(
+      <Routes>
+        <Route path="/media/:channel/:category?" element={<MediaCatalogPage />} />
+      </Routes>,
+      runtime,
+      '/media/video',
+    );
+    await vi.waitFor(() => expect(root.querySelector('[aria-label="在线视频源"]')).not.toBeNull());
+    expect(root.querySelector('[aria-label="在线视频源入口"]')).toBeNull();
+    const bar = root.querySelector('[aria-label="在线视频源"]')!;
+    expect([...bar.querySelectorAll('a')].map((link) => link.getAttribute('href'))).toEqual([
+      '/media/search?scope=video',
+      '/sources/video-1/media-sources?tab=discover',
+      '/sources/video-1/media-sources',
+    ]);
+  });
+
+  it('adds a category entry to the shelf row only when a book source can be browsed', async () => {
+    const runtime = createRuntime();
+    mount(
+      <Routes>
+        <Route path="/shelf" element={<ShelfPage />} />
+      </Routes>,
+      runtime,
+      '/shelf',
+    );
+    await vi.waitFor(() => expect(root.querySelector('a[href="/sources?tab=explore&source=novel-1"]')).not.toBeNull());
+    expect(root.querySelector('a[href="/sources?tab=explore&source=novel-1"]')?.textContent).toContain('在线发现');
+  });
+
+  it('opens the 发现浏览 tab of a plugin page from a ?tab=discover link', async () => {
+    const runtime = createRuntime({
+      api: {
+        sourcePage: vi.fn(async () => ({
+          title: '在线视频',
+          forms: [],
+          activeTab: 'search',
+          tabs: [
+            { id: 'search', title: '搜片与播放', forms: [], sections: [] },
+            { id: 'discover', title: '发现浏览', forms: [], sections: [] },
+          ],
+        })),
+      },
+    });
+    mount(
+      <Routes>
+        <Route path="/sources/:sourceId/:pageId" element={<SourceExtensionPage />} />
+      </Routes>,
+      runtime,
+      '/sources/video-1/media-sources?tab=discover',
+    );
+    await vi.waitFor(() =>
+      expect(root.querySelector('[role=tab][aria-selected=true]')?.textContent).toBe('发现浏览'),
+    );
+  });
+
+  it('offers a one-click add link on music/audiobook homepages when the plugin type exists but no instance is added yet', async () => {
+    const runtime = createRuntime({
+      api: {
+        sources: vi.fn(async () => sampleSources.filter((s) => s.sourceType !== 'music-web')),
+        sourceTypes: vi.fn(async () => [
+          {
+            id: 'music-web',
+            pluginId: 'reader.source.novelweb',
+            label: '在线音乐',
+            version: '1.8.3',
+            builtin: false,
+            capabilities: [],
+          },
+        ]),
+      },
+    });
+    mount(
+      <Routes>
+        <Route path="/media/:channel/:category?" element={<MediaCatalogPage />} />
+      </Routes>,
+      runtime,
+      '/media/music/albums',
+    );
+    await vi.waitFor(() => expect(root.querySelector('[aria-label="添加在线音乐源入口"]')).not.toBeNull());
+    const link = root.querySelector<HTMLAnchorElement>('[aria-label="添加在线音乐源入口"] a');
+    expect(link?.getAttribute('href')).toBe(
+      '/sources/manage/new?type=reader.source.novelweb%2Fmusic-web&name=%E5%9C%A8%E7%BA%BF%E9%9F%B3%E4%B9%90',
     );
   });
 });

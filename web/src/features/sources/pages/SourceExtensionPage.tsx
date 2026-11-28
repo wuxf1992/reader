@@ -312,6 +312,7 @@ export function SourceExtensionPage() {
   const { api } = runtime;
   const { sourceId, pluginId, pageId = '' } = useParams();
   const [searchParams] = useSearchParams();
+  const linkedTab = searchParams.get('tab') ?? '';
   const linkedSearch = useRef<{ query: string; site: string } | null>(
     searchParams.get('q')?.trim()
       ? { query: searchParams.get('q')!.trim(), site: searchParams.get('site') ?? '' }
@@ -355,8 +356,10 @@ export function SourceExtensionPage() {
   useEffect(() => {
     if (!page) return;
     setActiveTab((current) =>
-      page.activeTab && !current
-        ? page.activeTab
+      linkedTab && !current && tabs.some((tab) => tab.id === linkedTab)
+        ? linkedTab
+        : page.activeTab && !current
+          ? page.activeTab
         : current && tabs.some((tab) => tab.id === current)
           ? current
           : (tabs[0]?.id ?? ''),

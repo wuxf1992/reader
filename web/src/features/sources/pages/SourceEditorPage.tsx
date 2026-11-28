@@ -1,6 +1,6 @@
 import { Select } from '../../../ui/select.tsx';
 import { useEffect, useState, type FormEvent } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { SourceType } from '../../../api/sources.ts';
 import { useSources, useSourceMutations, useSourceTypes } from '../hooks/sourceQueries.ts';
 import { FloatingNotice } from '../../../ui/floating-notice.tsx';
@@ -12,25 +12,28 @@ import { notify } from '../../../ui/notifications.ts';
 export function SourceEditorPage() {
   const navigate = useNavigate();
   const { sourceId } = useParams();
+  const [searchParams] = useSearchParams();
+  const presetType = !sourceId ? (searchParams.get('type') ?? '') : '';
+  const presetName = !sourceId ? (searchParams.get('name') ?? '') : '';
   const sources = useSources();
   const types = useSourceTypes();
   const mutations = useSourceMutations();
   const source = sources.data?.find((item) => item.id === sourceId);
-  const [typeKey, setTypeKey] = useState(source ? `${source.pluginId}/${source.sourceType}` : '');
-  const [name, setName] = useState(source?.name ?? '');
+  const [typeKey, setTypeKey] = useState(source ? `${source.pluginId}/${source.sourceType}` : presetType);
+  const [name, setName] = useState(source?.name ?? presetName);
   const [config, setConfig] = useState<Record<string, unknown>>(source?.config ?? {});
   const [raw, setRaw] = useState(JSON.stringify(source?.config ?? {}, null, 2));
   const [jsonError, setJsonError] = useState('');
   const [removing, setRemoving] = useState(false);
   useEffect(() => {
     // A refetch must not overwrite the draft; only selecting a different source resets it.
-    setTypeKey(source ? `${source.pluginId}/${source.sourceType}` : '');
-    setName(source?.name ?? '');
+    setTypeKey(source ? `${source.pluginId}/${source.sourceType}` : presetType);
+    setName(source?.name ?? presetName);
     setConfig(source?.config ?? {});
     setRaw(JSON.stringify(source?.config ?? {}, null, 2));
     setJsonError('');
     setRemoving(false);
-  }, [sourceId, source?.id]);
+  }, [sourceId, source?.id, presetType, presetName]);
   const type: SourceType | undefined =
     types.data?.find((item) => `${item.pluginId}/${item.id}` === typeKey) ??
     (source

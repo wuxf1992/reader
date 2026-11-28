@@ -2,7 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { describeError } from '../../../api/errors.ts';
-import type { ExtensionForm, ExtensionPage, SourceEntry, SourceInstance, SourcePage } from '../../../api/sources.ts';
+import type {
+  ExtensionForm,
+  ExtensionPage,
+  SourceEntry,
+  SourceInstance,
+  SourcePage,
+  SourceType,
+} from '../../../api/sources.ts';
 import { useRuntime } from '../../../app/providers/runtime-context.tsx';
 import { newId } from '../../../core/id.ts';
 import { useAuthStore } from '../../../shared/stores/auth.store.ts';
@@ -16,12 +23,15 @@ import {
   BRIDGE_CHANNEL_LABELS,
   classifySources,
   extractExtensionSearchView,
+  safeHttpUrl,
+  sourceExploreLink,
   sourceManageLink,
   sourceSearchLink,
   sourcesForBookShelf,
   sourcesForMediaScope,
   type BridgeSource,
 } from '../source-search-bridge.ts';
+import { SourceOriginLinks } from './SourceOriginLinks.tsx';
 import { SourceVideo } from './SourceVideo.tsx';
 import '../styles/source-search-bridge.css';
 
@@ -46,6 +56,80 @@ export function useBridgeSources(): BridgeSource[] {
     retry: false,
   });
   return useMemo(() => classifySources(query.data, { admin, mediaEnabled }), [query.data, admin, mediaEnabled]);
+}
+
+function useAvailableMediaSourceType(channel: MediaChannel | 'all'): SourceType | null {
+  const runtime = useRuntime();
+  const api = runtime?.api;
+  const admin = useAuthStore((state) => state.verifiedUser?.role === 'admin');
+  const mediaEnabled = useMediaEnabled();
+  const canQuery = admin && mediaEnabled && channel !== 'all' && typeof api?.sourceTypes === 'function';
+  const query = useQuery<SourceType[]>({
+    queryKey: ['source-types', api?.baseUrl ?? ''],
+    queryFn: () => api.sourceTypes(),
+    enabled: canQuery,
+    staleTime: 300_000,
+    retry: false,
+  });
+  return useMemo(() => {
+    if (!canQuery || !query.data?.length) return null;
+    const match =
+      channel === 'video' ? /video/i : channel === 'music' ? /music|song/i : /audio/i;
+    return query.data.find((type) => !type.builtin && match.test(type.id)) ?? null;
+  }, [canQuery, channel, query.data]);
+}
+
+function addSourceLink(type: SourceType, channel: MediaChannel): string {
+  const defaultName = `在线${BRIDGE_CHANNEL_LABELS[channel]}`;
+  const params = new URLSearchParams({
+    type: `${type.pluginId}/${type.id}`,
+    name: defaultName,
+  });
+  return `/sources/manage/new?${params.toString()}`;
+}
+
+/** The websites behind a source's rules (administrators read them from the plugin's own page). */
+function useSourceSiteLinks(item: BridgeSource): Array<{ title: string; url: string }> {
+  const runtime = useRuntime();
+  const admin = useAuthStore((state) => state.verifiedUser?.role === 'admin');
+  const pageId = item.pageId ?? item.source.descriptor?.extensions?.pages?.[0]?.id;
+  const query = useQuery({
+    queryKey: ['bridge-site-links', runtime?.api?.baseUrl ?? '', item.source.id, pageId ?? ''],
+    queryFn: () => runtime.api.sourcePage(item.source.id, pageId!),
+    enabled: admin && !!pageId && typeof runtime?.api?.sourcePage === 'function',
+    staleTime: 300_000,
+    retry: false,
+  });
+  return useMemo(
+    () =>
+      (query.data?.links ?? []).flatMap((link) => {
+        const url = safeHttpUrl(link.url);
+        return url ? [{ title: link.title, url }] : [];
+      }),
+    [query.data],
+  );
+}
+
+function SiteLinks({ item }: { item: BridgeSource }) {
+  const links = useSourceSiteLinks(item);
+  if (!links.length) return null;
+  return (
+    <div className="source-bridge-sites" role="group" aria-label="源站直达">
+      <span className="source-bridge-kind">逛源站</span>
+      {links.slice(0, 8).map((link) => (
+        <a
+          key={link.url}
+          className="source-bridge-site"
+          href={link.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={link.url}
+        >
+          {link.title}
+        </a>
+      ))}
+    </div>
+  );
 }
 
 function CatalogSourcePanel({
@@ -190,12 +274,20 @@ function CatalogSourcePanel({
           )}
         </div>
         <div className="source-bridge-bar-right">
+          {item.browsable && (
+            <Link className="source-bridge-link" to={sourceExploreLink(item)}>
+              发现浏览
+              <Icon name="chevron-right" size={16} />
+            </Link>
+          )}
           <Link className="source-bridge-link" to={sourceSearchLink(item, query)}>
             在书源页查看全部
             <Icon name="chevron-right" size={16} />
           </Link>
         </div>
       </div>
+
+      <SiteLinks item={item} />
 
       {status !== 'idle' && (
         <p className={status === 'error' ? 'source-bridge-status is-error' : 'source-bridge-status'} role="status">
@@ -238,6 +330,7 @@ function CatalogSourcePanel({
                   <div className="source-bridge-row-copy">
                     <strong title={entry.title}>{entry.title}</strong>
                     {metaParts.length > 0 && <small title={metaParts.join(' · ')}>{metaParts.join(' · ')}</small>}
+                    <SourceOriginLinks entry={entry} />
                   </div>
                 </div>
                 {shelfId ? (
@@ -445,6 +538,10 @@ function ExtensionMediaPanel({
           </button>
         </div>
         <div className="source-bridge-bar-right">
+          <Link className="source-bridge-link" to={sourceExploreLink(item)}>
+            发现浏览
+            <Icon name="chevron-right" size={16} />
+          </Link>
           <Link className="source-bridge-link" to={sourceSearchLink(item, query, pool)}>
             完整插件页
             <Icon name="chevron-right" size={16} />
@@ -452,8 +549,11 @@ function ExtensionMediaPanel({
         </div>
       </div>
 
+      <SiteLinks item={item} />
+
       {playback &&
-        (playback.kind === 'audio' || (item.channel === 'audiobook' && playback.kind !== 'hls') ? (
+        (playback.kind === 'audio' ||
+        ((item.channel === 'audiobook' || item.channel === 'music') && playback.kind !== 'hls') ? (
           <SourceAudio key={playback.path} playback={playback} baseUrl={runtime.api.baseUrl} />
         ) : (
           <SourceVideo key={playback.path} playback={playback} baseUrl={runtime.api.baseUrl} />
@@ -668,6 +768,7 @@ export function MediaSourceSearchSection({
 }) {
   const allSources = useBridgeSources();
   const sources = useMemo(() => sourcesForMediaScope(allSources, scope), [allSources, scope]);
+  const availableType = useAvailableMediaSourceType(sources.length === 0 ? scope : 'all');
   const [selectedId, setSelectedId] = useState('');
 
   useEffect(() => {
@@ -676,7 +777,19 @@ export function MediaSourceSearchSection({
     }
   }, [selectedId, sources]);
 
-  if (sources.length === 0) return null;
+  if (sources.length === 0) {
+    if (!availableType || scope === 'all') return null;
+    const label = BRIDGE_CHANNEL_LABELS[scope];
+    return (
+      <div className="source-bridge-hint" aria-label={`启用在线${label}源提示`}>
+        <span>插件已支持在线{label}源，添加后即可在此搜索与播放。</span>
+        <Link className="source-bridge-link" to={addSourceLink(availableType, scope)}>
+          添加在线{label}源
+          <Icon name="chevron-right" size={16} />
+        </Link>
+      </div>
+    );
+  }
 
   const active = sources.find((item) => item.source.id === selectedId) ?? sources[0]!;
   const trimmed = query.trim();
@@ -734,31 +847,99 @@ export function MediaSourceSearchSection({
 }
 
 /**
- * Mounted on `/media/:channel` when the local library is empty so users with plugin video/audiobook
- * sources have an obvious one-tap way to search and play directly from the channel homepage.
+ * Mounted on `/media/:channel`: a slim bar (or, when the local library is empty, a card) that
+ * searches, browses and manages the online sources of this channel in one tap.
  */
-export function ChannelSourceEntry({ channel }: { channel: MediaChannel }) {
+export function ChannelSourceEntry({ channel, compact = false }: { channel: MediaChannel; compact?: boolean }) {
   const allSources = useBridgeSources();
   const sources = useMemo(() => sourcesForMediaScope(allSources, channel), [allSources, channel]);
-  if (sources.length === 0) return null;
+  const availableType = useAvailableMediaSourceType(sources.length === 0 ? channel : 'all');
+  const label = BRIDGE_CHANNEL_LABELS[channel];
+
+  if (sources.length === 0) {
+    if (!availableType) return null;
+    const addPath = addSourceLink(availableType, channel);
+    if (compact)
+      return (
+        <div className="source-bridge-hint" aria-label={`添加在线${label}源`}>
+          <span>插件已支持在线{label}源，添加后可直接搜索与浏览。</span>
+          <Link className="source-bridge-link" to={addPath}>
+            一键添加
+          </Link>
+        </div>
+      );
+    return (
+      <section className="source-bridge-shortcut" aria-label={`添加在线${label}源入口`}>
+        <h3>也可以启用在线{label}源</h3>
+        <p>插件已支持在线{label}，添加并导入规则后即可在此搜索、逛发现与播放。</p>
+        <div className="source-bridge-shortcut-actions">
+          <Link className="source-bridge-action is-primary" to={addPath}>
+            添加在线{label}源
+          </Link>
+        </div>
+      </section>
+    );
+  }
 
   const primary = sources[0]!;
-  const label = channel === 'audiobook' ? '有声书' : '视频';
+  const browsable = sources.find((item) => item.browsable);
+  const search = `/media/search?scope=${encodeURIComponent(channel)}`;
+
+  if (compact)
+    return (
+      <div className="source-bridge-hint" aria-label={`在线${label}源`}>
+        <span>
+          在线{label}源：{sources.map((item) => item.label).join('、')}
+        </span>
+        <span className="source-bridge-hint-actions">
+          <Link className="source-bridge-link" to={search}>
+            搜索
+          </Link>
+          {browsable && (
+            <Link className="source-bridge-link" to={sourceExploreLink(browsable)}>
+              发现浏览
+            </Link>
+          )}
+          <Link className="source-bridge-link" to={sourceManageLink(primary)}>
+            管理规则
+          </Link>
+        </span>
+      </div>
+    );
 
   return (
     <section className="source-bridge-shortcut" aria-label={`在线${label}源入口`}>
       <h3>也可以直接搜索在线{label}源</h3>
       <p>已启用：{sources.map((item) => item.label).join('、')}</p>
       <div className="source-bridge-shortcut-actions">
-        <Link className="source-bridge-action is-primary" to={`/media/search?scope=${encodeURIComponent(channel)}`}>
+        <Link className="source-bridge-action is-primary" to={search}>
           <Icon name="search" size={14} />
           搜索在线{label}
         </Link>
+        {browsable && (
+          <Link className="source-bridge-action" to={sourceExploreLink(browsable)}>
+            发现浏览
+          </Link>
+        )}
         <Link className="source-bridge-action" to={sourceManageLink(primary)}>
           管理规则
         </Link>
       </div>
     </section>
+  );
+}
+
+/** Mounted in `/shelf`'s 发现 row: the way into browsing a novel or comic source by category. */
+export function ShelfDiscoverLink() {
+  const allSources = useBridgeSources();
+  const source = useMemo(() => sourcesForBookShelf(allSources).find((item) => item.browsable), [allSources]);
+  if (!source) return null;
+  return (
+    <Link className="button collection-link" to={sourceExploreLink(source)}>
+      <Icon name="search" size={18} />
+      <span>在线发现</span>
+      <Icon name="chevron-right" />
+    </Link>
   );
 }
 

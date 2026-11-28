@@ -8,6 +8,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { sourceChapterCount } from '../../../ui/source-results.ts';
 import type { SourceEntry } from '../../../api/sources.ts';
 import { useRuntime } from '../../../app/providers/runtime-context.tsx';
+import { SourceOriginLinks } from './SourceOriginLinks.tsx';
 
 export function SourceBookDetails({
   entry,
@@ -86,6 +87,7 @@ export function SourceBookDetails({
         <dt>最新章节</dt>
         <dd>{entry.latestChapter || '暂无信息'}</dd>
       </dl>
+      <SourceOriginLinks entry={entry} />
       {canPreview && (
         <button
           type="button"

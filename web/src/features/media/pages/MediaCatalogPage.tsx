@@ -112,6 +112,7 @@ export function MediaCatalogPage() {
           <CatalogTabs channel={channel} />
         </>
       )}
+      {!emptyCatalog && <ChannelSourceEntry channel={channel} compact />}
       <QueryFeedback
         pending={query.isPending}
         error={query.error}
