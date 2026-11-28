@@ -1,4 +1,5 @@
 import { badRequest } from '../lib/errors.ts';
+import type { PlaybackRequest } from './source-playback.ts';
 
 export interface ExtensionField {
   dependsOn?: string;
@@ -36,6 +37,7 @@ export interface ExtensionContent {
 }
 export interface ExtensionPage extends ExtensionContent {
   title: string;
+  playback?: PlaybackRequest;
   description?: string;
   notice?: string;
   noticeKind?: 'info' | 'error';
@@ -204,6 +206,12 @@ export function extensionPage(input: unknown): ExtensionPage {
     }
   };
   content(input);
+  if (input.playback !== undefined) {
+    record(input.playback);
+    label(input.playback.title);
+    label(input.playback.url);
+    check(input.playback.title.trim() && input.playback.title.length <= 320);
+  }
   if (input.notice !== undefined) label(input.notice);
   if (input.noticeKind !== undefined) check(['info', 'error'].includes(String(input.noticeKind)));
   const ids = new Set<string>();

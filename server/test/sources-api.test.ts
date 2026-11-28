@@ -98,6 +98,30 @@ function streamEvents(body: string): Array<{ event: string; data: any }> {
 }
 const searchPayload = { query: 'book', sessionId: 'test-search-session' };
 
+test('only a source action can create an opaque playback ticket and pausing its source revokes it', async (t) => {
+  const h = await harness();
+  t.after(() => h.close());
+  const host = h.ctx.sources!;
+  const source = host.list().find((row) => row.enabled)!;
+  const stream = 'https://media.example.test/episode.m3u8?credential=private';
+  host.plugins.sourcePage = async () => ({ title: '影片', forms: [], playback: { title: '第一集', url: stream } });
+  const url = '/api/v1/sources/' + source.id + '/pages/watch';
+  const page = await h.app.inject({ method: 'GET', url, headers: auth(h.admin) });
+  assert.equal(page.json().playback, undefined);
+  const request = (session: Session) =>
+    h.app.inject({ method: 'POST', url, headers: auth(session), payload: { action: 'play', values: {} } });
+  assert.equal((await request(await h.member())).statusCode, 403);
+  const play = await request(h.admin);
+  assert.equal(play.statusCode, 200, play.body);
+  assert.ok(!play.body.includes('private'));
+  const { path, kind } = play.json().playback;
+  assert.equal(kind, 'hls');
+  assert.match(path, /\/playback\/[\w-]{24}\/[\w-]{24}$/);
+  host.setEnabled(source.id, false);
+  assert.equal((await h.app.inject(path)).json().error.code, 'SOURCE_PLAYBACK_EXPIRED');
+  assert.equal((await request(h.admin)).json().error.code, 'SOURCE_DISABLED');
+});
+
 test('web plugin upload enforces admin, trust and file validation, installs enabled and restores on restart', async (t) => {
   const h = await harness();
   t.after(() => h.close());
