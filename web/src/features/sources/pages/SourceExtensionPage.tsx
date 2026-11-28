@@ -1,7 +1,7 @@
 import { Select } from '../../../ui/select.tsx';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useParams, useSearchParams } from 'react-router-dom';
 import type { ExtensionContent, ExtensionField, ExtensionForm, ExtensionPage } from '../../../api/sources.ts';
 import { ApiError } from '../../../api/errors.ts';
 import { useRuntime } from '../../../app/providers/runtime-context.tsx';
@@ -11,6 +11,7 @@ import { ConfirmSheet, Sheet } from '../../../ui/sheet.tsx';
 import { FloatingNotice } from '../../../ui/floating-notice.tsx';
 import { Button } from '../../../ui/toolkit.tsx';
 import { SourcesHeader } from '../components/SourcesHeader.tsx';
+import { SourceVideo } from '../components/SourceVideo.tsx';
 
 type FormValues = Record<string, unknown>;
 
@@ -310,6 +311,12 @@ export function SourceExtensionPage() {
   const runtime = useRuntime();
   const { api } = runtime;
   const { sourceId, pluginId, pageId = '' } = useParams();
+  const [searchParams] = useSearchParams();
+  const linkedSearch = useRef<{ query: string; site: string } | null>(
+    searchParams.get('q')?.trim()
+      ? { query: searchParams.get('q')!.trim(), site: searchParams.get('site') ?? '' }
+      : null,
+  );
   const admin = useAuthStore((state) => state.verifiedUser?.role === 'admin');
   const queryClient = useQueryClient();
   const owner = sourceId ? `source:${sourceId}` : `plugin:${pluginId}`;
@@ -411,6 +418,16 @@ export function SourceExtensionPage() {
       return false;
     }
   };
+  useEffect(() => {
+    const pending = linkedSearch.current;
+    if (!pending || !page) return;
+    const hasSearchForm =
+      page.forms.some((form) => form.id === 'search') ||
+      (page.tabs ?? []).some((tab) => tab.forms.some((form) => form.id === 'search'));
+    if (!hasSearchForm) return;
+    linkedSearch.current = null;
+    void execute('search', { query: pending.query, site: pending.site });
+  }, [page]); // eslint-disable-line react-hooks/exhaustive-deps
   const submit = (form: ExtensionForm, formValues: FormValues, formKey: string) => {
     if (form.confirm) setConfirmation({ form, values: formValues, key: formKey });
     else void execute(form.id, formValues, formKey, form);
@@ -495,6 +512,7 @@ export function SourceExtensionPage() {
       {status && <FloatingNotice message={status} busy={busy} error={statusError} kind="success" />}
       <main className="sources-body" aria-busy={busy} tabIndex={-1}>
         {page.description && <p className="extension-description">{page.description}</p>}
+        {page.playback && <SourceVideo key={page.playback.path} playback={page.playback} baseUrl={api.baseUrl} />}
         <ContentView
           content={page}
           scope="page"

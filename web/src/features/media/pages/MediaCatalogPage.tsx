@@ -15,6 +15,7 @@ import { useAuthStore } from '../../../shared/stores/auth.store.ts';
 import { MediaSelect } from '../components/select.tsx';
 import { CatalogTabs } from '../components/channel-navigation.tsx';
 import { useMediaPreferences } from '../hooks/use-media-preferences.ts';
+import { ChannelSourceEntry } from '../../sources/components/HomeSourceSearch.tsx';
 
 /** Catalog page size: the server's browse/items limit. */
 const PAGE = 60;
@@ -94,7 +95,12 @@ export function MediaCatalogPage() {
       emptyChannel={emptyWithoutLibraries}
       actions={
         <>
-          <Link to="/media/search" className="media-icon-button" aria-label="搜索" title="搜索">
+          <Link
+            to={`/media/search?scope=${encodeURIComponent(channel)}`}
+            className="media-icon-button"
+            aria-label="搜索"
+            title="搜索"
+          >
             <Icon name="search" size={18} />
           </Link>
           <ChannelMenu channel={channel} />
@@ -187,14 +193,17 @@ export function MediaCatalogPage() {
       )}
       {/* After the toolbar: the empty state answers "this library/category has nothing", so the selector it refers to sits above it. */}
       {emptyCatalog && (
-        <EmptyMediaLibrary
-          channel={channel}
-          hasLibraries={hasLibraries}
-          admin={admin}
-          category={current.label}
-          onCreate={() => navigate(`/media/${channel}/settings/libraries/new`)}
-          onManage={() => navigate(`/media/${channel}/settings/libraries`)}
-        />
+        <>
+          <EmptyMediaLibrary
+            channel={channel}
+            hasLibraries={hasLibraries}
+            admin={admin}
+            category={current.label}
+            onCreate={() => navigate(`/media/${channel}/settings/libraries/new`)}
+            onManage={() => navigate(`/media/${channel}/settings/libraries`)}
+          />
+          <ChannelSourceEntry channel={channel} />
+        </>
       )}
       {!emptyCatalog && !pastEnd && query.data && (
         <>

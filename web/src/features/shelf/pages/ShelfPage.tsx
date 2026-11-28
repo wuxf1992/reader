@@ -27,6 +27,7 @@ import { ChangeCoverSheet } from '../../../ui/change-cover-sheet.tsx';
 import { BookMetadataSheet } from '../../../ui/book-metadata-sheet.tsx';
 import { useAuthStore } from '../../../shared/stores/auth.store.ts';
 import { describeShelfAction, SHELF_ACTION_LABELS } from '../../../ui/shelf-membership.ts';
+import { ShelfSourceSearchStrip } from '../../sources/components/HomeSourceSearch.tsx';
 
 export function BookCard({
   book,
@@ -442,6 +443,7 @@ export function ShelfPage() {
           )}
         </div>
         <FloatingNotice message={actionError} error />
+        <ShelfSourceSearchStrip query={queryText} />
         {!query.isPending && (cards.length > 0 || queryText || filtered) && (
           <div className="shelf-toolbar">
             <span className="shelf-count muted" role="status" aria-live="polite" aria-atomic="true">
