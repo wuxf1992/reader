@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { describeError } from '../../../api/errors.ts';
 import type {
@@ -23,7 +23,6 @@ import {
   BRIDGE_CHANNEL_LABELS,
   classifySources,
   extractExtensionSearchView,
-  safeHttpUrl,
   sourceExploreLink,
   sourceManageLink,
   sourceSearchLink,
@@ -31,7 +30,6 @@ import {
   sourcesForMediaScope,
   type BridgeSource,
 } from '../source-search-bridge.ts';
-import { SourceOriginLinks } from './SourceOriginLinks.tsx';
 import { SourceVideo } from './SourceVideo.tsx';
 import '../styles/source-search-bridge.css';
 
@@ -88,48 +86,9 @@ function addSourceLink(type: SourceType, channel: MediaChannel): string {
   return `/sources/manage/new?${params.toString()}`;
 }
 
-/** The websites behind a source's rules (administrators read them from the plugin's own page). */
-function useSourceSiteLinks(item: BridgeSource): Array<{ title: string; url: string }> {
-  const runtime = useRuntime();
-  const admin = useAuthStore((state) => state.verifiedUser?.role === 'admin');
-  const pageId = item.pageId ?? item.source.descriptor?.extensions?.pages?.[0]?.id;
-  const query = useQuery({
-    queryKey: ['bridge-site-links', runtime?.api?.baseUrl ?? '', item.source.id, pageId ?? ''],
-    queryFn: () => runtime.api.sourcePage(item.source.id, pageId!),
-    enabled: admin && !!pageId && typeof runtime?.api?.sourcePage === 'function',
-    staleTime: 300_000,
-    retry: false,
-  });
-  return useMemo(
-    () =>
-      (query.data?.links ?? []).flatMap((link) => {
-        const url = safeHttpUrl(link.url);
-        return url ? [{ title: link.title, url }] : [];
-      }),
-    [query.data],
-  );
-}
-
-function SiteLinks({ item }: { item: BridgeSource }) {
-  const links = useSourceSiteLinks(item);
-  if (!links.length) return null;
-  return (
-    <div className="source-bridge-sites" role="group" aria-label="源站直达">
-      <span className="source-bridge-kind">逛源站</span>
-      {links.slice(0, 8).map((link) => (
-        <a
-          key={link.url}
-          className="source-bridge-site"
-          href={link.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          title={link.url}
-        >
-          {link.title}
-        </a>
-      ))}
-    </div>
-  );
+function useReturnState(): { returnTo: string } {
+  const { pathname, search } = useLocation();
+  return { returnTo: pathname + search };
 }
 
 function CatalogSourcePanel({
@@ -143,6 +102,7 @@ function CatalogSourcePanel({
 }) {
   const runtime = useRuntime();
   const queryClient = useQueryClient();
+  const returnState = useReturnState();
   const hasFilters = Boolean(item.source.descriptor?.capabilities.includes('search.filters'));
   const filtersQuery = useQuery({
     queryKey: ['source-filters', runtime.api.baseUrl, item.source.id],
@@ -275,19 +235,17 @@ function CatalogSourcePanel({
         </div>
         <div className="source-bridge-bar-right">
           {item.browsable && (
-            <Link className="source-bridge-link" to={sourceExploreLink(item)}>
+            <Link className="source-bridge-link" to={sourceExploreLink(item)} state={returnState}>
               发现浏览
               <Icon name="chevron-right" size={16} />
             </Link>
           )}
-          <Link className="source-bridge-link" to={sourceSearchLink(item, query)}>
+          <Link className="source-bridge-link" to={sourceSearchLink(item, query)} state={returnState}>
             在书源页查看全部
             <Icon name="chevron-right" size={16} />
           </Link>
         </div>
       </div>
-
-      <SiteLinks item={item} />
 
       {status !== 'idle' && (
         <p className={status === 'error' ? 'source-bridge-status is-error' : 'source-bridge-status'} role="status">
@@ -330,7 +288,6 @@ function CatalogSourcePanel({
                   <div className="source-bridge-row-copy">
                     <strong title={entry.title}>{entry.title}</strong>
                     {metaParts.length > 0 && <small title={metaParts.join(' · ')}>{metaParts.join(' · ')}</small>}
-                    <SourceOriginLinks entry={entry} />
                   </div>
                 </div>
                 {shelfId ? (
@@ -410,6 +367,7 @@ function ExtensionMediaPanel({
   triggerKey: number;
 }) {
   const runtime = useRuntime();
+  const returnState = useReturnState();
   const [pool, setPool] = useState('');
   const [searchPage, setSearchPage] = useState<ExtensionPage | null>(null);
   const [episodesPage, setEpisodesPage] = useState<ExtensionPage | null>(null);
@@ -538,18 +496,16 @@ function ExtensionMediaPanel({
           </button>
         </div>
         <div className="source-bridge-bar-right">
-          <Link className="source-bridge-link" to={sourceExploreLink(item)}>
+          <Link className="source-bridge-link" to={sourceExploreLink(item)} state={returnState}>
             发现浏览
             <Icon name="chevron-right" size={16} />
           </Link>
-          <Link className="source-bridge-link" to={sourceSearchLink(item, query, pool)}>
+          <Link className="source-bridge-link" to={sourceSearchLink(item, query, pool)} state={returnState}>
             完整插件页
             <Icon name="chevron-right" size={16} />
           </Link>
         </div>
       </div>
-
-      <SiteLinks item={item} />
 
       {playback &&
         (playback.kind === 'audio' ||
@@ -693,6 +649,7 @@ export function GlobalSourceSearchSection({
   submitCount: number;
 }) {
   const sources = useBridgeSources();
+  const returnState = useReturnState();
   const [activeId, setActiveId] = useState<string | null>(null);
   const [triggerKey, setTriggerKey] = useState(0);
   const lastSubmitRef = useRef(submitCount);
@@ -716,7 +673,7 @@ export function GlobalSourceSearchSection({
         <h2>
           在线书源<small>{sources.length} 个来源可用</small>
         </h2>
-        <Link to={`/sources?q=${encodeURIComponent(query)}`}>
+        <Link to={`/sources?q=${encodeURIComponent(query)}`} state={returnState}>
           前往书源中心
           <Icon name="chevron-right" size={16} />
         </Link>
@@ -767,6 +724,7 @@ export function MediaSourceSearchSection({
   query: string;
 }) {
   const allSources = useBridgeSources();
+  const returnState = useReturnState();
   const sources = useMemo(() => sourcesForMediaScope(allSources, scope), [allSources, scope]);
   const availableType = useAvailableMediaSourceType(sources.length === 0 ? scope : 'all');
   const [selectedId, setSelectedId] = useState('');
@@ -783,7 +741,7 @@ export function MediaSourceSearchSection({
     return (
       <div className="source-bridge-hint" aria-label={`启用在线${label}源提示`}>
         <span>插件已支持在线{label}源，添加后即可在此搜索与播放。</span>
-        <Link className="source-bridge-link" to={addSourceLink(availableType, scope)}>
+        <Link className="source-bridge-link" to={addSourceLink(availableType, scope)} state={returnState}>
           添加在线{label}源
           <Icon name="chevron-right" size={16} />
         </Link>
@@ -801,7 +759,7 @@ export function MediaSourceSearchSection({
           在线{scope === 'audiobook' ? '有声书' : scope === 'video' ? '视频' : '影音'}源已就绪：
           {sources.map((item) => item.label).join('、')}（提交关键词后同步搜索）
         </span>
-        <Link className="source-bridge-link" to={sourceManageLink(active)}>
+        <Link className="source-bridge-link" to={sourceManageLink(active)} state={returnState}>
           管理规则
           <Icon name="chevron-right" size={16} />
         </Link>
@@ -816,7 +774,7 @@ export function MediaSourceSearchSection({
           在线{BRIDGE_CHANNEL_LABELS[active.channel]}源
           {sources.length > 1 ? <small>{sources.length} 个来源</small> : null}
         </h2>
-        <Link className="source-bridge-link" to={sourceManageLink(active)}>
+        <Link className="source-bridge-link" to={sourceManageLink(active)} state={returnState}>
           管理规则
           <Icon name="chevron-right" size={16} />
         </Link>
@@ -852,6 +810,7 @@ export function MediaSourceSearchSection({
  */
 export function ChannelSourceEntry({ channel, compact = false }: { channel: MediaChannel; compact?: boolean }) {
   const allSources = useBridgeSources();
+  const returnState = useReturnState();
   const sources = useMemo(() => sourcesForMediaScope(allSources, channel), [allSources, channel]);
   const availableType = useAvailableMediaSourceType(sources.length === 0 ? channel : 'all');
   const label = BRIDGE_CHANNEL_LABELS[channel];
@@ -863,7 +822,7 @@ export function ChannelSourceEntry({ channel, compact = false }: { channel: Medi
       return (
         <div className="source-bridge-hint" aria-label={`添加在线${label}源`}>
           <span>插件已支持在线{label}源，添加后可直接搜索与浏览。</span>
-          <Link className="source-bridge-link" to={addPath}>
+          <Link className="source-bridge-link" to={addPath} state={returnState}>
             一键添加
           </Link>
         </div>
@@ -873,7 +832,7 @@ export function ChannelSourceEntry({ channel, compact = false }: { channel: Medi
         <h3>也可以启用在线{label}源</h3>
         <p>插件已支持在线{label}，添加并导入规则后即可在此搜索、逛发现与播放。</p>
         <div className="source-bridge-shortcut-actions">
-          <Link className="source-bridge-action is-primary" to={addPath}>
+          <Link className="source-bridge-action is-primary" to={addPath} state={returnState}>
             添加在线{label}源
           </Link>
         </div>
@@ -896,11 +855,11 @@ export function ChannelSourceEntry({ channel, compact = false }: { channel: Medi
             搜索
           </Link>
           {browsable && (
-            <Link className="source-bridge-link" to={sourceExploreLink(browsable)}>
+            <Link className="source-bridge-link" to={sourceExploreLink(browsable)} state={returnState}>
               发现浏览
             </Link>
           )}
-          <Link className="source-bridge-link" to={sourceManageLink(primary)}>
+          <Link className="source-bridge-link" to={sourceManageLink(primary)} state={returnState}>
             管理规则
           </Link>
         </span>
@@ -917,11 +876,11 @@ export function ChannelSourceEntry({ channel, compact = false }: { channel: Medi
           搜索在线{label}
         </Link>
         {browsable && (
-          <Link className="source-bridge-action" to={sourceExploreLink(browsable)}>
+          <Link className="source-bridge-action" to={sourceExploreLink(browsable)} state={returnState}>
             发现浏览
           </Link>
         )}
-        <Link className="source-bridge-action" to={sourceManageLink(primary)}>
+        <Link className="source-bridge-action" to={sourceManageLink(primary)} state={returnState}>
           管理规则
         </Link>
       </div>
@@ -932,10 +891,11 @@ export function ChannelSourceEntry({ channel, compact = false }: { channel: Medi
 /** Mounted in `/shelf`'s 发现 row: the way into browsing a novel or comic source by category. */
 export function ShelfDiscoverLink() {
   const allSources = useBridgeSources();
+  const returnState = useReturnState();
   const source = useMemo(() => sourcesForBookShelf(allSources).find((item) => item.browsable), [allSources]);
   if (!source) return null;
   return (
-    <Link className="button collection-link" to={sourceExploreLink(source)}>
+    <Link className="button collection-link" to={sourceExploreLink(source)} state={returnState}>
       <Icon name="search" size={18} />
       <span>在线发现</span>
       <Icon name="chevron-right" />
@@ -949,6 +909,7 @@ export function ShelfDiscoverLink() {
  */
 export function ShelfSourceSearchStrip({ query }: { query: string }) {
   const allSources = useBridgeSources();
+  const returnState = useReturnState();
   const sources = useMemo(() => sourcesForBookShelf(allSources), [allSources]);
   const trimmed = query.trim();
   if (!trimmed || sources.length === 0) return null;
@@ -957,7 +918,12 @@ export function ShelfSourceSearchStrip({ query }: { query: string }) {
     <div className="source-bridge-shelf-strip" aria-label="在在线书源中搜索">
       <span>没找到？去在线书源搜「{trimmed}」：</span>
       {sources.map((item) => (
-        <Link key={item.source.id} className="source-bridge-action" to={sourceSearchLink(item, trimmed)}>
+        <Link
+          key={item.source.id}
+          className="source-bridge-action"
+          to={sourceSearchLink(item, trimmed)}
+          state={returnState}
+        >
           <Icon name="search" size={14} />
           <span>{item.label}</span>
           <span className="source-bridge-kind">{BRIDGE_CHANNEL_LABELS[item.channel]}</span>

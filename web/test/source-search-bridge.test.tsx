@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render } from '../src/shared/ui/render-root.ts';
 import { RuntimeContext } from '../src/app/providers/runtime-context.tsx';
@@ -23,6 +23,8 @@ import { MediaSearchPage } from '../src/features/media/pages/MediaSearchPage.tsx
 import { MediaCatalogPage } from '../src/features/media/pages/MediaCatalogPage.tsx';
 import { ShelfPage } from '../src/features/shelf/pages/ShelfPage.tsx';
 import { SourceExtensionPage } from '../src/features/sources/pages/SourceExtensionPage.tsx';
+import { SourceEditorPage } from '../src/features/sources/pages/SourceEditorPage.tsx';
+import { SourcesPage } from '../src/features/sources/pages/SourcesPage.tsx';
 import { SourceOriginLinks } from '../src/features/sources/components/SourceOriginLinks.tsx';
 
 const root = document.createElement('div');
@@ -485,11 +487,7 @@ describe('cross-homepage source search UI', () => {
     await vi.waitFor(() => expect(runtime.api.searchSource).toHaveBeenCalledTimes(1));
     await vi.waitFor(() => expect(root.textContent).toContain('刘慈欣'));
 
-    const pageLink = root.querySelector<HTMLAnchorElement>('.source-origin-links a[href="https://site.example/book/1"]');
-    expect(pageLink?.textContent).toBe('原页 ↗');
-    expect(pageLink?.target).toBe('_blank');
-    expect(pageLink?.rel).toContain('noopener');
-    expect(root.querySelector('.source-origin-links a[href="https://site.example/"]')?.textContent).toBe('原站 ↗');
+    expect(root.querySelector('.source-origin-links')).toBeNull();
     const addButton = [...root.querySelectorAll<HTMLButtonElement>('.source-bridge-action')].find(
       (button) => button.textContent === '加入书架',
     )!;
@@ -633,16 +631,12 @@ describe('music, browsing and original-site entries', () => {
     ]);
   });
 
-  it('searches online music from /media/search?scope=music and shows the source websites', async () => {
+  it('searches online music from /media/search?scope=music without dumping site-link strips', async () => {
     const runtime = createRuntime({
       api: {
         sourcePage: vi.fn(async (_id: string, _pageId: string, action?: string) => ({
           ...makeVideoPage(),
           title: '在线音乐',
-          links: [
-            { title: '好音乐 ↗', url: 'https://music.example/' },
-            { title: '坏链接 ↗', url: 'javascript:alert(1)' },
-          ],
           ...(action === 'search' ? {} : { tabs: undefined }),
         })),
       },
@@ -660,11 +654,9 @@ describe('music, browsing and original-site entries', () => {
         site: '',
       }),
     );
+    expect(runtime.api.sourcePage).toHaveBeenCalledTimes(1);
     expect(runtime.api.sourcePage).not.toHaveBeenCalledWith('video-1', expect.anything(), 'search', expect.anything());
-    await vi.waitFor(() => expect(root.querySelector('.source-bridge-site')).not.toBeNull());
-    expect([...root.querySelectorAll<HTMLAnchorElement>('.source-bridge-site')].map((link) => link.href)).toEqual([
-      'https://music.example/',
-    ]);
+    expect(root.querySelector('.source-bridge-site')).toBeNull();
     expect(root.querySelector('a[href="/sources/music-1/media-sources?tab=discover"]')?.textContent).toContain('发现浏览');
     expect(root.textContent).toContain('在线音乐源');
   });
@@ -764,5 +756,147 @@ describe('music, browsing and original-site entries', () => {
     expect(link?.getAttribute('href')).toBe(
       '/sources/manage/new?type=reader.source.novelweb%2Fmusic-web&name=%E5%9C%A8%E7%BA%BF%E9%9F%B3%E4%B9%90',
     );
+  });
+
+  it('turns safe http(s) URLs inside rule descriptions on SourceExtensionPage into clean inline links', async () => {
+    const runtime = createRuntime({
+      api: {
+        sourcePage: vi.fn(async () => ({
+          title: '在线视频',
+          forms: [],
+          activeTab: 'sources',
+          tabs: [
+            {
+              id: 'sources',
+              title: '主力管理（1）',
+              forms: [],
+              sections: [
+                {
+                  title: '主力规则（1）',
+                  items: [
+                    {
+                      title: '主力影视',
+                      description: 'https://video.example/ · 主力源，备用忽略 javascript:alert(1)',
+                      collapsible: true,
+                      forms: [],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        })),
+      },
+    });
+    mount(
+      <Routes>
+        <Route path="/sources/:sourceId/:pageId" element={<SourceExtensionPage />} />
+      </Routes>,
+      runtime,
+      '/sources/video-1/media-sources',
+    );
+    await vi.waitFor(() => expect(root.querySelector('a.extension-inline-link')).not.toBeNull());
+    const links = [...root.querySelectorAll<HTMLAnchorElement>('a.extension-inline-link')];
+    expect(links.map((a) => [a.href, a.target, a.rel])).toEqual([
+      ['https://video.example/', '_blank', 'noopener noreferrer'],
+    ]);
+    expect(root.textContent).toContain('javascript:alert(1)');
+    expect(root.querySelector('a[aria-label="返回"]')?.getAttribute('href')).toBe('/sources?tab=sources');
+  });
+
+  it('returns to the exact originating route from SourceExtensionPage and SourceEditorPage', async () => {
+    function LocationProbe() {
+      const loc = useLocation();
+      return <div data-testid="loc">{loc.pathname + loc.search}</div>;
+    }
+    const runtime = createRuntime({
+      api: {
+        sourceTypes: vi.fn(async () => [
+          {
+            id: 'music-web',
+            pluginId: 'reader.source.novelweb',
+            label: '在线音乐',
+            version: '1.8.4',
+            builtin: false,
+            capabilities: [],
+          },
+        ]),
+        sourcePage: vi.fn(async () => makeVideoPage()),
+      },
+    });
+
+    // 1. From /media/video -> 管理规则 -> 返回 -> /media/video
+    mount(
+      <>
+        <LocationProbe />
+        <Routes>
+          <Route path="/media/:channel/:category?" element={<MediaCatalogPage />} />
+          <Route path="/sources/:sourceId/:pageId" element={<SourceExtensionPage />} />
+        </Routes>
+      </>,
+      runtime,
+      '/media/video',
+    );
+    await vi.waitFor(() => expect(root.querySelector('a[href="/sources/video-1/media-sources"]')).not.toBeNull());
+    await act(async () => root.querySelector<HTMLAnchorElement>('a[href="/sources/video-1/media-sources"]')!.click());
+    await vi.waitFor(() => expect(root.querySelector('a[aria-label="返回"]')).not.toBeNull());
+    await act(async () => root.querySelector<HTMLAnchorElement>('a[aria-label="返回"]')!.click());
+    await vi.waitFor(() => expect(root.querySelector('[data-testid="loc"]')?.textContent).toBe('/media/video'));
+
+    // 2. From /sources?tab=sources -> 在线视频 -> 返回 -> /sources?tab=sources (still on 书源管理 tab)
+    act(() => render(null, root));
+    mount(
+      <>
+        <LocationProbe />
+        <Routes>
+          <Route path="/sources" element={<SourcesPage />} />
+          <Route path="/sources/:sourceId/:pageId" element={<SourceExtensionPage />} />
+        </Routes>
+      </>,
+      runtime,
+      '/sources?tab=sources',
+    );
+    await vi.waitFor(() => expect(root.querySelector('a[href="/sources/video-1/media-sources"]')).not.toBeNull());
+    await act(async () => root.querySelector<HTMLAnchorElement>('a[href="/sources/video-1/media-sources"]')!.click());
+    await vi.waitFor(() => expect(root.querySelector('a[aria-label="返回"]')).not.toBeNull());
+    await act(async () => root.querySelector<HTMLAnchorElement>('a[aria-label="返回"]')!.click());
+    await vi.waitFor(() => expect(root.querySelector('[data-testid="loc"]')?.textContent).toBe('/sources?tab=sources'));
+    expect(root.querySelector('#sources-tab-sources')?.getAttribute('aria-selected')).toBe('true');
+
+    // 3. From /media/music/albums (no music source) -> 添加在线音乐源 -> 取消 -> /media/music/albums
+    act(() => render(null, root));
+    client.clear();
+    const noMusicRuntime = createRuntime({
+      api: {
+        sources: vi.fn(async () => sampleSources.filter((s) => s.sourceType !== 'music-web')),
+        sourceTypes: vi.fn(async () => [
+          {
+            id: 'music-web',
+            pluginId: 'reader.source.novelweb',
+            label: '在线音乐',
+            version: '1.8.4',
+            builtin: false,
+            capabilities: [],
+          },
+        ]),
+      },
+    });
+    mount(
+      <>
+        <LocationProbe />
+        <Routes>
+          <Route path="/media/:channel/:category?" element={<MediaCatalogPage />} />
+          <Route path="/sources/manage/new" element={<SourceEditorPage />} />
+        </Routes>
+      </>,
+      noMusicRuntime,
+      '/media/music/albums',
+    );
+    await vi.waitFor(() => expect(root.querySelector('[aria-label="添加在线音乐源入口"] a')).not.toBeNull());
+    await act(async () => root.querySelector<HTMLAnchorElement>('[aria-label="添加在线音乐源入口"] a')!.click());
+    await vi.waitFor(() => expect(root.textContent).toContain('添加书源'));
+    const cancelBtn = [...root.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === '取消')!;
+    await act(async () => cancelBtn.click());
+    await vi.waitFor(() => expect(root.querySelector('[data-testid="loc"]')?.textContent).toBe('/media/music/albums'));
   });
 });

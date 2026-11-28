@@ -1,11 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { useRuntime } from '../../../app/providers/runtime-context.tsx';
 import { useSources, useSourceMutations } from '../hooks/sourceQueries.ts';
 import { FloatingNotice } from '../../../ui/floating-notice.tsx';
 import { Button, Callout } from '../../../ui/toolkit.tsx';
-import { SourcesHeader } from '../components/SourcesHeader.tsx';
+import { SourcesHeader, useSourceBack } from '../components/SourcesHeader.tsx';
 import { ConfirmSheet } from '../../../ui/sheet.tsx';
 import { notify } from '../../../ui/notifications.ts';
 
@@ -18,7 +18,7 @@ const STATES = {
 
 export function SourceCredentialsPage() {
   const { api } = useRuntime();
-  const navigate = useNavigate();
+  const { goBack } = useSourceBack('/sources?tab=sources');
   const { sourceId = '' } = useParams();
   const sources = useSources();
   const source = sources.data?.find((item) => item.id === sourceId);
@@ -45,7 +45,7 @@ export function SourceCredentialsPage() {
         if (value) await mutations.credential.mutateAsync({ id: source.id, key: field.key, value });
       }
       notify('凭据已保存', { kind: 'success' });
-      navigate('/sources');
+      goBack();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '保存凭据失败，请重试');
     } finally {
@@ -70,7 +70,7 @@ export function SourceCredentialsPage() {
   };
   return (
     <div className="sources-screen">
-      <SourcesHeader title={source ? `${source.name} · 凭据` : '书源凭据'} />
+      <SourcesHeader title={source ? `${source.name} · 凭据` : '书源凭据'} backTo="/sources?tab=sources" />
       <main className="sources-body">
         {!source ? (
           <Callout tone="error">来源不存在</Callout>
@@ -114,7 +114,7 @@ export function SourceCredentialsPage() {
               <Button type="submit" className="primary" disabled={busy || !Object.values(values).some(Boolean)}>
                 {busy ? '正在保存…' : '保存凭据'}
               </Button>
-              <Button disabled={busy} onClick={() => navigate('/sources')}>
+              <Button disabled={busy} onClick={goBack}>
                 取消
               </Button>
             </div>

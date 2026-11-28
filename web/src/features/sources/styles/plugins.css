@@ -27,3 +27,21 @@
   display: block;
   width: 100%;
 }
+
+.extension-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.extension-inline-link {
+  color: var(--color-brand-text);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .extension-inline-link:hover {
+    text-decoration: underline;
+  }
+}

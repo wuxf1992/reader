@@ -47,7 +47,9 @@ export function SourcesPage() {
   // The tab is part of the URL (?tab=), so back from a source's editor or a reload
   // returns to it; /sources/plugins stays the plugins tab's own address.
   const [params, setParams] = useSearchParams();
-  const pluginsPath = useLocation().pathname === '/sources/plugins';
+  const location = useLocation();
+  const pluginsPath = location.pathname === '/sources/plugins';
+  const here = location.pathname + location.search;
   const requested = params.get('tab') as SourceTab | null;
   const tab: SourceTab = requested && SOURCE_TABS.includes(requested) ? requested : pluginsPath ? 'plugins' : 'search';
   const setTab = (next: SourceTab) =>
@@ -58,7 +60,7 @@ export function SourcesPage() {
         else merged.set('tab', next);
         return merged;
       },
-      { replace: true },
+      { replace: true, state: location.state },
     );
   // A link may name the source and the keyword (?source=&q=): 书库's search arrives this way.
   const [sourceId, setSourceId] = useState(() => params.get('source') ?? '');
@@ -604,7 +606,7 @@ export function SourcesPage() {
                 我的来源 <span className="source-count">{sources.data?.length ?? 0}</span>
               </h2>
               {admin && (
-                <Link className="button source-add" to="/sources/manage/new">
+                <Link className="button source-add" to="/sources/manage/new" state={{ returnTo: here }}>
                   <Icon name="plus" size={16} />
                   添加来源
                 </Link>
@@ -637,12 +639,17 @@ export function SourcesPage() {
                           className="button"
                           key={page.id}
                           to={'/sources/' + encodeURIComponent(source.id) + '/' + encodeURIComponent(page.id)}
+                          state={{ returnTo: here }}
                         >
                           {page.title}
                         </Link>
                       ))}
                     {source.descriptor?.credentialKeys?.length ? (
-                      <Link className="button" to={'/sources/' + encodeURIComponent(source.id) + '/credentials'}>
+                      <Link
+                        className="button"
+                        to={'/sources/' + encodeURIComponent(source.id) + '/credentials'}
+                        state={{ returnTo: here }}
+                      >
                         书源登录
                       </Link>
                     ) : null}
@@ -657,11 +664,16 @@ export function SourcesPage() {
                           ).map((page) => ({
                             label: page.title,
                             onSelect: () =>
-                              navigate('/sources/' + encodeURIComponent(source.id) + '/' + encodeURIComponent(page.id)),
+                              navigate('/sources/' + encodeURIComponent(source.id) + '/' + encodeURIComponent(page.id), {
+                                state: { returnTo: here },
+                              }),
                           })),
                           {
                             label: '基本设置',
-                            onSelect: () => navigate('/sources/manage/' + encodeURIComponent(source.id)),
+                            onSelect: () =>
+                              navigate('/sources/manage/' + encodeURIComponent(source.id), {
+                                state: { returnTo: here },
+                              }),
                           },
                           {
                             label: source.isDefault ? '取消默认' : '设为默认',

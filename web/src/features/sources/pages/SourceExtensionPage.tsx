@@ -32,6 +32,34 @@ function safeExternalUrl(value: string) {
   }
 }
 
+const INLINE_URL_RE = /(https?:\/\/[^\s<>"'`]+)/g;
+const TRAILING_PUNCT_RE = /[),.;，。；！!]+$/;
+
+/** Renders rule descriptions while turning safe http(s) site URLs into clean, clickable links. */
+function DescriptionText({ text }: { text: string }) {
+  const parts = text.split(INLINE_URL_RE);
+  if (parts.length === 1) return <p className="source-description">{text}</p>;
+  return (
+    <p className="source-description">
+      {parts.map((part, index) => {
+        if (index % 2 === 0) return part;
+        const trailing = TRAILING_PUNCT_RE.exec(part)?.[0] ?? '';
+        const candidate = trailing ? part.slice(0, -trailing.length) : part;
+        if (!safeExternalUrl(candidate)) return part;
+        return (
+          <span key={`${index}:${candidate}`}>
+            <a className="extension-inline-link" href={candidate} target="_blank" rel="noopener noreferrer">
+              {candidate}
+              <span aria-hidden="true"> ↗</span>
+            </a>
+            {trailing}
+          </span>
+        );
+      })}
+    </p>
+  );
+}
+
 function fileToValue(file: File): Promise<{ name: string; type: string; data: string }> {
   return file.arrayBuffer().then((buffer) => {
     const bytes = new Uint8Array(buffer);
@@ -190,15 +218,18 @@ function ContentView({
   onEdit(form: ExtensionForm, formKey: string, title: string): void;
   onToggleSelected(key: string): void;
 }) {
+  const safeLinks = content.links?.filter((link) => safeExternalUrl(link.url)) ?? [];
   const editor = (
     <>
-      {content.links
-        ?.filter((link) => safeExternalUrl(link.url))
-        .map((link) => (
-          <a className="button" key={link.url} href={link.url} target="_blank" rel="noopener noreferrer">
-            {link.title}
-          </a>
-        ))}
+      {safeLinks.length > 0 && (
+        <div className="extension-links">
+          {safeLinks.map((link) => (
+            <a className="button" key={link.url} href={link.url} target="_blank" rel="noopener noreferrer">
+              {link.title}
+            </a>
+          ))}
+        </div>
+      )}
       {content.forms.map((form) => {
         const key = `${scope}:form:${form.id}`;
         return (
@@ -258,7 +289,7 @@ function ContentView({
                       />
                     )}
                     <h3>{item.title}</h3>
-                    {item.description && <p className="source-description">{item.description}</p>}
+                    {item.description && <DescriptionText text={item.description} />}
                   </div>
                   {item.collapsible && <ActionMenu label="管理" title={`${item.title}管理`} items={menu} />}
                 </div>
@@ -470,6 +501,7 @@ export function SourceExtensionPage() {
     <div className="sources-screen extension-screen">
       <SourcesHeader
         title={page.title}
+        backTo={sourceId ? '/sources?tab=sources' : '/sources?tab=plugins'}
         actions={
           <Button disabled={busy} onClick={() => void execute()}>
             刷新

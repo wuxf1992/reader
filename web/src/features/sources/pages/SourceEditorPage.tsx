@@ -1,18 +1,18 @@
 import { Select } from '../../../ui/select.tsx';
 import { useEffect, useState, type FormEvent } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import type { SourceType } from '../../../api/sources.ts';
 import { useSources, useSourceMutations, useSourceTypes } from '../hooks/sourceQueries.ts';
 import { FloatingNotice } from '../../../ui/floating-notice.tsx';
 import { ConfirmSheet } from '../../../ui/sheet.tsx';
 import { Button, Callout } from '../../../ui/toolkit.tsx';
-import { SourcesHeader } from '../components/SourcesHeader.tsx';
+import { SourcesHeader, useSourceBack } from '../components/SourcesHeader.tsx';
 import { notify } from '../../../ui/notifications.ts';
 
 export function SourceEditorPage() {
-  const navigate = useNavigate();
   const { sourceId } = useParams();
   const [searchParams] = useSearchParams();
+  const { goBack } = useSourceBack('/sources?tab=sources');
   const presetType = !sourceId ? (searchParams.get('type') ?? '') : '';
   const presetName = !sourceId ? (searchParams.get('name') ?? '') : '';
   const sources = useSources();
@@ -62,7 +62,7 @@ export function SourceEditorPage() {
         },
       });
       notify(sourceId ? '书源已保存' : '书源已添加', { kind: 'success' });
-      navigate('/sources');
+      goBack();
     } catch (reason) {
       setJsonError(reason instanceof Error ? reason.message : '保存书源失败，请重试');
     }
@@ -70,7 +70,7 @@ export function SourceEditorPage() {
   const setField = (key: string, value: unknown) => setConfig((previous) => ({ ...previous, [key]: value }));
   return (
     <div className="sources-screen">
-      <SourcesHeader title={sourceId ? '编辑书源' : '添加书源'} />
+      <SourcesHeader title={sourceId ? '编辑书源' : '添加书源'} backTo="/sources?tab=sources" />
       <main className="sources-body">
         {sourceId && !source ? (
           <Callout tone="error">来源不存在</Callout>
@@ -159,7 +159,7 @@ export function SourceEditorPage() {
               <Button type="submit" className="primary" disabled={mutations.save.isPending}>
                 {mutations.save.isPending ? '正在保存…' : '保存'}
               </Button>
-              <Button onClick={() => navigate('/sources')}>取消</Button>
+              <Button onClick={goBack}>取消</Button>
               {sourceId && (
                 <Button className="danger" disabled={mutations.remove.isPending} onClick={() => setRemoving(true)}>
                   删除来源
@@ -180,7 +180,7 @@ export function SourceEditorPage() {
           onConfirm={async () => {
             try {
               await mutations.remove.mutateAsync(sourceId);
-              navigate('/sources');
+              goBack();
             } catch (reason) {
               notify(reason instanceof Error ? reason.message : '删除失败，请稍后重试。', { kind: 'error' });
             }
